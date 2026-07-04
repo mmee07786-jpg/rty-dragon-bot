@@ -1,3 +1,4 @@
+
 import discord
 from discord.ext import commands
 import os
@@ -11,7 +12,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     print(f"✅ تم تشغيل البوت بنجاح باسم: {bot.user}")
-    # تعديل حالة البوت باسم السيرفر الخاص بك
     await bot.change_presence(activity=discord.Game(name="VALTRYX 🛡️"))
 
 @bot.event
@@ -19,15 +19,13 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    msg_content = message.content.lower()
-
-    # الترحيب عند ذكر اسم السيرفر أو التحية
-    if any(word in msg_content for word in ["هلا", "مرحبا", "السلام عليكم", "valtryx"]):
+    # الشرط الجديد: البوت سيرد فقط إذا قام أحد بعمل منشن (Mention) له في الرسالة
+    if bot.user.mentioned_in(message):
         response = (
-            "هلا وغلا بك في سيرفر VALTRYX! 🛡️\n"
+            f"هلا وغلا بك يا {message.author.mention} في سيرفر VALTRYX! 🛡️\n"
             "نورتنا يا بطل، إذا احتجت أي مساعدة أنا في الخدمة.\n"
             "━─━─━─━─━─━─━─━─━─━\n"
-            "Welcome to VALTRYX! 🛡️\n"
+            f"Welcome {message.author.mention} to VALTRYX! 🛡️\n"
             "Glad to have you here, hero! Let me know if you need anything."
         )
         await message.channel.send(response)
@@ -39,4 +37,3 @@ if token:
     bot.run(token)
 else:
     print("❌ خطأ: لم يتم العثور على التوكن (DISCORD_TOKEN)!")
-
