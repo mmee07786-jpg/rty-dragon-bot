@@ -1,13 +1,5 @@
 import os
-import subprocess
-import sys
-import time
-
-BOT_SCRIPT = "bot_core.py"
-
-
-def run_process():
-  code_content = """import discord
+import discord
 from discord.ext import commands
 
 intents = discord.Intents.default()
@@ -25,16 +17,16 @@ async def on_ready():
 async def kick_member(ctx, member: discord.Member, *, reason=None):
     try:
         await member.kick(reason=reason)
-        await ctx.send(f"عذراً يا بطل، تم طرد العضو {member.mention} بنجاح ✅\\nSorry hero, member {member.mention} has been successfully kicked ✅")
+        await ctx.send(f"عذراً يا بطل، تم طرد العضو {member.mention} بنجاح ✅")
     except discord.Forbidden:
-        await ctx.send(f"عذراً، يجب إعطاء البوت صلاحيات لاستخدام هذا الإجراء ❌\\nSorry, the bot must be given permissions to use this action ❌")
+        await ctx.send(f"عذراً، يجب إعطاء البوت صلاحيات كافية لاستخدام هذا الإجراء ❌")
 
 @kick_member.error
 async def kick_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send(f"عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الطرد ❌\\nSorry, you do not have permission to use the kick command ❌")
+        await ctx.send(f"عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الطرد ❌")
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"الرجاء كتابة الأمر بشكل صحيح مع منشن العضو: `!k @العضو` ❌\\nPlease write the command correctly with a member mention: `!k @member` ❌")
+        await ctx.send(f"الرجاء كتابة الأمر بشكل صحيح مع منشن العضو: `!k @العضو` ❌")
 
 # أمر التايم أوت: !t @user <الدقائق>
 @bot.command(name="t")
@@ -43,16 +35,16 @@ async def timeout_member(ctx, member: discord.Member, minutes: int, *, reason=No
     try:
         duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
         await member.timeout(duration, reason=reason)
-        await ctx.send(f"تم إسكات العضو {member.mention} لمدة {minutes} دقائق بنجاح ✅\\nMember {member.mention} has been timed out for {minutes} minutes successfully ✅")
+        await ctx.send(f"تم إسكات العضو {member.mention} لمدة {minutes} دقائق بنجاح ✅")
     except discord.Forbidden:
-        await ctx.send(f"عذراً، يجب إعطاء البوت صلاحيات لاستخدام هذا الإجراء ❌\\nSorry, the bot must be given permissions to use this action ❌")
+        await ctx.send(f"عذراً، يجب إعطاء البوت صلاحيات كافية لاستخدام هذا الإجراء ❌")
 
 @timeout_member.error
 async def timeout_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send(f"عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر التايم أوت ❌\\nSorry, you do not have permission to use the timeout command ❌")
+        await ctx.send(f"عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر التايم أوت ❌")
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"الرجاء كتابة الأمر بشكل صحيح: `!t @العضو الوقت_بالدقائق` ❌\\nPlease write the command correctly: `!t @member minutes` ❌")
+        await ctx.send(f"الرجاء كتابة الأمر بشكل صحيح: `!t @العضو الوقت_بالدقائق` ❌")
 
 # أمر الباند: !b @user
 @bot.command(name="b")
@@ -60,35 +52,19 @@ async def timeout_error(ctx, error):
 async def ban_member(ctx, member: discord.Member, *, reason=None):
     try:
         await member.ban(reason=reason)
-        await ctx.send(f"تم حظر العضو {member.mention} نهائياً خارج السيرفر ولن يعود أبداً 🚷❌\\nMember {member.mention} has been permanently banned from the server and will never return 🚷❌")
+        await ctx.send(f"تم حظر العضو {member.mention} نهائياً خارج السيرفر 🚷❌")
     except discord.Forbidden:
-        await ctx.send(f"عذراً، يجب إعطاء البوت صلاحيات لاستخدام هذا الإجراء ❌\\nSorry, the bot must be given permissions to use this action ❌")
+        await ctx.send(f"عذراً، يجب إعطاء البوت صلاحيات كافية لاستخدام هذا الإجراء ❌")
 
 @ban_member.error
 async def ban_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send(f"عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الحظر ❌\\nSorry, you do not have permission to use the ban command ❌")
+        await ctx.send(f"عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الحظر ❌")
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"الرجاء كتابة الأمر بشكل صحيح مع منشن العضو: `!b @العضو` ❌\\nPlease write the command correctly with a member mention: `!b @member` ❌")
+        await ctx.send(f"الرجاء كتابة الأمر بشكل صحيح مع منشن العضو: `!b @العضو` ❌")
 
 token = os.environ.get("DISCORD_TOKEN")
 if token:
     bot.run(token)
 else:
     print("خطأ: لم يتم العثور على التوكن (DISCORD_TOKEN)!")
-"""
-
-  with open(BOT_SCRIPT, "w", encoding="utf-8") as f:
-    f.write(code_content)
-
-  while True:
-    print("Starting bot...")
-    p = subprocess.Popen([sys.executable, BOT_SCRIPT])
-    p.wait()
-    print("Bot crashed or stopped. Restarting in 3 seconds...")
-    time.sleep(3)
-
-
-if __name__ == "__main__":
-  run_process()
-
