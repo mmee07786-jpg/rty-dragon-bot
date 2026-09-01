@@ -3,10 +3,9 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import random
 
-# قاموس لحفظ بيانات الأعضاء والتحكم
 server_levels = {}
-top_channels = {}  # {guild_id: channel_id}
-top_messages = {}  # {guild_id: custom_message}
+top_channels = {}
+top_messages = {}
 
 class Leveling(commands.Cog):
     def __init__(self, bot):
@@ -16,7 +15,6 @@ class Leveling(commands.Cog):
     def cog_unload(self):
         self.weekly_leaderboard_loop.cancel()
 
-    # نظام حساب الـ XP والفلل عند كتابة رسالة
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot or not message.guild:
@@ -48,7 +46,9 @@ class Leveling(commands.Cog):
 
     @app_commands.command(name="rank", description="معرفة لفلك الحالي ونقاط الـ XP")
     async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
-        await interaction.response.defer()
+        # الاستجابة الفورية لمنع خطأ The application did not respond
+        await interaction.response.defer(ephemeral=False)
+        
         target = member or interaction.user
         guild_id = interaction.guild.id
 
@@ -73,14 +73,13 @@ class Leveling(commands.Cog):
 
     @app_commands.command(name="leaderboard", description="عرض أفضل 10 أعضاء متفاعلين في السيرفر")
     async def leaderboard(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=False)
         guild_id = interaction.guild.id
 
         if guild_id not in server_levels or not server_levels[guild_id]:
             await interaction.followup.send("لا توجد بيانات تفاعل مسجلة حتى الآن! ❌")
             return
 
-        # جلب أفضل 10 أعضاء
         sorted_users = sorted(
             server_levels[guild_id].items(),
             key=lambda item: (item[1]["level"], item[1]["xp"]),
@@ -102,7 +101,6 @@ class Leveling(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-    # أمر لتخصيص قناة إرسال التوبات الأسبوعية
     @app_commands.command(name="settopchannel", description="تحديد القناة التي سيتم إرسال توبات التفاعل فيها أسبوعياً")
     @app_commands.describe(channel="اختر القناة المخصصة")
     @app_commands.checks.has_permissions(administrator=True)
@@ -110,7 +108,6 @@ class Leveling(commands.Cog):
         top_channels[interaction.guild.id] = channel.id
         await interaction.response.send_message(f"✅ | تم تعيين قناة التوبات بنجاح إلى {channel.mention}!", ephemeral=True)
 
-    # أمر لتخصيص نص رسالة التوب الأسبوعي
     @app_commands.command(name="settopmessage", description="تخصيص الرسالة التي ترافق إعلان التوب الأسبوعي")
     @app_commands.describe(message="اكتب نص الرسالة الجديد")
     @app_commands.checks.has_permissions(administrator=True)
@@ -118,13 +115,11 @@ class Leveling(commands.Cog):
         top_messages[interaction.guild.id] = message
         await interaction.response.send_message(f"✅ | تم حفظ رسالة التوب الجديدة بنجاح!", ephemeral=True)
 
-    # مهام تلقائية تُنفذ كل أسبوع (168 ساعة = 7 أيام) لإرسال التوب وتصفير النقاط
     @tasks.loop(hours=168)
-    async def weekly_leaderboard_loop(self, interaction=None):
+    async def weekly_leaderboard_loop(self):
         for guild in self.bot.guilds:
             guild_id = guild.id
             if guild_id in server_levels and server_levels[guild_id]:
-                # البحث عن الشخص الأكثر تفاعلاً
                 top_user_id = max(server_levels[guild_id], key=lambda uid: (server_levels[guild_id][uid]["level"], server_levels[guild_id][uid]["xp"]))
                 top_member = guild.get_member(top_user_id)
                 
@@ -142,7 +137,6 @@ class Leveling(commands.Cog):
                         
                         await channel.send(embed=embed)
                 
-                # تصفير النقاط لبدء أسبوع جديد وعادل
                 server_levels[guild_id] = {}
 
     @weekly_leaderboard_loop.before_loop
@@ -151,4 +145,3 @@ class Leveling(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Leveling(bot))
-
