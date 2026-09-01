@@ -27,7 +27,7 @@ bot = MyBot()
 @bot.event
 async def on_ready():
     print(f"تم تسجيل الدخول بنجاح باسم: {bot.user}")
-    print("البوت جاهز ويعمل بكفاءة عالية على السحابة! 🚀")
+    print("البوت يعمل بكفاءة وجاهز للأوامر! 🚀")
     await bot.change_presence(activity=discord.Game(name="I see you"))
 
 @bot.event
@@ -48,7 +48,6 @@ async def on_guild_join(guild):
     except Exception as e:
         print(f"خطأ في إرسال رسالة الترحيب: {e}")
 
-# نظام التلفيل والتفاعل الأسبوعي التلقائي
 @bot.event
 async def on_message(message):
     if message.author.bot or not message.guild:
@@ -73,20 +72,14 @@ async def on_message(message):
 
 server_webhooks = {}
 
-@bot.tree.command(name="setwebhook")
-@app_commands.describe(channel="القسم (القناة) الذي ستُرسل فيه توبات التفاعل أسبوعياً", url="رابط الويب هوك الخاص بالقناة")
+@bot.tree.command(name="setwebhook", description="تعيين ويب هوك لتوب التفاعل الأسبوعي")
+@app_commands.describe(channel="القناة", url="رابط الويب هوك")
 @app_commands.checks.has_permissions(administrator=True)
 async def set_webhook(interaction: discord.Interaction, channel: discord.TextChannel, url: str):
     server_webhooks[interaction.guild.id] = url
-    await interaction.response.send_message(f"✅ | تم حفظ رابط الويب هوك بنجاح للقسم {channel.mention}! سيتم إرسال توب التفاعل تلقائياً بعد مرور أسبوع من الآن.", ephemeral=True)
+    await interaction.response.send_message(f"✅ | تم حفظ رابط الويب هوك بنجاح للقناة {channel.mention}!", ephemeral=True)
 
-@set_webhook.error
-async def set_webhook_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
-        if not interaction.response.is_done():
-            await interaction.response.send_message("عذراً، هذا الأمر مخصص للإداريين فقط! ❌", ephemeral=True)
-
-@bot.tree.command(name="itzf18")
+@bot.tree.command(name="itzf18", description="معلومات عن البوت")
 async def slash_itzf18(interaction: discord.Interaction):
     await interaction.response.send_message("ترا ادري بيك تجرب، ليش ما عندك معرفه بالبوتات؟")
 
@@ -101,18 +94,13 @@ async def weekly_leaderboard_loop():
             if top_member and guild_id in server_webhooks:
                 webhook_url = server_webhooks[guild_id]
                 message_content = f"الف مبروك {top_member.mention} انت الاكثر تفاعل بالسيرفر 💥🔥💯"
-                
-                payload = {
-                    "content": message_content
-                }
-                
+                payload = {"content": message_content}
                 try:
                     async with aiohttp.ClientSession() as session:
                         async with session.post(webhook_url, json=payload) as resp:
                             pass
                 except Exception as e:
                     print(f"خطأ في إرسال الويب هوك: {e}")
-            
             weekly_activity[guild_id] = {}
 
 @weekly_leaderboard_loop.before_loop
@@ -147,31 +135,11 @@ class TicketButtonView(discord.ui.View):
 
         embed = discord.Embed(
             title="🎫 | تذكرة دعم فني جديدة",
-            description=(
-                f"مرحباً بك {member.mention}!\n"
-                "تم فتح هذه التذكرة الخاصة لك بنجاح.\n\n"
-                "يرجى كتابة مشكلتك أو طلبك بالتفصيل، وسيتم الرد عليك من قبل الإدارة قريباً.\n"
-                "⚠️ **ملاحظة:** إذا لم يتم إرسال أي رسالة خلال **ساعة كاملة**، سيتم إغلاق التذكرة تلقائياً.\n"
-            ),
+            description=f"مرحباً بك {member.mention}!\nتم فتح هذه التذكرة الخاصة لك بنجاح.\nيرجى كتابة مشكلتك أو طلبك بالتفصيل.",
             color=0x000000
         )
-        embed.set_footer(text=f"Requested by {member.name}", icon_url=member.display_avatar.url)
-
         await ticket_channel.send(content=f"{member.mention}", embed=embed, view=CloseTicketButtonView())
         await interaction.response.send_message(f"تم فتح تذكرتك بنجاح: {ticket_channel.mention} ✅", ephemeral=True)
-
-        async def check_inactivity():
-            try:
-                def check(m):
-                    return m.channel == ticket_channel and not m.author.bot
-                await bot.wait_for('message', timeout=3600.0, check=check)
-            except asyncio.TimeoutError:
-                try:
-                    await ticket_channel.delete()
-                except:
-                    pass
-
-        bot.loop.create_task(check_inactivity())
 
 class CloseTicketButtonView(discord.ui.View):
     def __init__(self):
@@ -182,7 +150,6 @@ class CloseTicketButtonView(discord.ui.View):
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("عذراً، زر إغلاق التكت مخصص للإداريين فقط! ❌", ephemeral=True)
             return
-
         await interaction.response.send_message("جاري إغلاق وحذف التذكرة خلال 3 ثوانٍ... ⏱️")
         await asyncio.sleep(3)
         try:
@@ -190,45 +157,35 @@ class CloseTicketButtonView(discord.ui.View):
         except:
             pass
 
-@bot.tree.command(name="ticket")
+@bot.tree.command(name="ticket", description="إنشاء لوحة التذاكر")
+@app_commands.describe(message="رسالة اللوحة")
 @app_commands.checks.has_permissions(administrator=True)
 async def slash_ticket(interaction: discord.Interaction, message: str):
     await interaction.response.defer(ephemeral=True)
     embed = discord.Embed(title="🎫 | قسم تذاكر الدعم الفني", description=message, color=0x000000)
-    embed.set_footer(text=f"Server Support • {interaction.guild.name}")
     await interaction.channel.send(embed=embed, view=TicketButtonView())
     await interaction.followup.send("تم إرسال لوحة التكتات بنجاح ✅", ephemeral=True)
 
-@slash_ticket.error
-async def slash_ticket_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
-        if not interaction.response.is_done():
-            await interaction.response.send_message("عذراً، هذا الأمر مخصص للإداريين فقط! ❌", ephemeral=True)
-
-@bot.tree.command(name="kick")
+# الأوامر الإدارية مع معالجة الأخطاء الدقيقة لمنع توقف الاستجابة
+@bot.tree.command(name="kick", description="طرد عضو من السيرفر")
+@app_commands.describe(member="العضو المراد طرده", reason="السبب")
 @app_commands.checks.has_permissions(kick_members=True)
 async def slash_kick(interaction: discord.Interaction, member: discord.Member, reason: str = "لا يوجد سبب"):
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=False)
     try:
         await member.kick(reason=reason)
         await interaction.followup.send(f"تم طرد العضو {member.mention} بنجاح ✅ (السبب: {reason})")
-    except discord.Forbidden:
-        await interaction.followup.send("فشل الإجراء: تأكد من صلاحيات البوت وترتيب رتبته ❌", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"فشل الإجراء ❌. تأكد من صلاحيات البوت وترتيب رتبته.\nالخطأ: `{e}`", ephemeral=True)
 
-@slash_kick.error
-async def slash_kick_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
-        if not interaction.response.is_done():
-            await interaction.response.send_message("عذراً، لا تمتلك صلاحية طرد الأعضاء! ❌", ephemeral=True)
-
-@bot.tree.command(name="timeout")
+@bot.tree.command(name="timeout", description="إسكات عضو مؤقتاً")
+@app_commands.describe(member="العضو", time_input="المدة مثل 10m أو 1h", reason="السبب")
 @app_commands.checks.has_permissions(moderate_members=True)
 async def slash_timeout(interaction: discord.Interaction, member: discord.Member, time_input: str, reason: str = "لا يوجد سبب"):
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=False)
     try:
         time_input = time_input.lower().strip()
         minutes = 0
-
         if time_input.isdigit():
             minutes = int(time_input)
         elif time_input.endswith('m'):
@@ -238,38 +195,27 @@ async def slash_timeout(interaction: discord.Interaction, member: discord.Member
         elif time_input.endswith('d'):
             minutes = int(time_input[:-1]) * 1440
         else:
-            await interaction.followup.send("صيغة الوقت غير صحيحة! ❌", ephemeral=True)
+            await interaction.followup.send("صيغة الوقت غير صحيحة! استعمل m للدقائق أو h للساعات ❌", ephemeral=True)
             return
 
         duration = discord.utils.utcnow() + datetime.timedelta(minutes=minutes)
         await member.timeout(duration, reason=reason)
-        await interaction.followup.send(f"تم إعطاء تايم أوت للعضو {member.mention} بنجاح لمدة `{minutes} دقائق` ✅")
+        await interaction.followup.send(f"تم إعطاء تايم أوت للعضو {member.mention} لمدة `{minutes} دقائق` ✅")
     except Exception as e:
-        await interaction.followup.send(f"حدث خطأ: {e}", ephemeral=True)
+        await interaction.followup.send(f"حدث خطأ أثناء إعطاء التايم أوت: `{e}`", ephemeral=True)
 
-@slash_timeout.error
-async def slash_timeout_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
-        if not interaction.response.is_done():
-            await interaction.response.send_message("عذراً، لا تمتلك صلاحية إسكات الأعضاء! ❌", ephemeral=True)
-
-@bot.tree.command(name="ban")
+@bot.tree.command(name="ban", description="حظر عضو من السيرفر نهائياً")
+@app_commands.describe(member="العضو المراد حظره", reason="السبب")
 @app_commands.checks.has_permissions(ban_members=True)
 async def slash_ban(interaction: discord.Interaction, member: discord.Member, reason: str = "لا يوجد سبب"):
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=False)
     try:
         await member.ban(reason=reason)
-        await interaction.followup.send(f"تم حظر العضو {member.mention} نهائياً 🚷✅")
-    except:
-        await interaction.followup.send("فشل الإجراء ❌", ephemeral=True)
+        await interaction.followup.send(f"تم حظر العضو {member.mention} نهائياً 🚷✅ (السبب: {reason})")
+    except Exception as e:
+        await interaction.followup.send(f"فشل حظر العضو ❌. تأكد أن رتبة البوت أعلى من رتبة العضو المستهدف.\nالخطأ: `{e}`", ephemeral=True)
 
-@slash_ban.error
-async def slash_ban_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
-        if not interaction.response.is_done():
-            await interaction.response.send_message("عذراً، لا تمتلك صلاحية الحظر! ❌", ephemeral=True)
-
-@bot.tree.command(name="rank")
+@bot.tree.command(name="rank", description="عرض مستواك ونقاطك بالسيرفر")
 async def rank(interaction: discord.Interaction):
     guild_id = interaction.guild.id
     user_id = interaction.user.id
@@ -287,9 +233,23 @@ async def rank(interaction: discord.Interaction):
 async def ping(ctx):
     await ctx.send("Pong! البوت شغال 🚀")
 
-# قراءة التوكن بأمان من بيئة التشغيل في Railway
+# معالجة الأخطاء العامة للأذونات حتى لا يعلق البوت
+@slash_kick.error
+@slash_timeout.error
+@slash_ban.error
+@slash_ticket.error
+async def admin_errors(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingPermissions):
+        if interaction.response.is_done():
+            await interaction.followup.send("عذراً، لا تمتلك الصلاحيات الكافية لتنفيذ هذا الأمر! ❌", ephemeral=True)
+        else:
+            await interaction.response.send_message("عذراً، لا تمتلك الصلاحيات الكافية لتنفيذ هذا الأمر! ❌", ephemeral=True)
+    else:
+        print(f"خطأ غير متوقع في الأوامر: {error}")
+
 token = os.getenv("DISCORD_TOKEN")
 if token:
     bot.run(token)
 else:
     print("خطأ: لم يتم العثور على متغير DISCORD_TOKEN في إعدادات المنصة.")
+
