@@ -1,4 +1,4 @@
-import os
+ import os
 import asyncio
 import discord
 from discord.ext import commands
@@ -27,7 +27,7 @@ async def on_guild_join(guild):
                     "بوت عربي متكامل تم تصميمه ليجعل إدارة وحماية السيرفر أسهل وأمتع 🛡️\n\n"
                     "📋 **قائمة الأوامر وكيفية استخدامها:**\n"
                     "🔹 **1. أمر الطرد (`!k`):** `!k @user`\n"
-                    "🔹 **2. أمر الإسكات (`!t`):** `!t @user 22m` / `h6` / `d1`\n"
+                    "🔹 **2. أمر الإسكات (`!t`):** `!t @user <الوقت>` (مثال: `30m` أو `2h` أو `1d`)\n"
                     "🔹 **3. أمر الحظر (`!b`):** `!b @user`\n"
                     "🔹 **4. لوحة التكتات المخصصة:** `!ticket <نص الرسالة>`\n\n"
                     "جربني وما راح تندم، شكراً لثقتك ولانضمامك 🤍"
@@ -82,22 +82,18 @@ class TicketButtonView(discord.ui.View):
         sent_msg = await ticket_channel.send(content=f"{member.mention}", embed=embed, view=CloseTicketButtonView())
         await interaction.response.send_message(f"تم فتح تذكرتك بنجاح: {ticket_channel.mention} ✅", ephemeral=True)
 
-        # دالة الانتظار لمدة ساعة (3600 ثانية) لحذف التكت إذا لم يتفاعل العضو
         async def check_inactivity():
             try:
                 def check(m):
                     return m.channel == ticket_channel and not m.author.bot
 
-                # ينتظر رسالة من العضو لمدة ساعة كاملة
                 await bot.wait_for('message', timeout=3600.0, check=check)
             except asyncio.TimeoutError:
-                # إذا انقضت الساعة ولم يكتب شيئاً، يحذف القناة
                 try:
                     await ticket_channel.delete()
                 except:
                     pass
 
-        # تشغيل المراقب بالخلفية
         bot.loop.create_task(check_inactivity())
 
 class CloseTicketButtonView(discord.ui.View):
@@ -142,7 +138,7 @@ async def ticket_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("عذراً، هذا الأمر مخصص للإداريين فقط لإرسال لوحة التكتات ❌", delete_after=5)
 
-# --- الأوامر الإدارية ---
+# --- الأوامر الإدارية (محمية بالكامل) ---
 @bot.command(name="k")
 @commands.has_permissions(kick_members=True)
 async def kick_member(ctx, member: discord.Member, *, reason=None):
@@ -155,7 +151,7 @@ async def kick_member(ctx, member: discord.Member, *, reason=None):
 @kick_member.error
 async def kick_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send("عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الطرد ❌")
+        await ctx.send("عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الطرد (يتطلب صلاحية Kick Members) ❌")
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.send("الرجاء كتابة الأمر بشكل صحيح `!k @user` ❌")
 
@@ -166,60 +162,32 @@ async def timeout_member(ctx, member: discord.Member, time_str: str, *, reason=N
         time_str = time_str.lower().strip()
         minutes_total = 0
 
+        # يتيح للإداري اختيار الوقت بحرية (مثال: 30m للدقائق، 2h للساعات، 1d للأيام)
         if time_str.endswith('m'):
-            val = int(time_str[:-1])
-            if 1 <= val <= 50:
-                minutes_total = val
-            else:
-                await ctx.send("خطأ: الدقائق يجب أن تكون بين **1 و 50** دقيقة فقط! ❌")
-                return
-        elif time_str.startswith('h'):
-            val = int(time_str[1:])
-            if val >= 5:
-                minutes_total = val * 60
-            else:
-                await ctx.send("خطأ: الحد الأدنى للساعات هو **5 ساعات** فما فوق! ❌")
-                return
+            minutes_total = int(time_str[:-1])
         elif time_str.endswith('h'):
-            val = int(time_str[:-1])
-            if val >= 5:
-                minutes_total = val * 60
-            else:
-                await ctx.send("خطأ: الحد الأدنى للساعات هو **5 ساعات** فما فوق! ❌")
-                return
-        elif time_str.startswith('d'):
-            val = int(time_str[1:])
-            if 1 <= val <= 2:
-                minutes_total = val * 24 * 60
-            else:
-                await ctx.send("خطأ: الحد الأقصى للأيام هو **يومين فقط (d1 أو d2)**! ❌")
-                return
+            minutes_total = int(time_str[:-1]) * 60
         elif time_str.endswith('d'):
-            val = int(time_str[:-1])
-            if 1 <= val <= 2:
-                minutes_total = val * 24 * 60
-            else:
-                await ctx.send("خطأ: الحد الأقصى للأيام هو **يومين فقط (d1 أو d2)**! ❌")
-                return
+            minutes_total = int(time_str[:-1]) * 24 * 60
         else:
-            await ctx.send("صيغة الوقت غير صحيحة! استخدم:\n`!t @user 22m`\n`!t @user h6`\n`!t @user d1` ❌")
+            await ctx.send("صيغة الوقت غير صحيحة! يرجى استخدام الحروف الإنجليزية:\n`!t @user 30m` (دقائق)\n`!t @user 2h` (ساعات)\n`!t @user 1d` (أيام) ❌")
             return
 
         duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes_total)
         await member.timeout(duration, reason=reason)
-        await ctx.send(f"تم إعطاء تايم أوت للعضو {member.mention} بنجاح مدة ` {time_str} ` ✅")
+        await ctx.send(f"تم إعطاء تايم أوت للعضو {member.mention} بنجاح لمدة ` {time_str} ` ✅")
 
     except ValueError:
-        await ctx.send("خطأ في قراءة الأرقام، تأكد من كتابة الأمر بالشكل الصحيح ❌")
+        await ctx.send("خطأ في قراءة الأرقام، تأكد من كتابة الوقت بشكل صحيح (مثال: `30m`) ❌")
     except discord.Forbidden:
         await ctx.send("يجب إعطاء البوت صلاحيات كافية لاستخدام هذا الإجراء ❌")
 
 @timeout_member.error
 async def timeout_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send("عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر التايم أوت ❌")
+        await ctx.send("عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الإسكات (يتطلب صلاحية Moderate Members) ❌")
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send("الرجاء كتابة الأمر بشكل صحيح مع الوقت (مثال: `!t @user 22m`) ❌")
+        await ctx.send("الرجاء كتابة الأمر بشكل صحيح مع تحديد الوقت (مثال: `!t @user 30m`) ❌")
 
 @bot.command(name="b")
 @commands.has_permissions(ban_members=True)
@@ -233,7 +201,7 @@ async def ban_member(ctx, member: discord.Member, *, reason=None):
 @ban_member.error
 async def ban_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send("عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الحظر ❌")
+        await ctx.send("عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الحظر (يتطلب صلاحية Ban Members) ❌")
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.send("الرجاء كتابة الأمر بشكل صحيح `!b @user` ❌")
 
