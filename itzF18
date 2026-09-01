@@ -4,12 +4,46 @@ from discord.ext import commands
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
     print(f"تم تشغيل البوت بنجاح باسم {bot.user}")
     await bot.change_presence(activity=discord.Game(name="I see you"))
+
+@bot.event
+async def on_guild_join(guild):
+    try:
+        owner = guild.owner
+        if owner:
+            # إنشاء الـ Embed بتصميم فخم مع شريط جانبي أسود
+            embed = discord.Embed(
+                title="✨ | هلا بيك نورت السيرفر",
+                description=(
+                    f"يا هلا فيك! شكراً لإضافتك بوت `itzF18` إلى سيرفرك **{guild.name}**.\n\n"
+                    "بوت عربي متكامل تم تصميمه ليجعل إدارة وسماية السيرفر أسهل وأمتع 🛡️\n\n"
+                    "📋 **قائمة الأوامر وكيفية استخدامها:**\n"
+                    "🔹 **1. أمر الطرد (`!k`):**\n"
+                    "   - الاستخدام: `!k @user`\n"
+                    "   - الوظيفة: طرد العضو المخالف.\n\n"
+                    "🔹 **2. أمر الإسكات (`!t`):**\n"
+                    "   - الاستخدام: `!t @user <الدقائق>`\n"
+                    "   - الوظيفة: تقييد وإسكات العضو لفترة محددة.\n\n"
+                    "🔹 **3. أمر الحظر (`!b`):**\n"
+                    "   - الاستخدام: `!b @user`\n"
+                    "   - الوظيفة: حظر العضو نهائياً من السيرفر.\n\n"
+                    "🚀 **تحديثات قادمة قريباً إن شاء الله:**\n"
+                    "نحن نعمل على تطوير ميزات وأوامر جديدة متطورة ترقبوها قريباً جداً!\n\n"
+                    "جربني وما راح تندم، شكراً لثقتك ولانضمامك لعائلتنا 🤍"
+                ),
+                color=0x000000  # اللون الأسود الفخم للشريط الجانبي
+            )
+            embed.set_footer(text="itzF18 Bot • 24/7 Online")
+            
+            await owner.send(embed=embed)
+    except Exception as e:
+        print(f"خطأ في إرسال رسالة الترحيب: {e}")
 
 @bot.command(name="k")
 @commands.has_permissions(kick_members=True)
