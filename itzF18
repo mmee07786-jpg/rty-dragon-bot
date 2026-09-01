@@ -20,6 +20,23 @@ async def kick_member(ctx, member: discord.Member, *, reason=None):
     except discord.Forbidden:
         await ctx.send("يجب إعطاء البوت صلاحيات كافية لاستخدام هذا الإجراء ❌")
 
+@kick_member.error
+async def kick_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الطرد ❌")
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("الرجاء كتابة الأمر بشكل صحيح `!k @user` ❌")
+
+@bot.command(name="t")
+@commands.has_permissions(moderate_members=True)
+async def timeout_member(ctx, member: discord.Member, minutes: int, *, reason=None):
+    try:
+        duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
+        await member.timeout(duration, reason=reason)
+        await ctx.send(f"تم إسكات العضو {member.mention} لمدة {minutes} دقائق ✅")
+    except discord.Forbidden:
+        await ctx.send("يجب إعطاء البوت صلاحيات كافية لاستخدام هذا الإجراء ❌")
+
 @timeout_member.error
 async def timeout_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
