@@ -1,1 +1,1 @@
-worker: python itzF18
+worker: python itzF18.py
