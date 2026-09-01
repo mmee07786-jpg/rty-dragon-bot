@@ -5,6 +5,8 @@ from discord.ext import commands
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
+intents.members = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
@@ -15,14 +17,13 @@ async def on_ready():
 @bot.event
 async def on_guild_join(guild):
     try:
-        owner = guild.owner
+        owner = guild.owner or await guild.fetch_owner()
         if owner:
-            # إنشاء الـ Embed بتصميم فخم مع شريط جانبي أسود
             embed = discord.Embed(
                 title="✨ | هلا بيك نورت السيرفر",
                 description=(
                     f"يا هلا فيك! شكراً لإضافتك بوت `itzF18` إلى سيرفرك **{guild.name}**.\n\n"
-                    "بوت عربي متكامل تم تصميمه ليجعل إدارة وسماية السيرفر أسهل وأمتع 🛡️\n\n"
+                    "بوت عربي متكامل تم تصميمه ليجعل إدارة وحماية السيرفر أسهل وأمتع 🛡️\n\n"
                     "📋 **قائمة الأوامر وكيفية استخدامها:**\n"
                     "🔹 **1. أمر الطرد (`!k`):**\n"
                     "   - الاستخدام: `!k @user`\n"
@@ -35,12 +36,11 @@ async def on_guild_join(guild):
                     "   - الوظيفة: حظر العضو نهائياً من السيرفر.\n\n"
                     "🚀 **تحديثات قادمة قريباً إن شاء الله:**\n"
                     "نحن نعمل على تطوير ميزات وأوامر جديدة متطورة ترقبوها قريباً جداً!\n\n"
-                    "جربني وما راح تندم، شكراً لثقتك ولانضمامك لعائلتنا 🤍"
+                    "جربني وما راح تندم، شكراً لثقتك ولانضمامك 🤍"
                 ),
-                color=0x000000  # اللون الأسود الفخم للشريط الجانبي
+                color=0x000000  # الشريط الجانبي باللون الأسود
             )
             embed.set_footer(text="itzF18 Bot • 24/7 Online")
-            
             await owner.send(embed=embed)
     except Exception as e:
         print(f"خطأ في إرسال رسالة الترحيب: {e}")
