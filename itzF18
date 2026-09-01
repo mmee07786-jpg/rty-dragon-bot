@@ -9,13 +9,11 @@ intents.message_content = True
 intents.guilds = True
 intents.members = True
 
-# استخدام Bot عادي مع دمج مزامنة أوامر السلاش
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # مزامنة أوامر السلاش مع ديسكورد تلقائياً
         await self.tree.sync()
         print("تم مزامنة أوامر السلاش (Slash Commands) بنجاح!")
 
@@ -35,13 +33,13 @@ async def on_guild_join(guild):
                 title="✨ | هلا بيك نورت السيرفر",
                 description=(
                     f"يا هلا فيك! شكراً لإضافتك بوت `itzF18` إلى سيرفرك **{guild.name}**.\n\n"
-                    "البوت يدعم الآن **أوامر السلاش ( / )** لسهولة وسرعة الاستخدام! 🛡️\n\n"
+                    "البوت يدعم أوامر السلاش ( / ) بكفاءة عالية 🛡️\n\n"
                     "📋 **أوامر السلاش المتاحة:**\n"
-                    "🔹 **1. الطرد:** `/kick @user`\n"
-                    "🔹 **2. الإسكات (تايم أوت):** `/timeout @user <الوقت>` (اكتب أي رقم بحرية، مثلاً: `5` دقائق أو `2h` ساعات)\n"
-                    "🔹 **3. الحظر:** `/ban @user`\n"
-                    "🔹 **4. لوحة التكتات:** `/ticket <نص الرسالة>`\n\n"
-                    "جربني وما راح تندم، شكراً لثقتك ولانضمامك 🤍"
+                    "🔹 `/kick` - طرد عضو\n"
+                    "🔹 `/timeout` - إعطاء تايم أوت (بأي وقت تختاره حراً)\n"
+                    "🔹 `/ban` - حظر عضو\n"
+                    "🔹 `/ticket` - لوحة التكتات\n\n"
+                    "شكراً لثقتك ولانضمامك 🤍"
                 ),
                 color=0x000000
             )
@@ -124,13 +122,13 @@ class CloseTicketButtonView(discord.ui.View):
         except:
             pass
 
-# --- أوامر السلاش (Slash Commands) ---
+# --- أوامر السلاش (Slash Commands) مع منع مشكلة عدم الاستجابة ---
 
-# 1. أمر التكتات (سلاش)
 @bot.tree.command(name="ticket", description="إرسال لوحة تذاكر الدعم الفني")
 @app_commands.describe(message="النص الذي سيظهر داخل لوحة التكتات")
 @app_commands.checks.has_permissions(administrator=True)
 async def slash_ticket(interaction: discord.Interaction, message: str):
+    await interaction.response.defer(ephemeral=True)
     embed = discord.Embed(
         title="🎫 | قسم تذاكر الدعم الفني",
         description=message,
@@ -139,38 +137,43 @@ async def slash_ticket(interaction: discord.Interaction, message: str):
     embed.set_footer(text=f"Server Support • {interaction.guild.name}")
     
     await interaction.channel.send(embed=embed, view=TicketButtonView())
-    await interaction.response.send_message("تم إرسال لوحة التكتات بنجاح ✅", ephemeral=True)
+    await interaction.followup.send("تم إرسال لوحة التكتات بنجاح ✅", ephemeral=True)
 
 @slash_ticket.error
 async def slash_ticket_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
-        await interaction.response.send_message("عذراً، هذا الأمر مخصص للإداريين فقط! ❌", ephemeral=True)
+        if not interaction.response.is_done():
+            await interaction.response.send_message("عذراً، هذا الأمر مخصص للإداريين فقط! ❌", ephemeral=True)
 
-# 2. أمر الطرد (سلاش)
 @bot.tree.command(name="kick", description="طرد عضو من السيرفر")
 @app_commands.describe(member="العضو المراد طرده", reason="سبب الطرد (اختياري)")
 @app_commands.checks.has_permissions(kick_members=True)
 async def slash_kick(interaction: discord.Interaction, member: discord.Member, reason: str = "لا يوجد سبب"):
+    await interaction.response.defer()
     try:
         await member.kick(reason=reason)
-        await interaction.response.send_message(f"تم طرد العضو {member.mention} بنجاح ✅ (السبب: {reason})")
+        await interaction.followup.send(f"تم طرد العضو {member.mention} بنجاح ✅ (السبب: {reason})")
     except discord.Forbidden:
-        await interaction.response.send_message("فشل الإجراء: تأكد من صلاحيات البوت وترتيب رتبته ❌", ephemeral=True)
+        await interaction.followup.send("فشل الإجراء: تأكد من صلاحيات البوت وترتيب رتبته ❌", ephemeral=True)
 
 @slash_kick.error
 async def slash_kick_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
-        await interaction.response.send_message("عذراً، لا تمتلك صلاحية طرد الأعضاء! ❌", ephemeral=True)
+        if not interaction.response.is_done():
+            await interaction.response.send_message("عذراً، لا تمتلك صلاحية طرد الأعضاء! ❌", ephemeral=True)
 
-# 3. أمر التايم أوت الحر (سلاش) - يدعم أي رقم تختاره
+# أمر التايم أوت المعدل لمنع تعليق التطبيق
 @bot.tree.command(name="timeout", description="إعطاء تايم أوت لعضو لفترة زمنية محددة")
 @app_commands.describe(
     member="العضو المراد إسكاته",
-    time_input="الوقت (اكتب رقماً مجرداً للدقائق مثل 10، أو مع حرف مثل 2h للساعات أو 1d للأيام)",
+    time_input="الوقت (مثال: 10 للدقائق، 2h للساعات، 1d للأيام)",
     reason="السبب (اختياري)"
 )
 @app_commands.checks.has_permissions(moderate_members=True)
 async def slash_timeout(interaction: discord.Interaction, member: discord.Member, time_input: str, reason: str = "لا يوجد سبب"):
+    # حجز استجابة فورية لمنع خطأ "Application did not respond"
+    await interaction.response.defer()
+    
     try:
         time_input = time_input.lower().strip()
         minutes = 0
@@ -184,38 +187,42 @@ async def slash_timeout(interaction: discord.Interaction, member: discord.Member
         elif time_input.endswith('d'):
             minutes = int(time_input[:-1]) * 1440
         else:
-            await interaction.response.send_message("صيغة الوقت غير صحيحة! اكتب رقماً صافياً (مثل `10` للدقائق) أو مع حرف (`2h` للساعات) ❌", ephemeral=True)
+            await interaction.followup.send("صيغة الوقت غير صحيحة! اكتب رقماً صافياً (مثل `10` للدقائق) أو مع حرف (`2h` للساعات) ❌", ephemeral=True)
             return
 
         duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
         await member.timeout(duration, reason=reason)
-        await interaction.response.send_message(f"تم إعطاء تايم أوت للعضو {member.mention} بنجاح لمدة `{minutes} دقائق` ✅")
+        await interaction.followup.send(f"تم إعطاء تايم أوت للعضو {member.mention} بنجاح لمدة `{minutes} دقائق` ✅")
 
     except ValueError:
-        await interaction.response.send_message("خطأ: يرجى كتابة رقم صحيح للوقت ❌", ephemeral=True)
+        await interaction.followup.send("خطأ: يرجى كتابة رقم صحيح للوقت ❌", ephemeral=True)
     except discord.Forbidden:
-        await interaction.response.send_message("فشل الإجراء: تأكد أن رتبة البوت أعلى من رتبة العضو ❌", ephemeral=True)
+        await interaction.followup.send("فشل الإجراء: تأكد أن رتبة البوت أعلى من رتبة العضو ❌", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"حدث خطأ غير متوقع: {e}", ephemeral=True)
 
 @slash_timeout.error
 async def slash_timeout_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
-        await interaction.response.send_message("عذراً، لا تمتلك صلاحية إسكات الأعضاء (Moderate Members) ❌", ephemeral=True)
+        if not interaction.response.is_done():
+            await interaction.response.send_message("عذراً، لا تمتلك صلاحية إسكات الأعضاء (Moderate Members) ❌", ephemeral=True)
 
-# 4. أمر الحظر (سلاش)
 @bot.tree.command(name="ban", description="حظر عضو من السيرفر نهائياً")
 @app_commands.describe(member="العضو المراد حظره", reason="سبب الحظر (اختياري)")
 @app_commands.checks.has_permissions(ban_members=True)
 async def slash_ban(interaction: discord.Interaction, member: discord.Member, reason: str = "لا يوجد سبب"):
+    await interaction.response.defer()
     try:
         await member.ban(reason=reason)
-        await interaction.response.send_message(f"تم حظر العضو {member.mention} نهائياً 🚷✅ (السبب: {reason})")
+        await interaction.followup.send(f"تم حظر العضو {member.mention} نهائياً 🚷✅ (السبب: {reason})")
     except discord.Forbidden:
-        await interaction.response.send_message("فشل الإجراء: تأكد من صلاحيات البوت ❌", ephemeral=True)
+        await interaction.followup.send("فشل الإجراء: تأكد من صلاحيات البوت ❌", ephemeral=True)
 
 @slash_ban.error
 async def slash_ban_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
-        await interaction.response.send_message("عذراً، لا تمتلك صلاحية حظر الأعضاء! ❌", ephemeral=True)
+        if not interaction.response.is_done():
+            await interaction.response.send_message("عذراً، لا تمتلك صلاحية حظر الأعضاء! ❌", ephemeral=True)
 
 token = os.environ.get("DISCORD_TOKEN")
 if token:
