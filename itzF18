@@ -1,5 +1,6 @@
 import os
 import asyncio
+import datetime
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -33,13 +34,11 @@ async def on_guild_join(guild):
                 title="✨ | هلا بيك نورت السيرفر",
                 description=(
                     f"يا هلا فيك! شكراً لإضافتك بوت `itzF18` إلى سيرفرك **{guild.name}**.\n\n"
-                    "البوت يدعم أوامر السلاش ( / ) بكفاءة عالية 🛡️\n\n"
-                    "📋 **أوامر السلاش المتاحة:**\n"
-                    "🔹 `/kick` - طرد عضو\n"
-                    "🔹 `/timeout` - إعطاء تايم أوت (بأي وقت تختاره حراً)\n"
-                    "🔹 `/ban` - حظر عضو\n"
-                    "🔹 `/ticket` - لوحة التكتات\n\n"
-                    "شكراً لثقتك ولانضمامك 🤍"
+                    "بوت حماية وإدارة سيرفرات متكامل يعمل بأوامر السلاش (`/`) السريعة والمطورة 🛡️\n\n"
+                    "📋 **وظائف البوت الأساسية:**\n"
+                    "🔹 **إدارة الأعضاء:** طرد، حظر، وإسكات (تايم أوت) بحرية تامة وبدون قيود.\n"
+                    "🔹 **نظام التكتات:** لوحة تذاكر دعم فني مخصصة بأزرار تفاعلية.\n\n"
+                    "البوت جاهز لخدمتك وحماية سيرفرك بكفاءة عالية 🤍"
                 ),
                 color=0x000000
             )
@@ -82,7 +81,6 @@ class TicketButtonView(discord.ui.View):
                 "تم فتح هذه التذكرة الخاصة لك بنجاح.\n\n"
                 "يرجى كتابة مشكلتك أو طلبك بالتفصيل، وسيتم الرد عليك من قبل الإدارة قريباً.\n"
                 "⚠️ **ملاحظة:** إذا لم يتم إرسال أي رسالة خلال **ساعة كاملة**، سيتم إغلاق التذكرة تلقائياً.\n"
-                "زر إغلاق التكت مخصص للإداريين فقط."
             ),
             color=0x000000
         )
@@ -122,20 +120,15 @@ class CloseTicketButtonView(discord.ui.View):
         except:
             pass
 
-# --- أوامر السلاش (Slash Commands) مع منع مشكلة عدم الاستجابة ---
+# --- أوامر السلاش (Slash Commands) ---
 
 @bot.tree.command(name="ticket", description="إرسال لوحة تذاكر الدعم الفني")
 @app_commands.describe(message="النص الذي سيظهر داخل لوحة التكتات")
 @app_commands.checks.has_permissions(administrator=True)
 async def slash_ticket(interaction: discord.Interaction, message: str):
     await interaction.response.defer(ephemeral=True)
-    embed = discord.Embed(
-        title="🎫 | قسم تذاكر الدعم الفني",
-        description=message,
-        color=0x000000
-    )
+    embed = discord.Embed(title="🎫 | قسم تذاكر الدعم الفني", description=message, color=0x000000)
     embed.set_footer(text=f"Server Support • {interaction.guild.name}")
-    
     await interaction.channel.send(embed=embed, view=TicketButtonView())
     await interaction.followup.send("تم إرسال لوحة التكتات بنجاح ✅", ephemeral=True)
 
@@ -162,7 +155,6 @@ async def slash_kick_error(interaction: discord.Interaction, error: app_commands
         if not interaction.response.is_done():
             await interaction.response.send_message("عذراً، لا تمتلك صلاحية طرد الأعضاء! ❌", ephemeral=True)
 
-# أمر التايم أوت المعدل لمنع تعليق التطبيق
 @bot.tree.command(name="timeout", description="إعطاء تايم أوت لعضو لفترة زمنية محددة")
 @app_commands.describe(
     member="العضو المراد إسكاته",
@@ -171,7 +163,6 @@ async def slash_kick_error(interaction: discord.Interaction, error: app_commands
 )
 @app_commands.checks.has_permissions(moderate_members=True)
 async def slash_timeout(interaction: discord.Interaction, member: discord.Member, time_input: str, reason: str = "لا يوجد سبب"):
-    # حجز استجابة فورية لمنع خطأ "Application did not respond"
     await interaction.response.defer()
     
     try:
@@ -190,7 +181,7 @@ async def slash_timeout(interaction: discord.Interaction, member: discord.Member
             await interaction.followup.send("صيغة الوقت غير صحيحة! اكتب رقماً صافياً (مثل `10` للدقائق) أو مع حرف (`2h` للساعات) ❌", ephemeral=True)
             return
 
-        duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
+        duration = discord.utils.utcnow() + datetime.timedelta(minutes=minutes)
         await member.timeout(duration, reason=reason)
         await interaction.followup.send(f"تم إعطاء تايم أوت للعضو {member.mention} بنجاح لمدة `{minutes} دقائق` ✅")
 
