@@ -6,6 +6,7 @@ import random
 server_levels = {}
 top_channels = {}
 top_messages = {}
+level_channels = {}  # قاموس لحفظ روم إرسال رسائل التلفيل لكل سيرفر
 
 class Leveling(commands.Cog):
     def __init__(self, bot):
@@ -39,14 +40,20 @@ class Leveling(commands.Cog):
             user_data["level"] += 1
             new_level = user_data["level"]
             
+            # إرسال رسالة التلفيل في الروم المخصص إذا تم تعيينه، وإلا في نفس الروم
+            target_channel = message.channel
+            if guild_id in level_channels:
+                custom_channel = message.guild.get_channel(level_channels[guild_id])
+                if custom_channel:
+                    target_channel = custom_channel
+
             try:
-                await message.channel.send(f"🎉 مبروك {message.author.mention}! صعدت إلى **Level {new_level}** 🚀")
+                await target_channel.send(f"🎉 مبروك {message.author.mention}! صعدت إلى **Level {new_level}** 🚀")
             except:
                 pass
 
     @app_commands.command(name="rank", description="معرفة لفلك الحالي ونقاط الـ XP")
     async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
-        # الاستجابة الفورية لمنع خطأ The application did not respond
         await interaction.response.defer(ephemeral=False)
         
         target = member or interaction.user
@@ -100,6 +107,13 @@ class Leveling(commands.Cog):
         embed.set_footer(text=f"Server: {interaction.guild.name}")
 
         await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="setlevelchannel", description="تحديد القناة المخصصة لإرسال إشعارات صعود الفلل")
+    @app_commands.describe(channel="اختر القناة المخصصة للفلل")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setlevelchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        level_channels[interaction.guild.id] = channel.id
+        await interaction.response.send_message(f"✅ | تم تعيين قناة إشعارات التلفيل بنجاح إلى {channel.mention}!", ephemeral=True)
 
     @app_commands.command(name="settopchannel", description="تحديد القناة التي سيتم إرسال توبات التفاعل فيها أسبوعياً")
     @app_commands.describe(channel="اختر القناة المخصصة")
