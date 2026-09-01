@@ -4,7 +4,7 @@ from discord import app_commands
 import random
 import asyncio
 
-# --- واجهة قائمة الألعاب الرئيسية مع الأزرار ---
+# --- 1. قائمة الألعاب الرئيسية مع الأزرار ---
 class GamesMenu(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=60)
@@ -15,13 +15,13 @@ class GamesMenu(discord.ui.View):
             title="🎮 | ألعاب سيرفر itzF18 المتاحة",
             description=(
                 "اختر اللعبة التي تعجبك من الأوامر التالية:\n\n"
-                "🎯 **/roulette** - لعبة الروليت (تنتظر 15 ثانية، 4 لاعبين والاسف طرد)\n"
+                "🎯 **/roulette** - لعبة الروليت (تنتظر 15 ثانية، 4 لاعبين والخاسر ينطرد)\n"
+                "⚡ **/reflex** - لعبة الزر السريع وتغيير اللون\n"
                 "🐺 **/mafia** - توزيع أدوار المافيا السريعة\n"
                 "✂️ **/rps** - حجر، ورقة، مقص\n"
                 "❌ **/tictactoe** - لعبة إكس أو (Tic Tac Toe)\n"
                 "❓ **/wouldyourather** - لعبة لو خيروك\n"
-                "🟢 **/speedbutton** - أسرع شخص يضغط الزر الأخضر!\n"
-                "⚡ **/fasttype** - أسرع شخص يكتب الكلمة بدقة\n"
+                "⌨️ **/fasttype** - أسرع شخص يكتب الكلمة بدقة\n"
                 "🌍 **/flags** - تحدي تخمين الأعلام بنقاط مضاعفة"
             ),
             color=0x000000
@@ -29,7 +29,7 @@ class GamesMenu(discord.ui.View):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-# --- واجهة الانضمام للروليت ---
+# --- 2. واجهة الانضمام للروليت ---
 class RouletteJoinView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=15)
@@ -44,30 +44,58 @@ class RouletteJoinView(discord.ui.View):
             await interaction.response.send_message(f"✅ | تم انضمامك بنجاح للروليت! (المشاركون حتى الآن: {len(self.players)})", ephemeral=True)
 
 
-# --- واجهة زر السرعة الأخضر ---
-class SpeedButtonView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=15)
-        self.winner = None
+# --- 3. واجهة لعبة الزر السريع (Reflex) ---
+class ReflexButton(discord.ui.Button):
+    def __init__(self, label, is_target: bool):
+        super().__init__(label=label, style=discord.ButtonStyle.secondary)
+        self.is_target = is_target
 
-    @discord.ui.button(label="اضغط بسرعة!", style=discord.ButtonStyle.success, emoji="🟢")
-    async def speed_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.winner is None:
-            self.winner = interaction.user
+    async def callback(self, interaction: discord.Interaction):
+        view: ReflexView = self.view
+        if view.is_ended:
+            await interaction.response.send_message("انتهت اللعبة بالفعل!", ephemeral=True)
+            return
+
+        view.is_ended = True
+        if self.is_target:
+            view.winner = interaction.user
+            await interaction.response.edit_message(content=f"🎉 كفو عليك يا {interaction.user.mention}! سرعة بديهة أسطورية وفزت بالتحدي! ⚡", view=None)
+        else:
+            await interaction.response.edit_message(content=f"❌ أكلت هوا يا {interaction.user.mention}! ضغطت على الزر الخطأ! 💀", view=None)
+        view.stop()
+
+class ReflexView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=5.0)
+        self.winner = None
+        self.is_ended = False
+        self.target_index = random.randint(0, 3)
+        self.buttons_list = []
+        
+        for i in range(4):
+            is_target = (i == self.target_index)
+            btn = ReflexButton(label=f"زر {i+1}", is_target=is_target)
+            self.buttons_list.append(btn)
+            self.add_item(btn)
+
+    async def on_timeout(self):
+        if not self.is_ended:
+            self.is_ended = True
             for child in self.children:
                 child.disabled = True
-            await interaction.response.edit_message(content=f"🏆 | الفائز بـ أسرع ضغطة هو: {self.winner.mention}! كفو عليك ⚡", view=self)
-            self.stop()
-        else:
-            await interaction.response.send_message("لقد سبقك شخص آخر! هاردلك ❌", ephemeral=True)
+            try:
+                if self.message:
+                    await self.message.edit(content="⏱️ انتهى الوقت! محد ضغط على الزر المطلوب! 🥱", view=self)
+            except:
+                pass
 
 
-# --- ملف الألعاب الرئيسي (Cog) ---
+# --- ملف الألعاب الرئيسي (Cog) الشامل ---
 class Games(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # 1. قائمة الألعاب الرئيسية
+    # قائمة الألعاب
     @app_commands.command(name="games", description="عرض قائمة الألعاب التفاعلية في البوت")
     async def games_cmd(self, interaction: discord.Interaction):
         embed = discord.Embed(
@@ -77,7 +105,7 @@ class Games(commands.Cog):
         )
         await interaction.response.send_message(embed=embed, view=GamesMenu())
 
-    # 2. لعبة الروليت (15 ثانية، 4 لاعبين كحد أدنى، والخاسر ينطرد)
+    # لعبة الروليت (15 ثانية، 4 لاعبين، طرد الخاسر)
     @app_commands.command(name="roulette", description="لعبة الروليت: تنەتي 15 ثانية، تشترط 4 لاعبين، والخاسر ينطرد!")
     @app_commands.checks.has_permissions(kick_members=True)
     async def roulette(self, interaction: discord.Interaction):
@@ -117,7 +145,24 @@ class Games(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ | حدث خطأ أثناء محاولة الطرد: {e}")
 
-    # 3. لعبة حجر ورقة مقص
+    # لعبة الزر السريع (Reflex)
+    @app_commands.command(name="reflex", description="لعبة تفاعلية: ينتظر 3 ثانية ويتغير لون زر واحد فجأة ليتم الضغط عليه")
+    async def reflex(self, interaction: discord.Interaction):
+        await interaction.response.send_message("⚡ **جاري الاستعداد للتحدي... حضر أصابعك!** 🕹️")
+        await asyncio.sleep(random.uniform(2.0, 3.0))
+
+        view = ReflexView()
+        target_btn = view.buttons_list[view.target_index]
+        target_btn.style = discord.ButtonStyle.success
+        target_btn.label = "اضغطني بسرعة! 🔥"
+
+        try:
+            message = await interaction.followup.send("🚨 **تغير لون الزر! أسرع ضغطة تفوز!** 🏃‍♂️💨", view=view)
+            view.message = message
+        except Exception as e:
+            print(f"خطأ في إرسال اللعبة: {e}")
+
+    # لعبة حجر ورقة مقص
     @app_commands.command(name="rps", description="لعبة حجرة، ورقة، مقص")
     @app_commands.choices(choice=[
         app_commands.Choice(name="حجرة 🪨", value="rock"),
@@ -139,13 +184,7 @@ class Games(commands.Cog):
 
         await interaction.response.send_message(f"اختيارك: **{choices_ar[choice]}**\nاختيار البوت: **{choices_ar[bot_choice]}**\n\n**النتيجة:** {result}")
 
-    # 4. لعبة زر السرعة الأخضر
-    @app_commands.command(name="speedbutton", description="أسرع شخص يضغط الزر الأخضر يفوز بالمنشن!")
-    async def speedbutton(self, interaction: discord.Interaction):
-        view = SpeedButtonView()
-        await interaction.response.send_message("🟢 | التحدي بدأ! من سيضغط على الزر الأخضر أسرع؟", view=view)
-
-    # 5. لعبة لو خيروك
+    # لعبة لو خيروك
     @app_commands.command(name="wouldyourather", description="لعبة لو خيروك بين شيئين")
     async def wouldyourather(self, interaction: discord.Interaction):
         questions = [
@@ -158,14 +197,14 @@ class Games(commands.Cog):
         embed = discord.Embed(title="🤔 | لو خيروك", description=f"**{q}**", color=0x000000)
         await interaction.response.send_message(embed=embed)
 
-    # 6. لعبة المافيا
+    # لعبة المافيا
     @app_commands.command(name="mafia", description="توزيع أدوار المافيا السريعة بين الأعضاء")
     async def mafia(self, interaction: discord.Interaction):
         roles = ["مافيا 🦹‍♂️", "شرطي 👮‍♂️", "دكتور 💉", "مواطن بريء 🧑"]
         role = random.choice(roles)
         await interaction.response.send_message(f"🕵️‍♂️ | {interaction.user.mention} دورك في لعبة المافيا هو: **{role}**", ephemeral=True)
 
-    # 7. لعبة أسرع (سرعة الكتابة)
+    # لعبة أسرع (سرعة الكتابة)
     @app_commands.command(name="fasttype", description="أسرع شخص يكتب الكلمة التي يظهرها البوت يفوز!")
     async def fasttype(self, interaction: discord.Interaction):
         words = ["itzF18", "Discord", "Railway", "Python", "Gaming", "Vortex"]
@@ -178,11 +217,11 @@ class Games(commands.Cog):
 
         try:
             msg = await self.bot.wait_for('message', timeout=15.0, check=check)
-            await interaction.followup.send(f"🏆 | كفو {msg.author.mention}! كان الأسرع وككتب الكلمة بشكل صحيح وفاز بالترتيب!")
+            await interaction.followup.send(f"🏆 | كفو {msg.author.mention}! كان الأسرع وكتب الكلمة بشكل صحيح وفاز بالترتيب!")
         except asyncio.TimeoutError:
             await interaction.followup.send("⏰ | انتهى الوقت! محد كتب الكلمة بالسرعة المطلوبة.")
 
-    # 8. لعبة الأعلام (مع مكافأة مضاعفة للأعلام الصعبة)
+    # لعبة الأعلام
     @app_commands.command(name="flags", description="تحدي تخمين علم الدولة (كلما صعب العلم زادت الجائزة)")
     async def flags(self, interaction: discord.Interaction):
         flag_list = [
@@ -206,7 +245,7 @@ class Games(commands.Cog):
         except asyncio.TimeoutError:
             await interaction.followup.send(f"⏰ | انتهى الوقت! الإجابة الصحيحة كانت: **{selected['name']}**")
 
-    # 9. لعبة إكس أو (Tic Tac Toe) مبسطة
+    # لعبة إكس أو
     @app_commands.command(name="tictactoe", description="معلومات لعبة إكس أو في السيرفر")
     async def tictactoe(self, interaction: discord.Interaction):
         embed = discord.Embed(
