@@ -27,7 +27,7 @@ async def on_guild_join(guild):
                     "بوت عربي متكامل تم تصميمه ليجعل إدارة وحماية السيرفر أسهل وأمتع 🛡️\n\n"
                     "📋 **قائمة الأوامر وكيفية استخدامها:**\n"
                     "🔹 **1. أمر الطرد (`!k`):** `!k @user`\n"
-                    "🔹 **2. أمر الإسكات (`!t`):** `!t @user <الوقت>` (مثال حر: `30` ثواني، `10m` دقائق، `2h` ساعات)\n"
+                    "🔹 **2. أمر الإسكات (`!t`):** `!t @user <الرقم>` (مثال: `!t @user 10` للدقائق أو `!t @user 2h` للساعات)\n"
                     "🔹 **3. أمر الحظر (`!b`):** `!b @user`\n"
                     "🔹 **4. لوحة التكتات المخصصة:** `!ticket <نص الرسالة>`\n\n"
                     "جربني وما راح تندم، شكراً لثقتك ولانضمامك 🤍"
@@ -79,7 +79,7 @@ class TicketButtonView(discord.ui.View):
         )
         embed.set_footer(text=f"Requested by {member.name}", icon_url=member.display_avatar.url)
 
-        sent_msg = await ticket_channel.send(content=f"{member.mention}", embed=embed, view=CloseTicketButtonView())
+        await ticket_channel.send(content=f"{member.mention}", embed=embed, view=CloseTicketButtonView())
         await interaction.response.send_message(f"تم فتح تذكرتك بنجاح: {ticket_channel.mention} ✅", ephemeral=True)
 
         async def check_inactivity():
@@ -155,40 +155,37 @@ async def kick_error(ctx, error):
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.send("الرجاء كتابة الأمر بشكل صحيح `!k @user` ❌")
 
-# --- أمر التايم أوت الحر بالكامل ---
+# --- أمر التايم أوت المحدث بالكامل (يدعم الأرقام الحرة) ---
 @bot.command(name="t")
 @commands.has_permissions(moderate_members=True)
-async def timeout_member(ctx, member: discord.Member, time_str: str, *, reason=None):
+async def timeout_member(ctx, member: discord.Member, time_input: str, *, reason=None):
     try:
-        time_str = time_str.lower().strip()
-        seconds = 0
+        time_input = time_input.lower().strip()
+        minutes = 0
 
-        # السماح للأدمن بكتابة أي رقم أو وحدة وقت بحرية تامة
-        if time_str.endswith('s'):
-            seconds = int(time_str[:-1])
-        elif time_str.endswith('m'):
-            seconds = int(time_str[:-1]) * 60
-        elif time_str.endswith('h'):
-            seconds = int(time_str[:-1]) * 3600
-        elif time_str.endswith('d'):
-            seconds = int(time_str[:-1]) * 86400
-        elif time_str.isdigit():
-            # إذا كتب الأدمن رقماً مجرداً بدون حروف، نعتبره بالدقائق افتراضياً أو الثواني (هنا جعلناه دقائق لتسهيل الاستخدام، أو يمكنك تغييره)
-            seconds = int(time_str) * 60
+        # إذا كتب رقم صافي بدون حروف (مثل 5 أو 10) نعتبرها دقائق تلقائياً
+        if time_input.isdigit():
+            minutes = int(time_input)
+        elif time_input.endswith('m'):
+            minutes = int(time_input[:-1])
+        elif time_input.endswith('h'):
+            minutes = int(time_input[:-1]) * 60
+        elif time_input.endswith('d'):
+            minutes = int(time_input[:-1]) * 1440
         else:
-            await ctx.send("صيغة الوقت غير صالحة! أمثلة صحيحة:\n`!t @user 60` (60 دقيقة)\n`!t @user 30s` (ثواني)\n`!t @user 10m` (دقائق)\n`!t @user 2h` (ساعات) ❌")
+            await ctx.send("صيغة الوقت غير صحيحة! اكتب رقماً مباشراً (مثل `10` للدقائق) أو مع حرف (`2h` للساعات) ❌")
             return
 
-        duration = discord.utils.utcnow() + discord.timedelta(seconds=seconds)
+        duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
         await member.timeout(duration, reason=reason)
-        await ctx.send(f"تم إعطاء تايم أوت للعضو {member.mention} بنجاح لمدة ` {time_str} ` ✅")
+        await ctx.send(f"تم إعطاء تايم أوت للعضو {member.mention} بنجاح لمدة `{minutes} دقائق` ✅")
 
     except ValueError:
-        await ctx.send("خطأ في قراءة الرقم، تأكد من كتابة الوقت بشكل صحيح ❌")
+        await ctx.send("خطأ: يرجى كتابة رقم صحيح للوقت ❌")
     except discord.Forbidden:
-        await ctx.send("يجب إعطاء البوت صلاحيات كافية (Moderate Members) وترتيب رتبة البوت أعلى من العضو المراد إسكاته ❌")
+        await ctx.send("فشل الإجراء: تأكد أن رتبة البوت أعلى من رتبة العضو المراد إسكاته ❌")
 
-@timeout_error_handler := timeout_member.error
+@timeout_member.error
 async def timeout_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر الإسكات ❌")
