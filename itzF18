@@ -1,4 +1,4 @@
- import os
+import os
 import asyncio
 import datetime
 import aiohttp
@@ -38,7 +38,7 @@ async def on_guild_join(guild):
                 title="✨ | هلا بيك نورت السيرفر",
                 description=(
                     f"يا هلا فيك! شكراً لإضافتك بوت `itzF18` إلى سيرفرك **{guild.name}**.\n\n"
-                    "بوت حماية وإدارة وسيرفرات متكامل مع نظام تبرعات وتلفيل وتوبات أسبوعية عبر الويب هوك 🛡️🔥\n"
+                    "بوت حماية وإدارة وسيرفرات متكامل مع نظام تبرعات وتلفيل وتوبات أسبوعية تلقائية 🛡️🔥\n"
                 ),
                 color=0x000000
             )
@@ -72,10 +72,11 @@ async def on_message(message):
 server_webhooks = {}
 
 @bot.tree.command(name="setwebhook")
+@app_commands.describe(channel="القسم (القناة) الذي ستُرسل فيه توبات التفاعل أسبوعياً", url="رابط الويب هوك الخاص بالقناة")
 @app_commands.checks.has_permissions(administrator=True)
-async def set_webhook(interaction: discord.Interaction, url: str):
+async def set_webhook(interaction: discord.Interaction, channel: discord.TextChannel, url: str):
     server_webhooks[interaction.guild.id] = url
-    await interaction.response.send_message("✅ | تم حفظ رابط الويب هوك بنجاح لإعلانات الأسبوع!", ephemeral=True)
+    await interaction.response.send_message(f"✅ | تم حفظ رابط الويب هوك بنجاح للقسم {channel.mention}! سيتم إرسال توب التفاعل تلقائياً بعد مرور أسبوع من الآن.", ephemeral=True)
 
 @set_webhook.error
 async def set_webhook_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -283,3 +284,4 @@ async def rank(interaction: discord.Interaction):
 token = os.environ.get("DISCORD_TOKEN")
 if token:
     bot.run(token)
+
