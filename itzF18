@@ -1,4 +1,5 @@
 import os
+import asyncio
 import discord
 from discord.ext import commands
 
@@ -25,16 +26,10 @@ async def on_guild_join(guild):
                     f"يا هلا فيك! شكراً لإضافتك بوت `itzF18` إلى سيرفرك **{guild.name}**.\n\n"
                     "بوت عربي متكامل تم تصميمه ليجعل إدارة وحماية السيرفر أسهل وأمتع 🛡️\n\n"
                     "📋 **قائمة الأوامر وكيفية استخدامها:**\n"
-                    "🔹 **1. أمر الطرد (`!k`):**\n"
-                    "   - الاستخدام: `!k @user`\n\n"
-                    "🔹 **2. أمر الإسكات المطور (`!t`):**\n"
-                    "   - الدقائق (1-50): `!t @user 22m`\n"
-                    "   - الساعات (الحد الأدنى 5): `!t @user h6`\n"
-                    "   - الأيام (يوم إلى يومين): `!t @user d1`\n\n"
-                    "🔹 **3. أمر الحظر (`!b`):**\n"
-                    "   - الاستخدام: `!b @user`\n\n"
-                    "🎫 **4. نظام التكت (`!ticket`):**\n"
-                    "   - الاستخدام: `!ticket`\n\n"
+                    "🔹 **1. أمر الطرد (`!k`):** `!k @user`\n"
+                    "🔹 **2. أمر الإسكات (`!t`):** `!t @user 22m` / `h6` / `d1`\n"
+                    "🔹 **3. أمر الحظر (`!b`):** `!b @user`\n"
+                    "🔹 **4. لوحة التكتات المخصصة:** `!ticket <نص الرسالة>`\n\n"
                     "جربني وما راح تندم، شكراً لثقتك ولانضمامك 🤍"
                 ),
                 color=0x000000
@@ -77,14 +72,33 @@ class TicketButtonView(discord.ui.View):
                 f"مرحباً بك {member.mention}!\n"
                 "تم فتح هذه التذكرة الخاصة لك بنجاح.\n\n"
                 "يرجى كتابة مشكلتك أو طلبك بالتفصيل، وسيتم الرد عليك من قبل الإدارة قريباً.\n"
-                "⚠️ **ملاحظة:** زر إغلاق التكت مخصص للإداريين فقط."
+                "⚠️ **ملاحظة:** إذا لم يتم إرسال أي رسالة خلال **ساعة كاملة**، سيتم إغلاق التذكرة تلقائياً.\n"
+                "زر إغلاق التكت مخصص للإداريين فقط."
             ),
             color=0x000000
         )
         embed.set_footer(text=f"Requested by {member.name}", icon_url=member.display_avatar.url)
 
-        await ticket_channel.send(content=f"{member.mention}", embed=embed, view=CloseTicketButtonView())
+        sent_msg = await ticket_channel.send(content=f"{member.mention}", embed=embed, view=CloseTicketButtonView())
         await interaction.response.send_message(f"تم فتح تذكرتك بنجاح: {ticket_channel.mention} ✅", ephemeral=True)
+
+        # دالة الانتظار لمدة ساعة (3600 ثانية) لحذف التكت إذا لم يتفاعل العضو
+        async def check_inactivity():
+            try:
+                def check(m):
+                    return m.channel == ticket_channel and not m.author.bot
+
+                # ينتظر رسالة من العضو لمدة ساعة كاملة
+                await bot.wait_for('message', timeout=3600.0, check=check)
+            except asyncio.TimeoutError:
+                # إذا انقضت الساعة ولم يكتب شيئاً، يحذف القناة
+                try:
+                    await ticket_channel.delete()
+                except:
+                    pass
+
+        # تشغيل المراقب بالخلفية
+        bot.loop.create_task(check_inactivity())
 
 class CloseTicketButtonView(discord.ui.View):
     def __init__(self):
@@ -97,7 +111,6 @@ class CloseTicketButtonView(discord.ui.View):
             return
 
         await interaction.response.send_message("جاري إغلاق وحذف التذكرة خلال 3 ثوانٍ... ⏱️")
-        import asyncio
         await asyncio.sleep(3)
         try:
             await interaction.channel.delete()
@@ -106,16 +119,17 @@ class CloseTicketButtonView(discord.ui.View):
 
 @bot.command(name="ticket")
 @commands.has_permissions(administrator=True)
-async def ticket_panel(ctx):
+async def ticket_panel(ctx, *, message_content: str = None):
+    if not message_content:
+        await ctx.send("خطأ! يرجى كتابة النص الذي تريد عرضه مع الأمر، مثال:\n`!ticket يرجى الضغط على الزر أدناه لفتح تذكرة دعم فني` ❌")
+        return
+
     embed = discord.Embed(
         title="🎫 | قسم تذاكر الدعم الفني",
-        description=(
-            "إذا كنت تواجه مشكلة، لديك استفسار، أو تريد التحدث مع الإدارة:\n\n"
-            "اضغط على الزر أدناه (**فتح تذكرة**) وستفتح لك قناة خاصة سرية بينك وبين طاقم الإدارة فوراً! 🔒"
-        ),
+        description=message_content,
         color=0x000000
     )
-    embed.set_footer(text="itzF18 Support System")
+    embed.set_footer(text=f"Server Support • {ctx.guild.name}")
     
     await ctx.send(embed=embed, view=TicketButtonView())
     try:
@@ -145,7 +159,6 @@ async def kick_error(ctx, error):
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.send("الرجاء كتابة الأمر بشكل صحيح `!k @user` ❌")
 
-# --- أمر التايم أوت المطور بالشروط المحددة ---
 @bot.command(name="t")
 @commands.has_permissions(moderate_members=True)
 async def timeout_member(ctx, member: discord.Member, time_str: str, *, reason=None):
@@ -153,7 +166,6 @@ async def timeout_member(ctx, member: discord.Member, time_str: str, *, reason=N
         time_str = time_str.lower().strip()
         minutes_total = 0
 
-        # الحالة الأولى: دقائق (مثال: 22m)
         if time_str.endswith('m'):
             val = int(time_str[:-1])
             if 1 <= val <= 50:
@@ -161,8 +173,6 @@ async def timeout_member(ctx, member: discord.Member, time_str: str, *, reason=N
             else:
                 await ctx.send("خطأ: الدقائق يجب أن تكون بين **1 و 50** دقيقة فقط! ❌")
                 return
-
-        # الحالة الثانية: ساعات (مثال: h4 أو 4h -> ندعم كرتها h بالبداية مثل طلبك h4)
         elif time_str.startswith('h'):
             val = int(time_str[1:])
             if val >= 5:
@@ -177,8 +187,6 @@ async def timeout_member(ctx, member: discord.Member, time_str: str, *, reason=N
             else:
                 await ctx.send("خطأ: الحد الأدنى للساعات هو **5 ساعات** فما فوق! ❌")
                 return
-
-        # الحالة الثالثة: أيام (مثال: d1 أو d2)
         elif time_str.startswith('d'):
             val = int(time_str[1:])
             if 1 <= val <= 2:
@@ -194,7 +202,7 @@ async def timeout_member(ctx, member: discord.Member, time_str: str, *, reason=N
                 await ctx.send("خطأ: الحد الأقصى للأيام هو **يومين فقط (d1 أو d2)**! ❌")
                 return
         else:
-            await ctx.send("صيغة الوقت غير صحيحة! استخدم الامثلة:\n`!t @user 22m`\n`!t @user h6`\n`!t @user d1` ❌")
+            await ctx.send("صيغة الوقت غير صحيحة! استخدم:\n`!t @user 22m`\n`!t @user h6`\n`!t @user d1` ❌")
             return
 
         duration = discord.utils.utcnow() + discord.timedelta(minutes=minutes_total)
@@ -211,7 +219,7 @@ async def timeout_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("عذراً، لا تمتلك الصلاحيات الكافية لاستخدام أمر التايم أوت ❌")
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send("الرجاء كتابة الأمر بشكل صحيح مع الوقت (مثال: `!t @user 22m` أو `!t @user h6`) ❌")
+        await ctx.send("الرجاء كتابة الأمر بشكل صحيح مع الوقت (مثال: `!t @user 22m`) ❌")
 
 @bot.command(name="b")
 @commands.has_permissions(ban_members=True)
