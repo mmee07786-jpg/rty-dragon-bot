@@ -32,4 +32,4 @@ async def on_ready():
         print(f"❌ خطأ في مزامنة الأوامر: {e}")
 
 # ضع التوكن الخاص بك هنا
-bot.run("ضع_التوكن_هنا")
+bot.run("TOKEN_HERE").
