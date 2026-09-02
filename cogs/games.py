@@ -1,9 +1,9 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import random
 import asyncio
 
-# --- 1. واجهة الانضمام للروليت بالزر ---
 class RouletteJoinView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=15)
@@ -17,8 +17,6 @@ class RouletteJoinView(discord.ui.View):
             self.players.append(interaction.user)
             await interaction.response.send_message(f"✅ | تم انضمامك بنجاح للروليت! (المشاركون: {len(self.players)})", ephemeral=True)
 
-
-# --- 2. واجهة لعبة الزر السريع (Reflex) ---
 class ReflexButton(discord.ui.Button):
     def __init__(self, label, is_target: bool):
         super().__init__(label=label, style=discord.ButtonStyle.secondary)
@@ -63,56 +61,72 @@ class ReflexView(discord.ui.View):
             except:
                 pass
 
-
-# --- ملف الألعاب الرئيسي (Prefix Commands) ---
 class Games(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # 1. قائمة الألعاب (-game أو -games)
-    @commands.command(name="game", aliases=["games"])
+    # أمر السلاش الجديد لعرض قائمة الألعاب مع عدد الأشخاص المطلوبين
+    @app_commands.command(name="games", description="عرض قائمة الألعاب الشاملة مع عدد الأشخاص المطلوب لكل لعبة")
+    async def slash_games(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="🎮 | قائمة ألعاب السيرفر وعدد اللاعبين",
+            description=(
+                "أهلاً بك في قسم الألعاب! إليك كافة الألعاب المتوفرة وعدد الأشخاص المطلوبين لكل لعبة:\n\n"
+                "🎯 **ألعاب جماعية (تتطلب عدد معين):**\n"
+                "• `-روليت` (أو `-roulette`) ➜ تتطلب **4 لاعبين فما فوق** (تنتظر 15 ثانية والخاسر ينطرد).\n"
+                "• `-مافيا` (أو `-mafia`) ➜ تتطلب **أكثر من شخصين** لتوزيع الأدوار.\n\n"
+                "⚡ **ألعاب فردية / سرعة تفاعل (شخص واحد أو عدة أشخاص يتنافسون):**\n"
+                "• `-زر` (أو `-reflex`) ➜ شخص أو أكثر (أسرع ضغطة تفوز).\n"
+                "• `-أسرع` (أو `-fasttype`) ➜ شخص أو أكثر (أسرع شخص يكتب الكلمة).\n"
+                "• `-أعلام` (أو `-flags`) ➜ شخص أو أكثر (تحدي تخمين أعلام الدول).\n"
+                "• `-لوخيروك` (أو `-wouldyourather`) ➜ فردي أو جماعي (خيارات ممتعة).\n"
+                "• `-مفرد`, `-سمعني`, `-حكمة`, `-سؤال`, `-لغز`, `-مضاد`, `-جمع`, `-عقاب`, `-ركب`, `-ماركات`, `-مشاهير`, `-كراسي`, `-كتتويت`, `-غميضة`, `-نكتة`, `-رياضيات` ➜ ألعاب تفاعلية فردية/جماعية.\n\n"
+                "📌 ملاحظة: جميع الألعاب تعمل مباشرة بالبادئة `-` **بدون أي مسافة** (مثال: `-روليت`)."
+            ),
+            color=0x9b59b6
+        )
+        await interaction.response.send_message(embed=embed)
+
+    @commands.command(name="game", aliases=["gameslist"])
     async def games_menu(self, ctx):
         menu_text = (
             "╭─〔 Games 〕─╮\n\n"
-            "1 ➜ - مفرد\n"
-            "2 ➜ - سمعني\n"
-            "3 ➜ - حكمة\n"
-            "4 ➜ - لوخيروك (`-wouldyourather`)\n"
-            "5 ➜ - سؤال\n"
-            "6 ➜ - لغز\n"
-            "7 ➜ - روليت (`-roulette`)\n"
-            "8 ➜ - مضاد\n"
-            "9 ➜ - جمع\n"
-            "10 ➜ - عقاب\n"
-            "11 ➜ - ركب\n"
-            "12 ➜ - المارد (شباب المارد في الصيانة - The Genie Youth in Maintenance 🔧⏳)\n"
-            "13 ➜ - ماركات\n"
-            "14 ➜ - مشاهير\n"
-            "15 ➜ - كراسي\n"
-            "16 ➜ - كت تويت\n"
-            "17 ➜ - زر (`-reflex`)\n"
-            "18 ➜ - أسرع (`-fasttype`)\n"
-            "19 ➜ - أعلام (`-flags`)\n"
-            "20 ➜ - غميضة\n"
-            "21 ➜ - نكتة\n"
-            "22 ➜ - مافيا (`-mafia`)\n"
-            "23 ➜ - رياضيات\n\n"
-            "(استمتع في العاب 🎮🔥)\n"
+            "1 ➜ `-مفرد`\n"
+            "2 ➜ `-سمعني`\n"
+            "3 ➜ `-حكمة`\n"
+            "4 ➜ `-لوخيروك`\n"
+            "5 ➜ `-سؤال`\n"
+            "6 ➜ `-لغز`\n"
+            "7 ➜ `-روليت` (4 أشخاص فأكثر 🎯)\n"
+            "8 ➜ `-مضاد`\n"
+            "9 ➜ `-جمع`\n"
+            "10 ➜ `-عقاب`\n"
+            "11 ➜ `-ركب`\n"
+            "12 ➜ `-المارد` (قيد الصيانة 🔧⏳)\n"
+            "13 ➜ `-ماركات`\n"
+            "14 ➜ `-مشاهير`\n"
+            "15 ➜ `-كراسي`\n"
+            "16 ➜ `-كتتويت`\n"
+            "17 ➜ `-زر` (شخص أو أكثر ⚡)\n"
+            "18 ➜ `-أسرع` (شخص أو أكثر ⌨️)\n"
+            "19 ➜ `-أعلام` (شخص أو أكثر 🌍)\n"
+            "20 ➜ `-غميضة`\n"
+            "21 ➜ `-نكتة`\n"
+            "22 ➜ `-مافيا` (جماعية 🕵️‍♂️)\n"
+            "23 ➜ `-رياضيات`\n\n"
+            "💡 (ملاحظة: استعمل `/games` لعرض التفاصيل الكاملة)\n"
             "╰────────────────╯"
         )
         await ctx.send(menu_text)
 
-    # 2. لعبة الروليت (-roulette)
-    @commands.command(name="roulette")
+    @commands.command(name="روليت", aliases=["roulette"])
     async def roulette(self, ctx):
         view = RouletteJoinView()
-        
         embed = discord.Embed(
             title="🎯 | لعبة الروليت الروسية (طرد)",
             description="بدأت لعبة الروليت! أمامكم **15 ثانية** للضغط على الزر أدناه والانضمام.\n\n⚠️ **شروط اللعبة:** يجب أن يشارك 4 أعضاء على الأقل، والخاسر سيتم طرده من السيرفر فوراً!",
             color=0xff0000
         )
-        
         msg = await ctx.send(embed=embed, view=view)
         await asyncio.sleep(15)
 
@@ -120,7 +134,6 @@ class Games(commands.Cog):
             child.disabled = True
         
         players = view.players
-
         if len(players) < 4:
             embed.description = f"❌ | تم إلغاء الروليت لعدم اكتمال العدد! (المشاركون: {len(players)}/4)"
             await msg.edit(embed=embed, view=view)
@@ -133,13 +146,10 @@ class Games(commands.Cog):
         try:
             await victim.kick(reason="خسر في لعبة الروليت الروسية 🎯")
             await ctx.send(f"✅ | تم طرد {victim.mention} بنجاح من السيرفر.")
-        except discord.Forbidden:
-            await ctx.send(f"❌ | عذراً، لا أملك صلاحية طرد {victim.mention} (رتبته أعلى أو أفتقر لصلاحيات Kick).")
-        except Exception as e:
-            await ctx.send(f"❌ | حدث خطأ أثناء محاولة الطرد: {e}")
+        except:
+            await ctx.send(f"❌ | عذراً، لا أملك صلاحية طرد {victim.mention}.")
 
-    # 3. لعبة الزر السريع (-reflex)
-    @commands.command(name="reflex", aliases=["زر"])
+    @commands.command(name="زر", aliases=["reflex"])
     async def reflex(self, ctx):
         await ctx.send("⚡ **جاري الاستعداد للتحدي... حضر أصابعك!** 🕹️")
         await asyncio.sleep(random.uniform(2.0, 3.0))
@@ -155,8 +165,7 @@ class Games(commands.Cog):
         except Exception as e:
             print(f"خطأ: {e}")
 
-    # 4. لعبة لو خيروك (-wouldyourather)
-    @commands.command(name="wouldyourather", aliases=["لوخيروك"])
+    @commands.command(name="لوخيروك", aliases=["wouldyourather"])
     async def wouldyourather(self, ctx):
         questions = [
             "تفضل تكون طائر وتطير وين ما تريد لو تقدر تختفي متى ما بغيت؟",
@@ -168,19 +177,16 @@ class Games(commands.Cog):
         embed = discord.Embed(title="🤔 | لو خيروك", description=f"**{q}**", color=0x000000)
         await ctx.send(embed=embed)
 
-    # 5. لعبة المافيا (-mafia)
-    @commands.command(name="mafia", aliases=["مافيا"])
+    @commands.command(name="مافيا", aliases=["mafia"])
     async def mafia(self, ctx):
         roles = ["مافيا 🦹‍♂️", "شرطي 👮‍♂️", "دكتور 💉", "مواطن بريء 🧑"]
         role = random.choice(roles)
         await ctx.send(f"🕵️‍♂️ | {ctx.author.mention} دورك في لعبة المافيا هو: **{role}**")
 
-    # 6. لعبة أسرع (-fasttype / أسرع)
-    @commands.command(name="fasttype", aliases=["أسرع"])
+    @commands.command(name="أسرع", aliases=["fasttype"])
     async def fasttype(self, ctx):
         words = ["itzF18", "Discord", "Railway", "Python", "Gaming", "Vortex"]
         target_word = random.choice(words)
-        
         await ctx.send(f"⚡ | أسرع وكتب هذه الكلمة بدقة: `✨ {target_word} ✨`")
         
         def check(m):
@@ -192,17 +198,14 @@ class Games(commands.Cog):
         except asyncio.TimeoutError:
             await ctx.send("⏰ | انتهى الوقت! محد كتب الكلمة بالسرعة المطلوبة.")
 
-    # 7. لعبة الأعلام (-flags / أعلام)
-    @commands.command(name="flags", aliases=["أعلام"])
+    @commands.command(name="أعلام", aliases=["flags"])
     async def flags(self, ctx):
         flag_list = [
             {"flag": "🇯🇵", "name": "اليابان", "reward": "50 نقطة"},
             {"flag": "🇧🇷", "name": "البرازيل", "reward": "50 نقطة"},
             {"flag": "🇮🇶", "name": "العراق", "reward": "30 نقطة"},
-            {"flag": "🇮🇸", "name": "ايسلندا", "reward": "150 نقطة (جائزة مضاعفة!)"},
-            {"flag": "🇧🇹", "name": "بوتان", "reward": "200 نقطة (جائزة مضاعفة كبرى!)"}
+            {"flag": "🇮🇸", "name": "ايسلندا", "reward": "150 نقطة (جائزة مضاعفة!)"}
         ]
-        
         selected = random.choice(flag_list)
         await ctx.send(f"🌍 | ما هي الدولة التي تتبع هذا العلم؟\n# {selected['flag']}\n*(الجائزة: {selected['reward']}! أسرع بالإجابة)*")
         
@@ -217,4 +220,3 @@ class Games(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Games(bot))
-
