@@ -12,11 +12,11 @@
             font-family: Tahoma, sans-serif;
         }
 
-        /* خلفية متحركة لا نهائية تتدرج بين الأسود والرمادي الفاتح */
+        /* خلفية متحركة لا نهائية تتدرج بين الأسود والرمادي الفاتح والأبيض */
         body {
-            background: linear-gradient(135deg, #0b0b0b, #1a1a1a, #333333, #717171, #1a1a1a, #0b0b0b);
-            background-size: 400% 400%;
-            animation: gradientAnimation 15s ease infinite;
+            background: linear-gradient(135deg, #0b0b0b, #1a1a1a, #333333, #717171, #333333, #1a1a1a, #0b0b0b);
+            background-size: 500% 500%;
+            animation: gradientAnimation 18s ease infinite;
             color: #ffffff;
             min-height: 100vh;
             display: flex;
@@ -32,47 +32,50 @@
             100% { background-position: 0% 50%; }
         }
 
+        /* المربع الأسود الشفاف الزجاجي */
         .container {
-            max-width: 750px;
+            max-width: 600px;
             width: 100%;
-            background: rgba(18, 18, 18, 0.85);
-            backdrop-filter: blur(10px);
-            padding: 40px;
+            background: rgba(18, 18, 18, 0.35);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 35px 20px;
             border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.15);
             text-align: center;
         }
 
         h1 {
-            font-size: 28px;
-            margin-bottom: 10px;
+            font-size: 26px;
+            margin-bottom: 8px;
             color: #ffffff;
-            text-shadow: 0 2px 10px rgba(255, 255, 255, 0.2);
+            text-shadow: 0 2px 10px rgba(255, 255, 255, 0.3);
         }
 
         .subtitle {
-            color: #aaaaaa;
-            font-size: 14px;
-            margin-bottom: 35px;
+            color: #e0e0e0;
+            font-size: 13.5px;
+            margin-bottom: 25px;
         }
 
-        /* تنسيق الأزرار الثلاثة المطلوبة */
+        /* الأزرار الصغيرة والمتناسقة */
         .buttons-grid {
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 12px;
             align-items: center;
         }
 
         .btn {
-            width: 80%;
-            background: rgba(30, 30, 30, 0.9);
+            width: 55%;
+            background: rgba(25, 25, 25, 0.5);
+            backdrop-filter: blur(5px);
             color: #ffffff;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            padding: 16px 20px;
-            border-radius: 12px;
-            font-size: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            padding: 12px 18px;
+            border-radius: 10px;
+            font-size: 14.5px;
             font-weight: bold;
             cursor: pointer;
             transition: all 0.3s ease;
@@ -81,10 +84,10 @@
         }
 
         .btn:hover {
-            background: rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.2);
             border-color: #ffffff;
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(255, 255, 255, 0.1);
+            box-shadow: 0 6px 20px rgba(255, 255, 255, 0.2);
         }
 
         /* نوافذ الشرح المنبثقة */
@@ -95,8 +98,8 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(5px);
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
             justify-content: center;
             align-items: center;
             padding: 20px;
@@ -104,48 +107,64 @@
         }
 
         .modal-content {
-            background: #181818;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            max-width: 600px;
+            background: rgba(20, 20, 20, 0.85);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 650px;
             width: 100%;
-            max-height: 80vh;
+            max-height: 85vh;
             overflow-y: auto;
             padding: 30px;
             border-radius: 16px;
             text-align: right;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.9);
             position: relative;
         }
 
         .modal-content h2 {
             color: #ffffff;
             margin-bottom: 20px;
-            font-size: 20px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+            font-size: 18px;
+            border-bottom: 1px solid rgba(255,255,255,0.15);
             padding-bottom: 10px;
+        }
+
+        .modal-content h3 {
+            color: #dddddd;
+            font-size: 15px;
+            margin-top: 18px;
+            margin-bottom: 6px;
         }
 
         .modal-content p, .modal-content li {
             color: #cccccc;
-            font-size: 14px;
-            line-height: 1.8;
-            margin-bottom: 10px;
+            font-size: 13px;
+            line-height: 1.7;
+            margin-bottom: 6px;
         }
 
         .modal-content ul {
             padding-right: 20px;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
+        }
+
+        code {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 5px;
+            border-radius: 4px;
+            color: #ffffff;
+            font-family: monospace;
         }
 
         .close-btn {
             display: inline-block;
-            background: #333;
+            background: rgba(50, 50, 50, 0.8);
             color: white;
-            padding: 8px 20px;
+            padding: 9px 20px;
             border-radius: 8px;
             margin-top: 20px;
             cursor: pointer;
-            border: 1px solid rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.25);
             transition: 0.2s;
             text-align: center;
             width: 100%;
@@ -153,15 +172,15 @@
         }
 
         .close-btn:hover {
-            background: #555;
+            background: rgba(80, 80, 80, 0.9);
         }
 
         .dev-badge {
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.06);
             padding: 12px;
-            border-radius: 8px;
+            border-radius: 10px;
             margin-top: 10px;
-            border-right: 3px solid #ffffff;
+            border-right: 4px solid #ffffff;
         }
     </style>
 </head>
@@ -169,53 +188,64 @@
 
     <div class="container">
         <h1>✨ ItzF18 Bot</h1>
-        <p class="subtitle">بوت عربي متكامل لإدارة وحماية السيرفرات باحترافية وسهولة</p>
+        <p class="subtitle">بوت عربي متكامل لإدارة وحماية السيرفرات باحترافية وسهولة تامة</p>
 
         <div class="buttons-grid">
             <!-- الزر الأول: دعوة البوت -->
-            <a href="https://discord.com/oauth2/authorize?client_id=1544073793490915358&permissions=8&integration_type=0&scope=bot+applications.commands" target="_blank" class="btn">دعوة البوت للسيرفر</a>
+            <a href="https://discord.com/oauth2/authorize?client_id=1544073793490915358&permissions=8&integration_type=0&scope=bot+applications.commands" target="_blank" class="btn">دعوة البوت للسيرفر 🚀</a>
             
             <!-- الزر الثاني: كيفية الاستخدام -->
-            <button class="btn" onclick="openModal('guideModal')">كيفية استخدام</button>
+            <button class="btn" onclick="openModal('guideModal')">كيفية استخدام 📖</button>
             
-            <!-- الزر الثالث: طاقم عمل البوت -->
-            <button class="btn" onclick="openModal('staffModal')">طاقم عمل البوت</button>
+            <!-- الزر الثالث: مساعدة ودعم البوت (مضاف حديثاً) -->
+            <a href="https://discord.gg/YF5UC7GsY" target="_blank" class="btn">مساعدة ودعم البوت 🛟</a>
+
+            <!-- الزر الرابع: طاقم عمل البوت -->
+            <button class="btn" onclick="openModal('staffModal')">طاقم عمل البوت 👑</button>
         </div>
     </div>
 
     <!-- نافذة كيفية الاستخدام -->
     <div id="guideModal" class="modal">
         <div class="modal-content">
-            <h2>📖 دليل الاستخدام الشامل للبوت</h2>
+            <h2>📖 الدليل الشامل لأوامر وأنظمة ItzF18 Bot</h2>
             
-            <p><strong>1. نظام الترحيب، البوست، والمغادرة:</strong></p>
+            <h3>1. نظام الترحيب، البوست، والمغادرة</h3>
             <ul>
-                <li>تستطيع تفعيل وتخصيص رسائل الترحيب، إعلانات البوست، ورسائل المغادرة بكل سهولة.</li>
-                <li><strong>ملاحظة هامة للمنشن:</strong> لكي يقوم البوت بعمل منشن تلقائي للعضو داخل الرسالة، يجب عليك كتابة الكلمة <code>{member}</code> في المكان الذي تريده أن يتمشن فيه (مثال: <i>أهلاً بك يا {member} في نورت السيرفر!</i>).</li>
-                <li>تستطيع معاينة الرسائل في أي وقت باستخدام الأوامر التجريبية: <code>/test_welcome</code>, <code>/test_boost</code>, <code>/test_leave</code>.</li>
+                <li><strong>التشغيل والتخصيص:</strong> يتيح لك البوت إعداد رومات مخصصة للترحيب بالأعضاء الجدد، وإعلانات البوست، ورسائل المغادرة برسائل مدمجة رائعة.</li>
+                <li><strong>طريقة المنشن:</strong> لتفعيل المنشن التلقائي للعضو، اكتب الكلمة البرمجية <code>{member}</code> داخل نص الرسالة (مثال: <i>أهلاً بك يا {member} في السيرفر!</i>).</li>
+                <li><strong>الأوامر التجريبية:</strong> استخدم هذه الأوامر لمعاينة الرسائل فوراً:
+                    <br>• <code>/test_welcome</code> (لتجربة الترحيب).
+                    <br>• <code>/test_boost</code> (لتجربة البوست).
+                    <br>• <code>/test_leave</code> (لتجربة المغادرة).
+                </li>
             </ul>
 
-            <p><strong>2. نظام التلفيل (Levels):</strong></p>
-            <p>يتتبع نشاط الأعضاء بالكتابة والصوت في السيرفر ويعطيهم خبرة (XP) لزيادة رتبهم ومستوياتهم تلقائياً.</p>
-
-            <p><strong>3. رسالة الأسبوع للمتفاعلين:</strong></p>
-            <p>نظام ذكي يقوم بنشر ملخص لأكثر الأعضاء تفاعلاً ونشاطاً بشكل أسبوعي لتحفيز مجتمع السيرفر.</p>
-
-            <p><strong>4. نظام التذاكر (Tickets) بالتفصيل:</strong></p>
+            <h3>2. نظام التلفيل (Levels)</h3>
             <ul>
-                <li><strong>كيف تفتح تذكرة:</strong> يضغط المستخدم على زر فتح التذكرة المخصص في روم الدعم.</li>
-                <li><strong>كيف تستخدمها وتكتب فيها:</strong> يتم إنشاء روم خاص وسري بين الإدارة والعضو، ويمكن كتابة المشاكل والاستفسارات بحرية تامة.</li>
-                <li><strong>كيف تغلقها:</strong> يوجد زر خاص داخل التذكرة للإغلاق والأرشفة فور انتهاء المشكلة.</li>
+                <li>يتتبع نشاط الأعضاء بالكتابة والصوت ويمنحهم نقاط خبرة (XP) لرفع مستوياتهم ورتبهم تلقائياً لزيادة تفاعل السيرفر.</li>
             </ul>
 
-            <p><strong>5. نظام العملة (Coins) واللعب:</strong></p>
+            <h3>3. رسالة الأسبوع للمتفاعلين</h3>
             <ul>
-                <li><strong>كيف تشتغل:</strong> يجمع الأعضاء العملات من خلال التفاعل المستمر والنشاط داخل السيرفر.</li>
-                <li><strong>كيف تستخدمها وتفعل المتجر:</strong> تتيح للأعضاء شراء رتب أو مميزات خاصة.</li>
-                <li><strong>كيف تبيع وتشتري:</strong> يستطيع الإداريون إضافة عناصر للبيع في المتجر، ويمكن لأي عضو شراء ما يريده باستخدام رصيده من العملات.</li>
+                <li>نظام ذكي ومجتمعي ينشر ملخصاً أسبوعياً بأكثر الأعضاء تفاعلاً لتحفيز المنافسة والنشاط.</li>
             </ul>
 
-            <div class="close-btn" onclick="closeModal('guideModal')">إغلاق النافذة</div>
+            <h3>4. نظام التذاكر (Tickets) بالتفصيل</h3>
+            <ul>
+                <li><strong>كيف تفتح تذكرة:</strong> يضغط العضو على زر فتح التذكرة في روم الدعم المخصص.</li>
+                <li><strong>كيف تستخدمها وتكتب فيها:</strong> يتم إنشاء روم سري وخاص يظهر بين الإدارة والعضو فقط لتنظيم الاستفسارات والشكاوى بكل حرية.</li>
+                <li><strong>كيف تغلقها:</strong> يوجد زر مخصص داخل التذكرة لإغلاقها وأرافتها فور انتهاء المشكلة.</li>
+            </ul>
+
+            <h3>5. نظام العملة (Coins) والمتجر</h3>
+            <ul>
+                <li><strong>كيف تشتغل العملة:</strong> يجمع الأعضاء العملات تلقائياً من خلال التفاعل المستمر والمشاركة الفعالة بالسيرفر.</li>
+                <li><strong>كيف تفعل المتجر وتستخدمه:</strong> يمكن للإداريين إضافة رتب أو مميزات خاصة للبيع داخل متجر السيرفر.</li>
+                <li><strong>كيف تشتري وتبيع:</strong> يستطيع أي عضو استخدام رصيده المالي لشراء الرتب والأغراض المعروضة بكل سهولة.</li>
+            </ul>
+
+            <div class="close-btn" onclick="closeModal('guideModal')">إغلاق الدليل</div>
         </div>
     </div>
 
@@ -236,11 +266,11 @@
                 <p>🛠️ <strong>طاقم العمل:</strong> فهد (أنا وحدي بالكامل!)</p>
             </div>
 
-            <p style="margin-top: 20px; text-align: center; color: #ffffff; font-weight: bold;">
-                ملاحظة شخصية: أنا الذي قمت ببرمجة هذا البوت وتصميمه بالكامل لوحدي، ومستعد لمساعدة أي شخص يحتاج استفسار أو دعم! 🤍🔥
+            <p style="margin-top: 18px; text-align: center; color: #ffffff; font-weight: bold; line-height: 1.6;">
+                ملاحظة هامة: أنا الشخص الوحيد الذي قام بتصميم وبرمجة وتطوير هذا البوت من الصفر وحتى النهاية، ومستعد تماماً لمساعدة أي شخص يحتاج استفسار أو دعم فني! 🤍🔥
             </p>
 
-            <div class="close-btn" onclick="closeModal('staffModal')">إغلاق النافذة</div>
+            <div class="close-btn" onclick="openModal('staffModal')">إغلاق النافذة</div>
         </div>
     </div>
 
@@ -263,4 +293,3 @@
 
 </body>
 </html>
-
