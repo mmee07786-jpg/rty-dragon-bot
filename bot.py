@@ -9,8 +9,8 @@ bot = commands.Bot(command_prefix="-", intents=intents)
 async def on_ready():
     print(f"البوت جاهز الان ويعمل باسم {bot.user} (ID: {bot.user.id})")
     
-    # قائمة الملفات (Cogs) بما فيها ملف الـ welcome.py
-    cogs_list = ["cogs.game", "cogs.economy", "cogs.mitzf18", "cogs.ticket", "welcome.py"]
+    # تحميل الكودات المكتوبة هنا
+    cogs_list = ["cogs.game", "cogs.economy", "cogs.mitzf18", "cogs.ticket", "welcome"]
     
     for cog in cogs_list:
         try:
@@ -19,7 +19,7 @@ async def on_ready():
         except Exception as e:
             print(f"❌ فشل تحميل الملف ({cog}) : {e}")
 
-    # مزامنة أوامر السلاش مع ديسكورد
+    # مزامنة أوامر السلاش
     try:
         synced = await bot.tree.sync()
         print(f"✅ تمت مزامنة (Slash Commands) لـ {len(synced)} أمر")
