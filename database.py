@@ -1,37 +1,38 @@
-import json
 import os
+from pymongo import MongoClient
 
-DB_FILE = "data.json"
+MONGO_URI = "mongodb+srv://esramer2009_db_user:@cluster0.fkw1q0y.mongodb.net/?appName=Cluster0"
 
-def load_data():
-    """تحميل البيانات من الملف الخارجي بأمان"""
-    if not os.path.exists(DB_FILE):
-        return {}
-    try:
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+client = MongoClient(MONGO_URI)
+db = client["discord_bot_db"]
 
-def save_data(data):
-    """حفظ البيانات بشكل دائم في الملف الخارجي"""
-    with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+settings_collection = db["guild_settings"]
+economy_collection = db["economy_data"]
 
 def get_guild_setting(guild_id, key, default=None):
-    """جلب إعداد معين لسيرفر معين (مثل روم الترحيب أو التلفيل)"""
-    data = load_data()
     guild_id = str(guild_id)
-    if guild_id in data and key in data[guild_id]:
-        return data[guild_id][key]
+    doc = settings_collection.find_one({"guild_id": guild_id})
+    if doc and key in doc:
+        return doc[key]
     return default
 
 def set_guild_setting(guild_id, key, value):
-    """تعديل أو حفظ إعداد معين لسيرفر معين"""
-    data = load_data()
     guild_id = str(guild_id)
-    if guild_id not in data:
-        data[guild_id] = {}
-    data[guild_id][key] = value
-    save_data(data)
+    settings_collection.update_one(
+        {"guild_id": guild_id},
+        {"$set": {key: value}},
+        upsert=True
+    )
 
+def load_data():
+    doc = economy_collection.find_one({"_id": "global_economy"})
+    if not doc:
+        return {"balances": {}, "shops": {}}
+    return {"balances": doc.get("balances", {}), "shops": doc.get("shops", {})}
+
+def save_data(data):
+    economy_collection.update_one(
+        {"_id": "global_economy"},
+        {"$set": {"balances": data.get("balances", {}), "shops": data.get("shops", {})}},
+        upsert=True
+    )
