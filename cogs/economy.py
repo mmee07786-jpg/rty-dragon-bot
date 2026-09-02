@@ -10,7 +10,7 @@ def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {"balances": {}, "shop_items": []}
+    return {"balances": {}, "shops": {}}
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -38,7 +38,6 @@ class Economy(commands.Cog):
     async def give(self, interaction: discord.Interaction, member: discord.Member, amount: int):
         await interaction.response.defer(ephemeral=True)
 
-        # التحقق مما إذا كان المستخدم هو صاحب البوت (منشئ البوت)
         if interaction.user.id != (await self.bot.application_info()).owner.id:
             await interaction.followup.send("❌ | عذراً، هذا الأمر مخصص **لمنشئ البوت** فقط ولا يحق لأحد استخدامه!", ephemeral=True)
             return
@@ -59,55 +58,60 @@ class Economy(commands.Cog):
 
         await interaction.followup.send(f"✅ | تم بنجاح إضافة **{amount} أورا** إلى رصيد العضو {member.mention}.\nرصيده الحالي: **{self.data['balances'][guild_id][user_id]} أورا** 🪙")
 
-    @app_commands.command(name="store_add", description="[خاص بالإدارة] إضافة سلعة جديدة للمتجر مع تحديد الوصف والسعر")
+    @app_commands.command(name="store_add", description="[خاص بالإدارة] إضافة سلعة جديدة لمتجر هذا السيرفر فقط مع الوصف والسعر")
     @app_commands.checks.has_permissions(administrator=True)
     async def store_add(self, interaction: discord.Interaction, item_name: str, price: int, description: str, image_url: str = None):
         await interaction.response.defer()
         guild_id = str(interaction.guild.id)
 
+        if "shops" not in self.data:
+            self.data["shops"] = {}
+        if guild_id not in self.data["shops"]:
+            self.data["shops"][guild_id] = []
+
         item = {
             "name": item_name,
             "price": price,
             "description": description,
-            "image": image_url,
-            "guild_id": guild_id
+            "image": image_url
         }
 
-        if "shop_items" not in self.data:
-            self.data["shop_items"] = []
-
-        self.data["shop_items"].append(item)
+        self.data["shops"][guild_id].append(item)
         save_data(self.data)
 
-        await interaction.followup.send(f"✅ | تم إضافة السلعة **{item_name}** بنجاح إلى المتجر!\n💵 السعر: `{price} أورا`\n📝 الوصف: `{description}`")
+        await interaction.followup.send(f"✅ | تم إضافة السلعة **{item_name}** بنجاح إلى متجر **هذا السيرفر فقط**!\n💵 السعر: `{price} أورا`\n📝 الوصف: `{description}`")
 
-    @app_commands.command(name="store_remove", description="[خاص بالإدارة] حذف سلعة من المتجر")
+    @app_commands.command(name="store_remove", description="[خاص بالإدارة] حذف سلعة من متجر هذا السيرفر")
     @app_commands.checks.has_permissions(administrator=True)
     async def store_remove(self, interaction: discord.Interaction, item_name: str):
         await interaction.response.defer()
-        if "shop_items" not in self.data:
-            await interaction.followup.send("❌ | المتجر فارغ أساساً!", ephemeral=True)
+        guild_id = str(interaction.guild.id)
+
+        if "shops" not in self.data or guild_id not in self.data["shops"] or not self.data["shops"][guild_id]:
+            await interaction.followup.send("❌ | متجر هذا السيرفر فارغ أساساً!", ephemeral=True)
             return
 
-        initial_len = len(self.data["shop_items"])
-        self.data["shop_items"] = [item for item in self.data["shop_items"] if item["name"] != item_name]
+        initial_len = len(self.data["shops"][guild_id])
+        self.data["shops"][guild_id] = [item for item in self.data["shops"][guild_id] if item["name"].lower() != item_name.lower()]
         
-        if len(self.data["shop_items"]) < initial_len:
+        if len(self.data["shops"][guild_id]) < initial_len:
             save_data(self.data)
-            await interaction.followup.send(f"🗑️ | تم حذف السلعة **{item_name}** من المتجر بنجاح.")
+            await interaction.followup.send(f"🗑️ | تم حذف السلعة **{item_name}** من متجر هذا السيرفر بنجاح.")
         else:
-            await interaction.followup.send(f"❌ | لم يتم العثور على سلعة بهذا الاسم في المتجر.", ephemeral=True)
+            await interaction.followup.send(f"❌ | لم يتم العثور على سلعة بهذا الاسم في متجر هذا السيرفر.", ephemeral=True)
 
-    @app_commands.command(name="store", description="عرض جميع سلع المتجر المتاحة للشراء")
+    @app_commands.command(name="store", description="عرض سلع متجر هذا السيرفر الحالية فقط")
     async def store(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        items = self.data.get("shop_items", [])
+        guild_id = str(interaction.guild.id)
+        
+        items = self.data.get("shops", {}).get(guild_id, [])
 
         if not items:
-            await interaction.followup.send("🛒 | المتجر فارغ حالياً، لم يقم الإداريون بإضافة أي سلع بعد.")
+            await interaction.followup.send("🛒 | متجر هذا السيرفر فارغ حالياً، لم يقم الإداريون بإضافة أي سلع هنا بعد.")
             return
 
-        embed = discord.Embed(title="🛍️ | متجر السيرفر (عملة أورا)", color=0x9b59b6, description="قائمة السلع المتاحة للشراء حالياً:")
+        embed = discord.Embed(title=f"🛍️ | متجر سيرفر: {interaction.guild.name} (عملة أورا)", color=0x9b59b6, description="قائمة السلع المخصصة لهذا السيرفر فقط:")
         
         for idx, item in enumerate(items, 1):
             embed.add_field(
@@ -118,17 +122,17 @@ class Economy(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="buy", description="شراء سلعة من المتجر")
+    @app_commands.command(name="buy", description="شراء سلعة من متجر هذا السيرفر")
     async def buy(self, interaction: discord.Interaction, item_name: str):
         await interaction.response.defer()
-        items = self.data.get("shop_items", [])
+        guild_id = str(interaction.guild.id)
+        items = self.data.get("shops", {}).get(guild_id, [])
         
         target_item = next((i for i in items if i["name"].lower() == item_name.lower()), None)
         if not target_item:
-            await interaction.followup.send("❌ | عذراً، هذه السلعة غير موجودة في المتجر. تأكد من الاسم عبر أمر `/store`", ephemeral=True)
+            await interaction.followup.send("❌ | عذراً، هذه السلعة غير موجودة في متجر هذا السيرفر. تأكد من الاسم عبر أمر `/store`", ephemeral=True)
             return
 
-        guild_id = str(interaction.guild.id)
         user_id = str(interaction.user.id)
 
         if guild_id not in self.data["balances"]:
@@ -144,7 +148,7 @@ class Economy(commands.Cog):
         self.data["balances"][guild_id][user_id] -= item_price
         save_data(self.data)
 
-        await interaction.followup.send(f"🎉 | مبروك يا {interaction.user.mention}! اشتريت بنجاح سلعة **{target_item['name']}** مقابل `{item_price} أورا` 🛒✨")
+        await interaction.followup.send(f"🎉 | مبروك يا {interaction.user.mention}! اشتريت بنجاح سلعة **{target_item['name']}** مقابل `{item_price} أورا` من متجر هذا السيرفر 🛒✨")
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
