@@ -9,8 +9,17 @@ bot = commands.Bot(command_prefix="-", intents=intents)
 async def on_ready():
     print(f"البوت جاهز الان ويعمل باسم {bot.user} (ID: {bot.user.id})")
     
-    # تحميل الملفات مباشرة من المجلد الرئيسي
-    cogs_list = ["admin", "economy", "leveling", "mitzf18", "tickets", "welcome"]
+    # قائمة بجميع ملفات الموديولات (Cogs) الموجودة في المجلد الرئيسي
+    cogs_list = [
+        "admin", 
+        "economy", 
+        "leveling", 
+        "mitzf18", 
+        "tickets", 
+        "welcome", 
+        "boost", 
+        "leave"
+    ]
     
     for cog in cogs_list:
         try:
@@ -19,10 +28,10 @@ async def on_ready():
         except Exception as e:
             print(f"❌ فشل تحميل الملف ({cog}) : {e}")
 
-    # مزامنة عامة (Global) لتظهر الأوامر للكل في كل السيرفرات
+    # مزامنة أوامر السلاش (Slash Commands) العامة
     try:
         synced = await bot.tree.sync()
-        print(f"✅ تمت مزامنة (Slash Commands) العامة لـ {len(synced)} أمر")
+        print(f"✅ تمت مزامنة (Slash Commands) لـ {len(synced)} أمر")
     except Exception as e:
         print(f"❌ خطأ في مزامنة الأوامر: {e}")
 
@@ -32,4 +41,5 @@ async def on_command_error(ctx, error):
         return
     print(f"⚠️ خطأ في الأمر: {error}")
 
+# تشغيل البوت باستخدام توكن الحماية الموجود في متغيرات البيئة
 bot.run(os.getenv("TOKEN"))
