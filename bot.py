@@ -9,9 +9,8 @@ bot = commands.Bot(command_prefix="-", intents=intents)
 async def on_ready():
     print(f"البوت جاهز الان ويعمل باسم {bot.user} (ID: {bot.user.id})")
     
-    # قائمة الملفات (Cogs) بما فيها ملف الـ welcome الجديد
-    # (إذا كان ملف welcome موجود داخل مجلد cogs، غيره إلى "cogs.welcome")
-    cogs_list = ["cogs.game", "cogs.economy", "cogs.mitzf18", "cogs.ticket", "welcome"]
+    # قائمة الملفات (Cogs) بما فيها ملف الـ welcome.py
+    cogs_list = ["cogs.game", "cogs.economy", "cogs.mitzf18", "cogs.ticket", "welcome.py"]
     
     for cog in cogs_list:
         try:
