@@ -3,6 +3,8 @@ from discord.ext import commands
 from discord import app_commands
 import random
 import asyncio
+import io
+from PIL import Image, ImageDraw, ImageFont
 
 class RouletteJoinView(discord.ui.View):
     def __init__(self):
@@ -61,63 +63,28 @@ class ReflexView(discord.ui.View):
             except:
                 pass
 
-class Games(commands.Cog):
+class Game(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # أمر السلاش الجديد لعرض قائمة الألعاب مع عدد الأشخاص المطلوبين
-    @app_commands.command(name="games", description="عرض قائمة الألعاب الشاملة مع عدد الأشخاص المطلوب لكل لعبة")
-    async def slash_games(self, interaction: discord.Interaction):
-        embed = discord.Embed(
-            title="🎮 | قائمة ألعاب السيرفر وعدد اللاعبين",
-            description=(
-                "أهلاً بك في قسم الألعاب! إليك كافة الألعاب المتوفرة وعدد الأشخاص المطلوبين لكل لعبة:\n\n"
-                "🎯 **ألعاب جماعية (تتطلب عدد معين):**\n"
-                "• `-روليت` (أو `-roulette`) ➜ تتطلب **4 لاعبين فما فوق** (تنتظر 15 ثانية والخاسر ينطرد).\n"
-                "• `-مافيا` (أو `-mafia`) ➜ تتطلب **أكثر من شخصين** لتوزيع الأدوار.\n\n"
-                "⚡ **ألعاب فردية / سرعة تفاعل (شخص واحد أو عدة أشخاص يتنافسون):**\n"
-                "• `-زر` (أو `-reflex`) ➜ شخص أو أكثر (أسرع ضغطة تفوز).\n"
-                "• `-أسرع` (أو `-fasttype`) ➜ شخص أو أكثر (أسرع شخص يكتب الكلمة).\n"
-                "• `-أعلام` (أو `-flags`) ➜ شخص أو أكثر (تحدي تخمين أعلام الدول).\n"
-                "• `-لوخيروك` (أو `-wouldyourather`) ➜ فردي أو جماعي (خيارات ممتعة).\n"
-                "• `-مفرد`, `-سمعني`, `-حكمة`, `-سؤال`, `-لغز`, `-مضاد`, `-جمع`, `-عقاب`, `-ركب`, `-ماركات`, `-مشاهير`, `-كراسي`, `-كتتويت`, `-غميضة`, `-نكتة`, `-رياضيات` ➜ ألعاب تفاعلية فردية/جماعية.\n\n"
-                "📌 ملاحظة: جميع الألعاب تعمل مباشرة بالبادئة `-` **بدون أي مسافة** (مثال: `-روليت`)."
-            ),
-            color=0x9b59b6
-        )
-        await interaction.response.send_message(embed=embed)
-
-    @commands.command(name="game", aliases=["gameslist"])
-    async def games_menu(self, ctx):
-        menu_text = (
-            "╭─〔 Games 〕─╮\n\n"
-            "1 ➜ `-مفرد`\n"
-            "2 ➜ `-سمعني`\n"
-            "3 ➜ `-حكمة`\n"
-            "4 ➜ `-لوخيروك`\n"
-            "5 ➜ `-سؤال`\n"
-            "6 ➜ `-لغز`\n"
-            "7 ➜ `-روليت` (4 أشخاص فأكثر 🎯)\n"
-            "8 ➜ `-مضاد`\n"
-            "9 ➜ `-جمع`\n"
-            "10 ➜ `-عقاب`\n"
-            "11 ➜ `-ركب`\n"
-            "12 ➜ `-المارد` (قيد الصيانة 🔧⏳)\n"
-            "13 ➜ `-ماركات`\n"
-            "14 ➜ `-مشاهير`\n"
-            "15 ➜ `-كراسي`\n"
-            "16 ➜ `-كتتويت`\n"
-            "17 ➜ `-زر` (شخص أو أكثر ⚡)\n"
-            "18 ➜ `-أسرع` (شخص أو أكثر ⌨️)\n"
-            "19 ➜ `-أعلام` (شخص أو أكثر 🌍)\n"
-            "20 ➜ `-غميضة`\n"
-            "21 ➜ `-نكتة`\n"
-            "22 ➜ `-مافيا` (جماعية 🕵️‍♂️)\n"
-            "23 ➜ `-رياضيات`\n\n"
-            "💡 (ملاحظة: استعمل `/games` لعرض التفاصيل الكاملة)\n"
-            "╰────────────────╯"
-        )
-        await ctx.send(menu_text)
+    def create_text_image(self, text):
+        img = Image.new('RGB', (400, 120), color=(30, 30, 35))
+        d = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.load_default(size=40)
+        except:
+            font = ImageFont.load_default()
+        
+        bbox = d.textbbox((0, 0), text, font=font)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        
+        d.text(((400 - w) / 2, (120 - h) / 2), text, fill=(255, 255, 255), font=font)
+        
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        return discord.File(buffer, filename="challenge.png")
 
     @commands.command(name="روليت", aliases=["roulette"])
     async def roulette(self, ctx):
@@ -185,9 +152,11 @@ class Games(commands.Cog):
 
     @commands.command(name="أسرع", aliases=["fasttype"])
     async def fasttype(self, ctx):
-        words = ["itzF18", "Discord", "Railway", "Python", "Gaming", "Vortex"]
+        words = ["itzF18", "Discord", "Railway", "Python", "Gaming", "Vortex", "Sniper"]
         target_word = random.choice(words)
-        await ctx.send(f"⚡ | أسرع وكتب هذه الكلمة بدقة: `✨ {target_word} ✨`")
+        
+        file = self.create_text_image(target_word)
+        await ctx.send("⚡ | أسرع واكتب الكلمة الموجودة في الصورة التالية:", file=file)
         
         def check(m):
             return m.channel == ctx.channel and m.content == target_word and not m.author.bot
@@ -196,27 +165,95 @@ class Games(commands.Cog):
             msg = await self.bot.wait_for('message', timeout=15.0, check=check)
             await ctx.send(f"🏆 | كفو {msg.author.mention}! كان الأسرع وكتب الكلمة بشكل صحيح وفاز!")
         except asyncio.TimeoutError:
-            await ctx.send("⏰ | انتهى الوقت! محد كتب الكلمة بالسرعة المطلوبة.")
+            await ctx.send(f"⏰ | انتهى الوقت! الكلمة كانت: `{target_word}`")
 
-    @commands.command(name="أعلام", aliases=["flags"])
+    @commands.command(name="علم", aliases=["أعلام", "flags"])
     async def flags(self, ctx):
         flag_list = [
-            {"flag": "🇯🇵", "name": "اليابان", "reward": "50 نقطة"},
-            {"flag": "🇧🇷", "name": "البرازيل", "reward": "50 نقطة"},
-            {"flag": "🇮🇶", "name": "العراق", "reward": "30 نقطة"},
-            {"flag": "🇮🇸", "name": "ايسلندا", "reward": "150 نقطة (جائزة مضاعفة!)"}
+            {"image": "https://flagcdn.com/w320/jp.png", "name": "اليابان"},
+            {"image": "https://flagcdn.com/w320/br.png", "name": "البرازيل"},
+            {"image": "https://flagcdn.com/w320/iq.png", "name": "العراق"},
+            {"image": "https://flagcdn.com/w320/is.png", "name": "ايسلندا"}
         ]
         selected = random.choice(flag_list)
-        await ctx.send(f"🌍 | ما هي الدولة التي تتبع هذا العلم؟\n# {selected['flag']}\n*(الجائزة: {selected['reward']}! أسرع بالإجابة)*")
+        embed = discord.Embed(title="🌍 | ما هي الدولة التي يتبع لها هذا العلم؟", color=0x3498db)
+        embed.set_image(url=selected["image"])
+        
+        await ctx.send(embed=embed)
         
         def check(m):
             return m.channel == ctx.channel and not m.author.bot and selected['name'] in m.content
 
         try:
             msg = await self.bot.wait_for('message', timeout=20.0, check=check)
-            await ctx.send(f"🎉 | بطل يا {msg.author.mention}! تخمينك صح (**{selected['name']}**) وفزت بـ **{selected['reward']}** 🏆")
+            await ctx.send(f"🎉 | بطل يا {msg.author.mention}! تخمينك صح (**{selected['name']}**) 🏆")
         except asyncio.TimeoutError:
             await ctx.send(f"⏰ | انتهى الوقت! الإجابة الصحيحة كانت: **{selected['name']}**")
 
+    @commands.command(name="لغز", aliases=["puzzle"])
+    async def puzzle(self, ctx):
+        puzzles = [
+            {"q": "ما هو الشيء الذي أبيض من السعف وأسود من الليل، يؤكل في النهار ويحرم في الليل؟", "a": "الشاي"},
+            {"q": "شيء يقرصك ولا تراه، فما هو؟", "a": "البرد"},
+            {"q": "له عين ولا يرى، فما هو؟", "a": "الإبرة"}
+        ]
+        p = random.choice(puzzles)
+        await ctx.send(f"🧩 | **حل اللغز التالي:**\n> **{p['q']}**\n*(أمامكم 20 ثانية للإجابة!)*")
+
+        def check(m):
+            return m.channel == ctx.channel and not m.author.bot and p['a'] in m.content
+
+        try:
+            msg = await self.bot.wait_for('message', timeout=20.0, check=check)
+            await ctx.send(f"🎯 | عقريد يا {msg.author.mention}! الإجابة صحيحة (**{p['a']}**) 🧠")
+        except asyncio.TimeoutError:
+            await ctx.send(f"⏰ | انتهى الوقت! الإجابة الصحيحة كانت: **{p['a']}**")
+
+    @commands.command(name="رياضيات", aliases=["math"])
+    async def math_game(self, ctx):
+        n1 = random.randint(1, 20)
+        n2 = random.randint(1, 20)
+        op = random.choice(["+", "-", "*"])
+        
+        if op == "+":
+            ans = n1 + n2
+        elif op == "-":
+            ans = n1 - n2
+        else:
+            ans = n1 * n2
+
+        await ctx.send(f"🧮 | أسرع واحسب النتيجة:\n# `{n1} {op} {n2} = ?`")
+
+        def check(m):
+            return m.channel == ctx.channel and not m.author.bot and m.content == str(ans)
+
+        try:
+            msg = await self.bot.wait_for('message', timeout=15.0, check=check)
+            await ctx.send(f"⚡ | كفو {msg.author.mention}! الناتج صحيح (**{ans}**) وفزت بالتحدي 🏆")
+        except asyncio.TimeoutError:
+            await ctx.send(f"⏰ | انتهى الوقت! الناتج الصحيح هو: **{ans}**")
+
+    @commands.command(name="سؤال", aliases=["question"])
+    async def question(self, ctx):
+        questions = [
+            "ما هي عاصمة فرنسا؟",
+            "كم عدد سور القرآن الكريم؟",
+            "ما هو أكبر كوكب في المجموعة الشمسية؟"
+        ]
+        answers = ["باريس", "114", "المشتري"]
+        idx = random.randint(0, len(questions) - 1)
+        
+        await ctx.send(f"❓ | **السؤال:** {questions[idx]}")
+
+        def check(m):
+            return m.channel == ctx.channel and not m.author.bot and answers[idx] in m.content
+
+        try:
+            msg = await self.bot.wait_for('message', timeout=20.0, check=check)
+            await ctx.send(f"✨ | إجابة صحيحة يا {msg.author.mention} (**{answers[idx]}**) 🌟")
+        except asyncio.TimeoutError:
+            await ctx.send(f"⏰ | انتهى الوقت! الإجابة الصحيحة كانت: **{answers[idx]}**")
+
 async def setup(bot):
-    await bot.add_cog(Games(bot))
+    await bot.add_cog(Game(bot))
+
