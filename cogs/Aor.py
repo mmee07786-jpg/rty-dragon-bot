@@ -4,16 +4,43 @@ from discord import app_commands
 import random
 from datetime import datetime, timedelta
 
-# القواميس لحفظ بيانات النقاط، الديلي، ومتجر كل سيرفر (Guild ID -> Data)
 user_economy = {}
 daily_cooldowns = {}
-server_shops = {}  # {guild_id: {item_id: {"name": "Role Name", "price": 500, "role_id": 123456}}}
+server_shops = {}
 
 class Economy(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # 1. أمر الديلي بنظام السلاش (/daily) - حظ عشوائي من 100 إلى 1000
+    # أمر المساعدة الجديد بنظام السلاش /help-aur
+    @app_commands.command(name="help-aur", description="دليل استخدام نظام عملة اور والألعاب والمتجر بالكامل")
+    async def help_aur(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="📖 | دليل استخدام نظام اور (Aur System)",
+            description=(
+                "أهلاً بك في نظام عملة **اور** والألعاب! إليك كافة الأوامر وطريقة استخدامها:\n\n"
+                "🎁 **الأوامر اليومية (Slash Commands):**\n"
+                "• `/daily` ➜ للحصول على جائزتك اليومية من 100 إلى 1000 اور (مرة كل 24 ساعة).\n"
+                "• `/help-aur` ➜ لعرض هذه القائمة الإرشادية.\n\n"
+                "💳 **أوامر الرصيد والمتجر (Prefix Commands):**\n"
+                "• `-credit` (أو `-اور`) ➜ لمعرفة رصيدك أو رصيد غيرك.\n"
+                "• `-shop` ➜ لعرض متجر السيرفر والرتب المتاحة للشراء.\n"
+                "• `-buy [الرقم]` ➜ لشراء رتبة معينة من المتجر.\n"
+                "• `-addshop [السعر] [@الرتبة] [الوصف]` ➜ (للأدمن) لإضافة رتبة جديدة للمتجر.\n\n"
+                "🎮 **أوامر الألعاب السريعة (بدون مسافة):**\n"
+                "• `-game` ➜ لعرض قائمة الألعاب الشاملة.\n"
+                "• `-روليت` أو `-roulette` ➜ لعبة الروليت (تنتظر 15 ثانية، 4 لاعبين والخاسر ينطرد).\n"
+                "• `-زر` أو `-reflex` ➜ لعبة الزر السريع وتغيير اللون.\n"
+                "• `-لوخيروك` أو `-wouldyourather` ➜ لعبة لو خيروك.\n"
+                "• `-مافيا` أو `-mafia` ➜ توزيع أدوار المافيا السريعة.\n"
+                "• `-أسرع` أو `-fasttype` ➜ أسرع شخص يكتب الكلمة.\n"
+                "• `-أعلام` أو `-flags` ➜ تحدي تخمين أعلام الدول.\n\n"
+                "💎 **ملاحظة:** أمر الإعطاء `-give` حصري ومخصص لمطور البوت (`itzf18`) فقط!"
+            ),
+            color=0x00ff00
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @app_commands.command(name="daily", description="احصل على جائزتك اليومية من عملة اور بشكل عشوائي (مرة كل 24 ساعة)")
     async def daily(self, interaction: discord.Interaction):
         user_id = interaction.user.id
@@ -41,12 +68,11 @@ class Economy(commands.Cog):
 
         embed = discord.Embed(
             title="🎁 | جائزة الديلي اليومية",
-            description=f"مبروك يا {interaction.user.mention}! ربحت **{reward} اور** 🪙",
+            description=f"مبروك يا {interaction.user.mention}! فتحت صندوق الحظ وحصلت على **{reward} اور** 🪙",
             color=0x00ff00
         )
         await interaction.response.send_message(embed=embed)
 
-    # 2. أمر الرصيد (-credit)
     @commands.command(name="credit", aliases=["نقاط", "فلوسي", "اور"])
     async def credit(self, ctx, member: discord.Member = None):
         target = member or ctx.author
@@ -60,11 +86,10 @@ class Economy(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    # 3. أمر إعطاء العملات (حصري لمالك البوت itzf18 فقط)
     @commands.command(name="give", aliases=["اعطاء"])
     async def give_currency(self, ctx, member: discord.Member, amount: int):
         if ctx.author.name.lower() != "itzf18":
-            await ctx.send("❌ | عذراً، هذا الأمر مخصص حصراً لمطور البوت (`itzf18`) فقط!")
+            await ctx.send("❌ | عذراً، هذا الأمر مخصص حصراً لمطور وبوت `itzf18` فقط!")
             return
 
         if amount <= 0:
@@ -86,7 +111,6 @@ class Economy(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    # 4. أمر إضافة رتبة للمتجر (خاص بـ Owner السيرفر فقط)
     @commands.command(name="addshop", aliases=["اضافة_للمتجر"])
     @commands.has_permissions(administrator=True)
     async def addshop(self, ctx, price: int, role: discord.Role, *, desc: str = "رتبة مميزة"):
@@ -104,7 +128,6 @@ class Economy(commands.Cog):
 
         await ctx.send(f"✅ | تم إضافة رتبة **{role.name}** بنجاح إلى متجر السيرفر برقم **{item_id}** بسعر **{price} اور**! 🛒")
 
-    # 5. عرض متجر السيرفر الخاص (-shop)
     @commands.command(name="shop", aliases=["المتجر"])
     async def shop(self, ctx):
         guild_id = ctx.guild.id
@@ -113,20 +136,18 @@ class Economy(commands.Cog):
         if not shop_items:
             embed = discord.Embed(
                 title=f"🛒 | متجر سيرفر {ctx.guild.name}",
-                description="المتجر فارغ حالياً! يمكن لأدمن السيرفر إضافة رتب باستخدام الأمر:\n`-addshop [السعر] [@الرتبة] [الوصف]`",
+                description="المتجر فارغ حالياً! يمكن لأدمن السيرفر إضافة رتب عبر الأمر:\n`-addshop [السعر] [@الرتبة] [الوصف]`",
                 color=0x000000
             )
         else:
             desc_text = "أهلاً بك في متجر السيرفر! استخدم عملة **اور** للشراء عبر `-buy [رقم العنصر]`:\n\n"
             for item_id, data in shop_items.items():
-                desc_text += f"**{item_id} ➜ {data['name']}**\n" \
-                             f"   ┗ السعر: **{data['price']} اور** | التفاصيل: {data['desc']}\n\n"
+                desc_text += f"**{item_id} ➜ {data['name']}**\n   ┗ السعر: **{data['price']} اور** | التفاصيل: {data['desc']}\n\n"
             
             embed = discord.Embed(title=f"🛒 | متجر سيرفر {ctx.guild.name}", description=desc_text, color=0x000000)
 
         await ctx.send(embed=embed)
 
-    # 6. شراء الرتبة من المتجر (-buy)
     @commands.command(name="buy", aliases=["شراء"])
     async def buy(self, ctx, item_id: int = None):
         if not item_id:
@@ -149,7 +170,6 @@ class Economy(commands.Cog):
             await ctx.send(f"⚠️ | رصيدك غير كافي! تمتلك **{balance} اور** وتحتاج إلى **{cost} اور**.")
             return
 
-        # خصم النقاط وإعطاء الرتبة
         user_economy[guild_id][user_id] -= cost
         role = ctx.guild.get_role(item["role_id"])
 
@@ -160,7 +180,7 @@ class Economy(commands.Cog):
             except:
                 await ctx.send(f"⚠️ | تم خصم النقاط، ولكن البوت لا يملك صلاحية لإعطاء هذه الرتبة (تأكد أن رتبة البوت أعلى من الرتبة المطلوبة).")
         else:
-            await ctx.send(f"✅ | تم خصم {cost} اور بنجاح! (ولكن يبدو أن الرتبة حُذفت من السيرفر).")
+            await ctx.send(f"✅ | تم خصم {cost} اور بنجاح! (ولكن الرتبة حُذفت من السيرفر).")
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
