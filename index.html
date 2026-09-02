@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ItzF18 Bot - الصفحة الرسمية</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: Tahoma, sans-serif;
+        }
+
+        /* خلفية متحركة لا نهائية تتدرج بين الأسود والرمادي الفاتح */
+        body {
+            background: linear-gradient(135deg, #0b0b0b, #1a1a1a, #333333, #717171, #1a1a1a, #0b0b0b);
+            background-size: 400% 400%;
+            animation: gradientAnimation 15s ease infinite;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        @keyframes gradientAnimation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .container {
+            max-width: 750px;
+            width: 100%;
+            background: rgba(18, 18, 18, 0.85);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: #ffffff;
+            text-shadow: 0 2px 10px rgba(255, 255, 255, 0.2);
+        }
+
+        .subtitle {
+            color: #aaaaaa;
+            font-size: 14px;
+            margin-bottom: 35px;
+        }
+
+        /* تنسيق الأزرار الثلاثة المطلوبة */
+        .buttons-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .btn {
+            width: 80%;
+            background: rgba(30, 30, 30, 0.9);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 16px 20px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: #ffffff;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 255, 255, 0.1);
+        }
+
+        /* نوافذ الشرح المنبثقة */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            z-index: 100;
+        }
+
+        .modal-content {
+            background: #181818;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            max-width: 600px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+            padding: 30px;
+            border-radius: 16px;
+            text-align: right;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            position: relative;
+        }
+
+        .modal-content h2 {
+            color: #ffffff;
+            margin-bottom: 20px;
+            font-size: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 10px;
+        }
+
+        .modal-content p, .modal-content li {
+            color: #cccccc;
+            font-size: 14px;
+            line-height: 1.8;
+            margin-bottom: 10px;
+        }
+
+        .modal-content ul {
+            padding-right: 20px;
+            margin-bottom: 15px;
+        }
+
+        .close-btn {
+            display: inline-block;
+            background: #333;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: 0.2s;
+            text-align: center;
+            width: 100%;
+            font-weight: bold;
+        }
+
+        .close-btn:hover {
+            background: #555;
+        }
+
+        .dev-badge {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            border-right: 3px solid #ffffff;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>✨ ItzF18 Bot</h1>
+        <p class="subtitle">بوت عربي متكامل لإدارة وحماية السيرفرات باحترافية وسهولة</p>
+
+        <div class="buttons-grid">
+            <!-- الزر الأول: دعوة البوت -->
+            <a href="https://discord.com/oauth2/authorize?client_id=1544073793490915358&permissions=8&integration_type=0&scope=bot+applications.commands" target="_blank" class="btn">دعوة البوت للسيرفر</a>
+            
+            <!-- الزر الثاني: كيفية الاستخدام -->
+            <button class="btn" onclick="openModal('guideModal')">كيفية استخدام</button>
+            
+            <!-- الزر الثالث: طاقم عمل البوت -->
+            <button class="btn" onclick="openModal('staffModal')">طاقم عمل البوت</button>
+        </div>
+    </div>
+
+    <!-- نافذة كيفية الاستخدام -->
+    <div id="guideModal" class="modal">
+        <div class="modal-content">
+            <h2>📖 دليل الاستخدام الشامل للبوت</h2>
+            
+            <p><strong>1. نظام الترحيب، البوست، والمغادرة:</strong></p>
+            <ul>
+                <li>تستطيع تفعيل وتخصيص رسائل الترحيب، إعلانات البوست، ورسائل المغادرة بكل سهولة.</li>
+                <li><strong>ملاحظة هامة للمنشن:</strong> لكي يقوم البوت بعمل منشن تلقائي للعضو داخل الرسالة، يجب عليك كتابة الكلمة <code>{member}</code> في المكان الذي تريده أن يتمشن فيه (مثال: <i>أهلاً بك يا {member} في نورت السيرفر!</i>).</li>
+                <li>تستطيع معاينة الرسائل في أي وقت باستخدام الأوامر التجريبية: <code>/test_welcome</code>, <code>/test_boost</code>, <code>/test_leave</code>.</li>
+            </ul>
+
+            <p><strong>2. نظام التلفيل (Levels):</strong></p>
+            <p>يتتبع نشاط الأعضاء بالكتابة والصوت في السيرفر ويعطيهم خبرة (XP) لزيادة رتبهم ومستوياتهم تلقائياً.</p>
+
+            <p><strong>3. رسالة الأسبوع للمتفاعلين:</strong></p>
+            <p>نظام ذكي يقوم بنشر ملخص لأكثر الأعضاء تفاعلاً ونشاطاً بشكل أسبوعي لتحفيز مجتمع السيرفر.</p>
+
+            <p><strong>4. نظام التذاكر (Tickets) بالتفصيل:</strong></p>
+            <ul>
+                <li><strong>كيف تفتح تذكرة:</strong> يضغط المستخدم على زر فتح التذكرة المخصص في روم الدعم.</li>
+                <li><strong>كيف تستخدمها وتكتب فيها:</strong> يتم إنشاء روم خاص وسري بين الإدارة والعضو، ويمكن كتابة المشاكل والاستفسارات بحرية تامة.</li>
+                <li><strong>كيف تغلقها:</strong> يوجد زر خاص داخل التذكرة للإغلاق والأرشفة فور انتهاء المشكلة.</li>
+            </ul>
+
+            <p><strong>5. نظام العملة (Coins) واللعب:</strong></p>
+            <ul>
+                <li><strong>كيف تشتغل:</strong> يجمع الأعضاء العملات من خلال التفاعل المستمر والنشاط داخل السيرفر.</li>
+                <li><strong>كيف تستخدمها وتفعل المتجر:</strong> تتيح للأعضاء شراء رتب أو مميزات خاصة.</li>
+                <li><strong>كيف تبيع وتشتري:</strong> يستطيع الإداريون إضافة عناصر للبيع في المتجر، ويمكن لأي عضو شراء ما يريده باستخدام رصيده من العملات.</li>
+            </ul>
+
+            <div class="close-btn" onclick="closeModal('guideModal')">إغلاق النافذة</div>
+        </div>
+    </div>
+
+    <!-- نافذة طاقم العمل الترفيهي -->
+    <div id="staffModal" class="modal">
+        <div class="modal-content">
+            <h2>👑 طاقم عمل البوت (فريق الإبداع)</h2>
+            
+            <div class="dev-badge">
+                <p>💻 <strong>المبرمج:</strong> فهد (أنا)</p>
+            </div>
+            
+            <div class="dev-badge">
+                <p>💡 <strong>صاحب الفكرة:</strong> فهد (أنا)</p>
+            </div>
+
+            <div class="dev-badge">
+                <p>🛠️ <strong>طاقم العمل:</strong> فهد (أنا وحدي بالكامل!)</p>
+            </div>
+
+            <p style="margin-top: 20px; text-align: center; color: #ffffff; font-weight: bold;">
+                ملاحظة شخصية: أنا الذي قمت ببرمجة هذا البوت وتصميمه بالكامل لوحدي، ومستعد لمساعدة أي شخص يحتاج استفسار أو دعم! 🤍🔥
+            </p>
+
+            <div class="close-btn" onclick="closeModal('staffModal')">إغلاق النافذة</div>
+        </div>
+    </div>
+
+    <script>
+        function openModal(modalId) {
+            document.getElementById(modalId).style.display = 'flex';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        // إغلاق النافذة عند النقر خارجها
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        }
+    </script>
+
+</body>
+</html>
+
