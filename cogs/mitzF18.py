@@ -1,4 +1,4 @@
- import discord
+import discord
 from discord.ext import commands
 import random
 
@@ -13,7 +13,7 @@ class MentionSystem(commands.Cog):
 
         # التحقق إذا تم عمل منشن للبوت
         if self.bot.user.mentioned_in(message) and not message.mention_everyone:
-            # 1. يحط تفاعل عشوائي على رسالتك (🙂‍↕️ أو 🙂‍↔️)
+            # 1. يحط تفاعل عشوائي على رسالتك
             emoji = random.choice(["🙂‍↕️", "🙂‍↔️"])
             try:
                 await message.add_reaction(emoji)
