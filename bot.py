@@ -1,7 +1,8 @@
+import os
 import discord
 from discord.ext import commands
 
-# 1. تفعيل كافة الصلاحيات وقراءة محتوى الرسائل (الأساسی لقراءة -روليت)
+# 1. تفعيل كافة الصلاحيات وقراءة محتوى الرسائل (ضروري لأوامر الـ - والالعاب)
 intents = discord.Intents.all()
 
 # 2. إنشاء البوت مع البادئة -
@@ -31,5 +32,5 @@ async def on_ready():
     except Exception as e:
         print(f"❌ خطأ في مزامنة الأوامر: {e}")
 
-# ضع التوكن الخاص بك هنا
-bot.run("TOKEN_HERE").
+# 3. تشغيل البوت باستخدام التوكن السري المخزن في Railway بأمان تام
+bot.run(os.getenv("TOKEN"))
