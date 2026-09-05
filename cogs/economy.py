@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import json
 import os
+import time
 
 DATA_FILE = "data.json"
 
@@ -22,6 +23,39 @@ def save_data(data):
 class Economy(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    @app_commands.command(name="daily", description="استلم جائزتك اليومية من عملة أورا (كل 24 ساعة)")
+    async def daily(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        user_id = str(interaction.user.id)
+        current_time = time.time()
+        
+        data = load_data()
+        if "dailies" not in data:
+            data["dailies"] = {}
+            
+        last_claim = data["dailies"].get(user_id, 0)
+        cooldown = 86400  # 24 ساعة بالثواني
+        
+        if current_time - last_claim < cooldown:
+            remaining = int(cooldown - (current_time - last_claim))
+            hours = remaining // 3600
+            minutes = (remaining % 3600) // 60
+            await interaction.followup.send(f"⏳ | لقد استلمت جائزتك اليومية مسبقاً! يمكنك استلامها مرة أخرى بعد **{hours} ساعة و {minutes} دقيقة**.", ephemeral=True)
+            return
+
+        # تحديد كمية الديلي (مثلاً 500 أورا، يكدر المطور يغيرها)
+        daily_amount = 500
+
+        if "balances" not in data:
+            data["balances"] = {}
+
+        data["balances"][user_id] = data["balances"].get(user_id, 0) + daily_amount
+        data["dailies"][user_id] = current_time
+        save_data(data)
+
+        new_bal = data["balances"][user_id]
+        await interaction.followup.send(f"🎁 | مبروك يا {interaction.user.mention}! استلمت جائزتك اليومية بنجاح وحصلت على **{daily_amount} أورا** 🪙\n💰 رصيدك العام الحالي: **{new_bal} أورا**")
 
     @app_commands.command(name="balance", description="معرفة رصيدك من عملة أورا أو رصيد عضو آخر (الرصيد عام بكل السيرفرات)")
     async def balance(self, interaction: discord.Interaction, member: discord.Member = None):
@@ -64,7 +98,6 @@ class Economy(commands.Cog):
     async def take_money(self, interaction: discord.Interaction, member: discord.Member, amount: int):
         await interaction.response.defer(ephemeral=True)
 
-        # التحقق من أن المستخدم هو منشئ البوت فقط
         if interaction.user.id != (await self.bot.application_info()).owner.id:
             await interaction.followup.send("❌ | عذراً، هذا الأمر مخصص **لمنشئ البوت** فقط لتأديب المتطاولين!", ephemeral=True)
             return
@@ -81,7 +114,6 @@ class Economy(commands.Cog):
 
         current_bal = data["balances"].get(user_id, 0)
 
-        # إذا كان رصيده أقل من المبلغ المطلوب سحبه، نسحب ما تبقى لديه فقط
         if current_bal < amount:
             amount = current_bal
 
@@ -197,4 +229,3 @@ class Economy(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
-
