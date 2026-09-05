@@ -17,9 +17,8 @@ def save_raid_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# دالة إرسال الخاص: المتصلين أولاً دفعة دفعة، وبعدها غير المتصلين
+# دالة إرسال الخاص: المتصلين أولاً دفعة دفعة (كل 30)، وبعدها غير المتصلين بالخلفية
 async def send_dm_sorted_batches(guild, embed, view):
-    # فصل الأعضاء إلى متصلين وغير متصلين (مع استبعاد البوتات)
     online_members = []
     offline_members = []
     
@@ -30,7 +29,6 @@ async def send_dm_sorted_batches(guild, embed, view):
             else:
                 offline_members.append(m)
                 
-    # دمجهم بحيث المتصلين بالبداية والبقية بالنهاية
     all_sorted = online_members + offline_members
     batch_size = 30
     
@@ -46,9 +44,9 @@ async def send_dm_sorted_batches(guild, embed, view):
             tasks.append(send_single(member))
         
         await asyncio.gather(*tasks)
-        await asyncio.sleep(2) # فاصل زمني بين الدفعات
+        await asyncio.sleep(2)
 
-# 1. نافذة بدء الرايد
+# 1. نافذة بدء الرايد (Raid Start Modal)
 class RaidStartModal(discord.ui.Modal, title="⚔️ | إعداد ونشر إعلان الرايد"):
     server_link = discord.ui.TextInput(
         label="رابط سيرفر العدو (Invite Link)",
@@ -115,7 +113,7 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | إعداد ونشر إع�
         await interaction.channel.send(embed=embed, view=view)
         asyncio.create_task(send_dm_sorted_batches(interaction.guild, embed, view))
 
-# 2. نافذة إنهاء الرايد
+# 2. نافذة إنهاء الرايد (Raid End Modal)
 class RaidEndModal(discord.ui.Modal, title="🏁 | إنهاء الرايد وتسجيل النتائج"):
     duration = discord.ui.TextInput(
         label="مدة الرايد (Duration)",
