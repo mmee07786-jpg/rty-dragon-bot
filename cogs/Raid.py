@@ -17,8 +17,8 @@ def save_raid_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# 1. نافذة بدء الرايد (Raid Start Modal)
-class RaidStartModal(discord.ui.Modal, title="⚔️ | بدء الرايد وتنبيه الأعضاء"):
+# نافذة بدء الرايد (تبقى Modal لأنها عبارة عن نصوص عادية)
+class RaidStartModal(discord.ui.Modal, title="⚔️ | بدء الرايد ونشر الإعلان مع @here والخاص"):
     server_link = discord.ui.TextInput(
         label="رابط سيرفر العدو (Invite Link)",
         placeholder="https://discord.gg/...",
@@ -53,7 +53,7 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | بدء الرايد وت�
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message("🚀 | جاري نشر إعلان الرايد وتنبيه الأعضاء...", ephemeral=True)
+        await interaction.response.send_message("🚀 | جاري نشر الإعلان العام بـ @here وتوجيهه للخاص للأعضاء...", ephemeral=True)
 
         embed = discord.Embed(
             title="⚔️ **VLX Clan Raid Notification** ⚔️",
@@ -79,67 +79,64 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | بدء الرايد وت�
 
         view = RaidView(self.server_link.value)
 
-        # إرسال الـ Embed الأساسي مع زر الانضمام
-        await interaction.channel.send(embed=embed, view=view)
+        # إرسال الإعلان بالشات العام مع @here
+        await interaction.channel.send(content="@here 🔔 **تنبيه رايد جديد:**", embed=embed, view=view)
 
-        # جلب الأعضاء وإرسالهم بدفعات منشنات نظيفة لضمان عدم تعليق البوت
+        # توجيه للخاص لكل عضو
         try:
             members = [m for m in interaction.guild.members if not m.bot]
-            batch_size = 15
-            for i in range(0, len(members), batch_size):
-                batch = members[i:i + batch_size]
-                mentions_text = " ".join([m.mention for m in batch])
-                await interaction.channel.send(f"📌 **تنبيه الأعضاء:**\n{mentions_text}")
-                await asyncio.sleep(1.5)
+            for member in members:
+                try:
+                    await member.send(content="📩 **توجيه إعلان رايد جديد من سيرفرنا:**", embed=embed, view=view)
+                    await asyncio.sleep(0.8)
+                except Exception:
+                    continue
         except Exception as e:
-            print(f"خطأ في إرسال منشنات الأعضاء: {e}")
+            print(f"خطأ في إرسال الرسائل الخاصة: {e}")
 
-# 2. نافذة إنهاء الرايد (Raid End Modal)
-class RaidEndModal(discord.ui.Modal, title="🏁 | إنهاء الرايد وتسجيل النتائج"):
-    duration = discord.ui.TextInput(
-        label="مدة الرايد (Duration)",
-        placeholder="مثال: 1:11:40",
-        style=discord.TextStyle.short,
-        required=True
-    )
-    result_status = discord.ui.TextInput(
-        label="نتيجة الرايد (Result)",
-        placeholder="VICTORY",
-        style=discord.TextStyle.short,
-        required=True,
-        default="VICTORY"
-    )
-    win_reason = discord.ui.TextInput(
-        label="سبب الفوز (Reason / Operation Status)",
-        placeholder="مثال: Operation successful.",
-        style=discord.TextStyle.short,
-        required=True,
-        default="Operation successful."
-    )
-    participants_input = discord.ui.TextInput(
-        label="آيديات المشاركين أو منشناتهم",
-        placeholder="اكتب الآيديات أو المنشنات هنا...",
-        style=discord.TextStyle.paragraph,
-        required=True
-    )
+class RaidCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-    async def on_submit(self, interaction: discord.Interaction):
+    @app_commands.command(name="raid-start", description="[ خاص بالإدارة ] بدء رايد ونشره بـ here وتوجيهه للخاص")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def raid_start(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(RaidStartModal())
+
+    @app_commands.command(name="raid-end", description="[ خاص بالإدارة ] إنهاء الرايد وتسجيل النتائج بطريقة سهلة للموبايل")
+    @app_commands.describe(
+        duration="مدة الرايد (مثال: 1:11:40)",
+        result_status="نتيجة الرايد (مثال: VICTORY)",
+        win_reason="سبب الفوز أو حالة العملية",
+        member1="المشارك الأول (اختر من القائمة التلقائية)",
+        member2="المشارك الثاني (اختياري)",
+        member3="المشارك الثالث (اختياري)",
+        member4="المشارك الرابع (اختياري)",
+        member5="المشارك الخامس (اختياري)"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def raid_end(
+        self, 
+        interaction: discord.Interaction, 
+        duration: str, 
+        result_status: str = "VICTORY", 
+        win_reason: str = "Operation successful.",
+        member1: discord.Member = None,
+        member2: discord.Member = None,
+        member3: discord.Member = None,
+        member4: discord.Member = None,
+        member5: discord.Member = None
+    ):
         await interaction.response.defer(ephemeral=True)
-        data = load_raid_data()
         
-        participants = []
-        words = self.participants_input.value.split()
-        for w in words:
-            cleaned = w.replace("<@", "").replace(">", "").replace("!", "")
-            if cleaned.isdigit():
-                member = interaction.guild.get_member(int(cleaned))
-                if member:
-                    participants.append(member)
+        # جمع الأعضاء الذين تم اختيارهم من القوائم
+        participants = [m for m in [member1, member2, member3, member4, member5] if m is not None]
 
         if not participants:
-            await interaction.followup.send("❌ | لم تقم بتحديد أعضاء مشاركين صحيحيين!", ephemeral=True)
+            await interaction.followup.send("❌ | يجب عليك اختيار مشارك واحد على الأقل!", ephemeral=True)
             return
 
+        data = load_raid_data()
         if "raider_stats" not in data:
             data["raider_stats"] = {}
 
@@ -159,11 +156,11 @@ class RaidEndModal(discord.ui.Modal, title="🏁 | إنهاء الرايد وت�
 
         embed = discord.Embed(
             title="〈★〉🏁 **RAID CONCLUDED**",
-            description=f"`{self.win_reason.value}`",
+            description=f"`{win_reason}`",
             color=0x000000
         )
-        embed.add_field(name="🏁 Result", value=f"`✅ {self.result_status.value}`", inline=False)
-        embed.add_field(name="⏱️ Duration", value=f"`{self.duration.value}`", inline=False)
+        embed.add_field(name="🏁 Result", value=f"`✅ {result_status}`", inline=False)
+        embed.add_field(name="⏱️ Duration", value=f"`{duration}`", inline=False)
         embed.add_field(name="👥 Raiders", value=f"`{len(participants)}`", inline=False)
         embed.add_field(name="✅ Raider List", value=raider_list_text, inline=False)
         embed.add_field(name="🔥 Win Streak", value=f"`{current_streak} in a row`", inline=False)
@@ -173,20 +170,5 @@ class RaidEndModal(discord.ui.Modal, title="🏁 | إنهاء الرايد وت�
         await interaction.channel.send(content=f"🔔 تجميعة المشاركين بالرايد: {mentions_str}", embed=embed)
         await interaction.followup.send("✅ | تم نشر نتائج الرايد في الشات العام بنجاح!", ephemeral=True)
 
-class RaidCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-    @app_commands.command(name="raid-start", description="[ خاص بالإدارة ] بدء رايد جديد ونشر الإعلان")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def raid_start(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(RaidStartModal())
-
-    @app_commands.command(name="raid-end", description="[ خاص بالإدارة ] إنهاء الرايد ونشر النتائج بالشات العام")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def raid_end(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(RaidEndModal())
-
 async def setup(bot):
     await bot.add_cog(RaidCog(bot))
-
