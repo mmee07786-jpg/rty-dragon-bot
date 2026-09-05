@@ -17,34 +17,42 @@ def save_raid_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# دالة إرسال الخاص: المتصلين أولاً دفعة دفعة (كل 30)، وبعدها غير المتصلين بالخلفية
-async def send_dm_sorted_batches(guild, embed, view):
+# دالة إرسال مرتبة: المتواجدون أولاً، ثم بقية الأعضاء تدريجياً، مع استبعاد البوتات تماماً
+async def send_dm_sorted_safely(guild, embed, view):
+    # التأكد من جلب جميع الأعضاء وتحديث الكاش
+    if len(guild.members) < guild.member_count:
+        try:
+            async for _ in guild.fetch_members(limit=None):
+                pass
+        except:
+            pass
+
     online_members = []
     offline_members = []
     
     for m in guild.members:
-        if not m.bot:
-            if m.status != discord.Status.offline:
-                online_members.append(m)
-            else:
-                offline_members.append(m)
+        # استبعاد البوتات بشكل قطعي
+        if m.bot:
+            continue
+            
+        if m.status != discord.Status.offline:
+            online_members.append(m)
+        else:
+            offline_members.append(m)
                 
+    # الترتيب: المتواجدون أولاً، ووراهم الأعضاء غير المتصلين (Offline)
     all_sorted = online_members + offline_members
-    batch_size = 30
     
-    for i in range(0, len(all_sorted), batch_size):
-        batch = all_sorted[i:i + batch_size]
-        tasks = []
-        for member in batch:
-            async def send_single(m):
-                try:
-                    await m.send(embed=embed, view=view)
-                except:
-                    pass
-            tasks.append(send_single(member))
-        
-        await asyncio.gather(*tasks)
-        await asyncio.sleep(2)
+    for member in all_sorted:
+        try:
+            await member.send(embed=embed, view=view)
+            await asyncio.sleep(1) # فاصل زمني ثانية واحدة لمنع حظر الـ API من ديسكورد
+        except discord.Forbidden:
+            pass # العضو مقفل الخاص
+        except discord.HTTPException:
+            await asyncio.sleep(5) # في حال صار ضغط مؤقت، انتظر 5 ثواني وكمل
+        except:
+            pass
 
 # 1. نافذة بدء الرايد (Raid Start Modal)
 class RaidStartModal(discord.ui.Modal, title="⚔️ | إعداد ونشر إعلان الرايد"):
@@ -82,7 +90,7 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | إعداد ونشر إع�
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message("🚀 | تم بدء الرايد وجاري إرسال الإعلانات للمتصلين أولاً ثم البقية...", ephemeral=True)
+        await interaction.response.send_message("🚀 | تم بدء الرايد وجاري إرسال الإعلانات للمتواجدين أولاً ثم البقية بالخاص...", ephemeral=True)
 
         class RaidView(discord.ui.View):
             def __init__(self, link):
@@ -111,7 +119,7 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | إعداد ونشر إع�
         embed.set_footer(text=f"Raid Initiated by {interaction.user.name} | VLX Clan")
 
         await interaction.channel.send(embed=embed, view=view)
-        asyncio.create_task(send_dm_sorted_batches(interaction.guild, embed, view))
+        asyncio.create_task(send_dm_sorted_safely(interaction.guild, embed, view))
 
 # 2. نافذة إنهاء الرايد (Raid End Modal)
 class RaidEndModal(discord.ui.Modal, title="🏁 | إنهاء الرايد وتسجيل النتائج"):
