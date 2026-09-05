@@ -23,7 +23,7 @@ def save_raid_data(data):
 class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement"):
     server_link = discord.ui.TextInput(
         label="Enemy server link",
-        placeholder="https://discord.gg/...",
+        placeholder="",
         style=discord.TextStyle.short,
         required=True
     )
