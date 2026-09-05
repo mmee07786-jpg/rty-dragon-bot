@@ -7,7 +7,7 @@ class RobloxChecker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @discord.app_commands.command(name="roblox", description="[الكلان] البحث عن حساب روبلوكس ومعرفة حالته واللعبة التي يلعبها")
+    @discord.app_commands.command(name="roblox", description="[الكلان] البحث عن حساب روبلوكس، عرض السكن كاملاً بدون خلفية، ومعرفة حالته")
     @discord.app_commands.describe(username="اكتب يوزر روبلوكس (Username الحقيقي بدقة)")
     async def roblox(self, interaction: discord.Interaction, username: str):
         await interaction.response.defer()
@@ -19,7 +19,7 @@ class RobloxChecker(commands.Cog):
 
         async with aiohttp.ClientSession(headers=headers) as session:
             try:
-                # الطريقة الصحيحة والمحدثة للبحث عن يوزر في روبلوكس عبر POST
+                # 1. البحث عن الـ User عبر الـ POST request
                 search_url = "https://users.roblox.com/v1/usernames/users"
                 payload = {
                     "usernames": [username],
@@ -41,6 +41,8 @@ class RobloxChecker(commands.Cog):
                     display_name = users[0]["displayName"]
                     name = users[0]["name"]
 
+                profile_url = f"https://www.roblox.com/users/{user_id}/profile"
+
                 # 2. جلب معلومات الحساب الأساسية
                 info_url = f"https://users.roblox.com/v1/users/{user_id}"
                 async with session.get(info_url) as resp:
@@ -50,11 +52,12 @@ class RobloxChecker(commands.Cog):
                     if len(description) > 120:
                         description = description[:120] + "..."
 
-                # 3. جلب صورة الآفاتار
-                thumb_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=150x150&format=Png&isCircular=false"
+                # 3. جلب صورة السكن كاملة (Full Body Render) بصيغة PNG وبدون خلفية بيضاء إن أمكن عبر Thumbnail API
+                # نستخدم endpoint الـ 420x420 للجسد الكامل
+                thumb_url = f"https://thumbnails.roblox.com/v1/users/avatar?userIds={user_id}&size=420x420&format=Png&isCircular=false"
                 async with session.get(thumb_url) as resp:
                     thumb_data = await resp.json()
-                    avatar_url = thumb_data["data"][0]["imageUrl"] if thumb_data.get("data") else None
+                    skin_url = thumb_data["data"][0]["imageUrl"] if thumb_data.get("data") else None
 
                 # 4. جلب حالة الحضور (Presence)
                 presence_url = "https://presence.roblox.com/v1/presence/users"
@@ -77,9 +80,10 @@ class RobloxChecker(commands.Cog):
                         elif p_type == 3:
                             game_status = "يعمل على Roblox Studio 💻"
 
-                # تصميم الـ Embed الاحترافي
+                # تصميم الـ Embed الاحترافي مع عرض السكن كصورة رئيسية (Image) واضحة
                 embed = discord.Embed(
                     title=f"🎮 | ملف لاعب Roblox: {name}",
+                    url=profile_url,
                     description=f"**الاسم المعروض:** `{display_name}`\n**معرف الحساب (ID):** `{user_id}`\n**تاريخ الانضمام:** `{created_at}`\n\n**الحالة الآن:** {game_status}\n**مكان التواجد:**\n{place_info}",
                     color=discord.Color.from_rgb(30, 144, 255)
                 )
@@ -87,8 +91,9 @@ class RobloxChecker(commands.Cog):
                 if description and description != "لا توجد نبذة شخصية.":
                     embed.add_field(name="📌 | النبذة الشخصية (Bio):", value=f"```{description}```", inline=False)
                     
-                if avatar_url:
-                    embed.set_thumbnail(url=avatar_url)
+                # وضع صورة السكن الكاملة بشكل بارز وكبير داخل الإمبد (Image عوضاً عن مجرد Thumbnail صغير)
+                if skin_url:
+                    embed.set_image(url=skin_url)
 
                 embed.set_footer(text=f"طلب بواسطة {interaction.user.name} | ItzF18 Bot", icon_url=interaction.user.display_avatar.url)
                 await interaction.followup.send(embed=embed)
