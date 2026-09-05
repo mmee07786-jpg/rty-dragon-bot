@@ -38,13 +38,21 @@ class Leave(commands.Cog):
         )
         if self.leave_image:
             embed.set_image(url=self.leave_image)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         if self.leave_channel_id is None:
             return
+        
+        # البحث الآمن عن الروم عبر الـ Cache أو الـ Fetch لمنع خطأ الـ ID
         channel = self.bot.get_channel(self.leave_channel_id)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(self.leave_channel_id)
+            except Exception:
+                return
+
         if channel:
             formatted_msg = self.leave_message.replace("{member}", member.mention)
             embed = discord.Embed(
@@ -54,7 +62,10 @@ class Leave(commands.Cog):
             )
             if self.leave_image:
                 embed.set_image(url=self.leave_image)
-            await channel.send(embed=embed)
+            try:
+                await channel.send(embed=embed)
+            except Exception:
+                pass
 
 async def setup(bot):
     await bot.add_cog(Leave(bot))
