@@ -4,7 +4,6 @@ from discord import app_commands
 import json
 import os
 import asyncio
-import time
 import google.generativeai as genai
 import aiohttp
 import io
@@ -141,7 +140,7 @@ class RaidSelectView(discord.ui.View):
         data["win_streak"] = data.get("win_streak", 0) + 1
         save_json(RAID_FILE, data)
 
-        embed = discord.Embed(title="〈★〉🏁 **RAID CONCLUDED**", description=`\`{self.win_reason}\``, color=EMBED_COLOR)
+        embed = discord.Embed(title="〈★〉🏁 **RAID CONCLUDED**", description=f"`{self.win_reason}`", color=EMBED_COLOR)
         embed.add_field(name="🏁 Result", value=f"`✅ {self.result_status}`", inline=False)
         embed.add_field(name="⏱️ Duration", value=f"`{self.duration}`", inline=False)
         embed.add_field(name="👥 Total Raiders", value=f"`{len(participants)}`", inline=False)
@@ -154,7 +153,7 @@ class RaidSelectView(discord.ui.View):
         await interaction.followup.send("✅ | Results recorded successfully!", ephemeral=True)
 
 
-# ----------------- الكلاس المجمع الأساسي (Bot Core + Cogs) -----------------
+# ----------------- الكلاس المجمع الأساسي (Bot Core) -----------------
 class MyBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -214,14 +213,15 @@ class MyBot(commands.Bot):
             else:
                 await interaction.response.send_message("ℹ️ | ليس لديك ذاكرة مخزنة.", ephemeral=True)
 
-        # 🚀 المزامنة الفورية للأوامر حتى تظهر مباشرة في ديسكورد
+        # 🚀 المزامنة الفورية للأوامر
         await self.tree.sync()
         print("✅ | تمت مزامنة جميع الأوامر بنجاح وتظهر الآن في البوت!")
 
     async def on_ready(self):
         print(f"Logged in as {self.user} (ID: {self.user.id})")
 
-# تشغيل البوت (ضع توكن بوتك هنا بدلاً من YOUR_BOT_TOKEN)
+# تشغيل البوت مع السحب التلقائي للتوكن من Railway
 if __name__ == "__main__":
     bot = MyBot()
-    bot.run("YOUR_BOT_TOKEN")
+    token = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
+    bot.run(token)
