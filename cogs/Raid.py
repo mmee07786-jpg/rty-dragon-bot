@@ -34,9 +34,10 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
     )
     targets = discord.ui.TextInput(
         label="Targets / Matchup",
-        placeholder="e.g., VLX vs ENEMY",
+        placeholder="VLX X TAL",
         style=discord.TextStyle.short,
-        required=True
+        required=True,
+        default="VLX X TAL"
     )
     counts = discord.ui.TextInput(
         label="Our Count & Their Count",
