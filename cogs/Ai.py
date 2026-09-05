@@ -206,7 +206,7 @@ class MyBot(commands.Bot):
             await interaction.followup.send(embed=embed, file=file)
 
         @self.tree.command(name="clear-ai", description="مسح ذاكرة المحادثة مع الذكاء الاصطناعي")
-        async def clear_ai(interaction: discord.Interaction):
+        async def clear-ai(interaction: discord.Interaction):
             if interaction.user.id in self.chat_sessions:
                 del self.chat_sessions[interaction.user.id]
                 await interaction.response.send_message("🧹 | تم مسح الذاكرة بنجاح!", ephemeral=True)
@@ -220,8 +220,9 @@ class MyBot(commands.Bot):
     async def on_ready(self):
         print(f"Logged in as {self.user} (ID: {self.user.id})")
 
-# تشغيل البوت مع السحب التلقائي للتوكن من Railway
+# تشغيل البوت بالمتغير الجديد تماماً
 if __name__ == "__main__":
     bot = MyBot()
-    token = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
+    token = os.getenv("VLX_BOT_TOKEN")
     bot.run(token)
+
