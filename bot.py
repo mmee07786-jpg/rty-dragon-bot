@@ -9,7 +9,7 @@ bot = commands.Bot(command_prefix="-", intents=intents)
 async def on_ready():
     print(f"البوت جاهز الان ويعمل باسم {bot.user} (ID: {bot.user.id})")
     
-    # قائمة بجميع ملفات الموديولات (Cogs) الموجودة في المجلد الرئيسي
+    # قائمة بجميع ملفات الموديولات (Cogs) الشاملة الموجودة في مستودعك
     cogs_list = [
         "admin", 
         "economy", 
@@ -18,7 +18,13 @@ async def on_ready():
         "tickets", 
         "welcome", 
         "boost", 
-        "leave"
+        "leave",
+        "Raid",
+        "activity_check",
+        "automod",
+        "autoroles",
+        "join_message",
+        "roblox"
     ]
     
     for cog in cogs_list:
