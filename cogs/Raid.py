@@ -120,8 +120,8 @@ class RaidEndModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Result
         default="Operation successful."
     )
     participants_input = discord.ui.TextInput(
-        label="Participants IDs or Mentions",
-        placeholder="Paste IDs or mentions here...",
+        label="Participants Mentions (Mention them here)",
+        placeholder="@User1 @User2 @User3 ...",
         style=discord.TextStyle.paragraph,
         required=True
     )
@@ -131,6 +131,7 @@ class RaidEndModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Result
         data = load_raid_data()
         
         participants = []
+        # استخراج الأيدي تلقائياً من المنشنات الموجودة في النص المدخل
         words = self.participants_input.value.split()
         for w in words:
             cleaned = w.replace("<@", "").replace(">", "").replace("!", "")
@@ -147,7 +148,7 @@ class RaidEndModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Result
                     participants.append(member)
 
         if not participants:
-            await interaction.followup.send("❌ | No valid participants found from the provided inputs!", ephemeral=True)
+            await interaction.followup.send("❌ | No valid participants found from the provided mentions!", ephemeral=True)
             return
 
         if "raider_stats" not in data:
@@ -217,4 +218,3 @@ class RaidCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidCog(bot))
-
