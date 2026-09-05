@@ -123,8 +123,8 @@ class RaidEndModal(discord.ui.Modal, title="Conclude Raid & Record Results"):
         default="Operation successful."
     )
     participants_input = discord.ui.TextInput(
-        label="Mention participants here",
-        placeholder="@User1 @User2 @User3 ...",
+        label="Participants (Mentions or Names)",
+        placeholder="@User1 @User2 or names...",
         style=discord.TextStyle.paragraph,
         required=True
     )
@@ -134,27 +134,40 @@ class RaidEndModal(discord.ui.Modal, title="Conclude Raid & Record Results"):
         data = load_raid_data()
         
         participants = []
+        text_input = self.participants_input.value
         
-        # طريقة بحث متطورة جداً تستخرج الأيدي سواء كان منشن أو أرقام مباشرة
+        # 1. محاولة استخراج الأيديات الصريحة أو منشنات الـ Discord الداخلية
         import re
-        found_ids = re.findall(r'\d+', self.participants_input.value)
-        
+        found_ids = re.findall(r'\d+', text_input)
         for uid_str in found_ids:
-            user_id = int(uid_str)
-            # نتأكد أن الرقم طويل بما يكفي ليكون آيدي مستخدم ديسكورد (عادة أكثر من 15 رقم)
             if len(uid_str) > 10:
+                user_id = int(uid_str)
                 member = interaction.guild.get_member(user_id)
                 if not member:
                     try:
                         member = await interaction.guild.fetch_member(user_id)
                     except Exception:
                         member = None
-                
                 if member and member not in participants and not member.bot:
                     participants.append(member)
 
+        # 2. إذا لم يتم العثور على أيديات، نقوم بالبحث بالأسماء أو الكلمات المدخلة بالمطابقة
         if not participants:
-            await interaction.followup.send("No valid participants found from the provided mentions!", ephemeral=True)
+            words = text_input.replace(",", " ").split()
+            for word in words:
+                clean_word = word.replace("@", "").strip()
+                if not clean_word:
+                    continue
+                for member in interaction.guild.members:
+                    if member.bot:
+                        continue
+                    if (clean_word.lower() in member.name.lower() or 
+                        (member.nick and clean_word.lower() in member.nick.lower())):
+                        if member not in participants:
+                            participants.append(member)
+
+        if not participants:
+            await interaction.followup.send("No valid participants found! Please check the names or mentions.", ephemeral=True)
             return
 
         if "raider_stats" not in data:
@@ -204,7 +217,7 @@ class RaidEndModal(discord.ui.Modal, title="Conclude Raid & Record Results"):
         if BANNER_URL:
             embed.set_image(url=BANNER_URL)
             
-        embed.set_footer(text=f"Raid Ended by {interaction.system_channel.guild.name if interaction.guild else ''} | VLX Clan")
+        embed.set_footer(text=f"Raid Ended by {interaction.user.name} | VLX Clan")
 
         await interaction.channel.send(content="**Raid Final Report & Results:**", embed=embed)
         await interaction.followup.send("Results recorded and report published successfully!", ephemeral=True)
