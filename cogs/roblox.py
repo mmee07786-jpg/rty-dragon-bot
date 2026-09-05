@@ -7,9 +7,9 @@ class RobloxChecker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @discord.app_commands.command(name="roblox", description="[الكلان] البحث عن حساب روبلوكس، عرض السكن كاملاً بدون خلفية، ومعرفة حالته")
-    @discord.app_commands.describe(username="اكتب يوزر روبلوكس (Username الحقيقي بدقة)")
-    async def roblox(self, interaction: discord.Interaction, username: str):
+    @discord.app_commands.command(name="roblox", description="[الكلان] البحث عن حساب روبلوكس ومعرفة حالته واللعبة التي يلعبها")
+    @discord.app_commands.describe(query="اكتب يوزر روبلوكس (Username) أو الـ ID الحقيقي مباشرة")
+    async def roblox(self, interaction: discord.Interaction, query: str):
         await interaction.response.defer()
 
         headers = {
@@ -19,27 +19,39 @@ class RobloxChecker(commands.Cog):
 
         async with aiohttp.ClientSession(headers=headers) as session:
             try:
-                # 1. البحث عن الـ User عبر الـ POST request
-                search_url = "https://users.roblox.com/v1/usernames/users"
-                payload = {
-                    "usernames": [username],
-                    "excludeBannedUsers": True
-                }
-                
-                async with session.post(search_url, json=payload) as resp:
-                    if resp.status != 200:
-                        await interaction.followup.send(f"❌ | فشل الاتصال بروبلوكس (كود الخطأ: `{resp.status}`).", ephemeral=True)
-                        return
-                    
-                    data = await resp.json()
-                    users = data.get("data", [])
-                    if not users:
-                        await interaction.followup.send(f"❌ | لم يتم العثور على مستخدم روبلوكس بهذا اليوزر: `{username}`\n*(تأكد من كتابة اليوزر الرسمي الصحيح وليس اسم العرض)*", ephemeral=True)
-                        return
-                    
-                    user_id = users[0]["id"]
-                    display_name = users[0]["displayName"]
-                    name = users[0]["name"]
+                user_id = None
+                name = ""
+                display_name = ""
+
+                # التحقق إذا المدخل عبارة عن رقم (ID مباشرة) أو نص (Username)
+                if query.isdigit():
+                    user_id = int(query)
+                    info_url = f"https://users.roblox.com/v1/users/{user_id}"
+                    async with session.get(info_url) as resp:
+                        if resp.status != 200:
+                            await interaction.followup.send(f"❌ | لم يتم العثور على مستخدم بهذا الـ ID: `{query}`", ephemeral=True)
+                            return
+                        user_data = await resp.json()
+                        name = user_data.get("name")
+                        display_name = user_data.get("displayName")
+                else:
+                    # البحث عبر اليوزر
+                    search_url = "https://users.roblox.com/v1/usernames/users"
+                    payload = {"usernames": [query], "excludeBannedUsers": True}
+                    async with session.post(search_url, json=payload) as resp:
+                        if resp.status != 200:
+                            await interaction.followup.send(f"❌ | فشل الاتصال بروبلوكس (كود الخطأ: `{resp.status}`).", ephemeral=True)
+                            return
+                        
+                        data = await resp.json()
+                        users = data.get("data", [])
+                        if not users:
+                            await interaction.followup.send(f"❌ | لم يتم العثور على مستخدم بهذا اليوزر: `{query}`\n*(تأكد من كتابة اليوزر الحقيقي وليس اسم العرض Display Name)*", ephemeral=True)
+                            return
+                        
+                        user_id = users[0]["id"]
+                        display_name = users[0]["displayName"]
+                        name = users[0]["name"]
 
                 profile_url = f"https://www.roblox.com/users/{user_id}/profile"
 
@@ -52,8 +64,7 @@ class RobloxChecker(commands.Cog):
                     if len(description) > 120:
                         description = description[:120] + "..."
 
-                # 3. جلب صورة السكن كاملة (Full Body Render) بصيغة PNG وبدون خلفية بيضاء إن أمكن عبر Thumbnail API
-                # نستخدم endpoint الـ 420x420 للجسد الكامل
+                # 3. جلب صورة السكن كاملة
                 thumb_url = f"https://thumbnails.roblox.com/v1/users/avatar?userIds={user_id}&size=420x420&format=Png&isCircular=false"
                 async with session.get(thumb_url) as resp:
                     thumb_data = await resp.json()
@@ -65,12 +76,13 @@ class RobloxChecker(commands.Cog):
                     pres_data = await resp.json()
                     presence_list = pres_data.get("presences", [])
                     
-                    game_status = "غير متصل 🔴"
-                    place_info = "غير متوفر"
+                    game_status = "غير متصل 🔴 (أو إعدادات الحصوصية مقفلة)"
+                    place_info = "غير متوفر (تأكد من إعدادات الخصوصية للحساب)"
                     
                     if presence_list:
                         p = presence_list[0]
                         p_type = p.get("userPresenceType")
+                        # 0: Offline, 1: Online, 2: In Game, 3: In Studio
                         if p_type == 1:
                             game_status = "متصل بموقع روبلوكس 🟢"
                         elif p_type == 2:
@@ -80,7 +92,7 @@ class RobloxChecker(commands.Cog):
                         elif p_type == 3:
                             game_status = "يعمل على Roblox Studio 💻"
 
-                # تصميم الـ Embed الاحترافي مع عرض السكن كصورة رئيسية (Image) واضحة
+                # تصميم الـ Embed
                 embed = discord.Embed(
                     title=f"🎮 | ملف لاعب Roblox: {name}",
                     url=profile_url,
@@ -91,7 +103,6 @@ class RobloxChecker(commands.Cog):
                 if description and description != "لا توجد نبذة شخصية.":
                     embed.add_field(name="📌 | النبذة الشخصية (Bio):", value=f"```{description}```", inline=False)
                     
-                # وضع صورة السكن الكاملة بشكل بارز وكبير داخل الإمبد (Image عوضاً عن مجرد Thumbnail صغير)
                 if skin_url:
                     embed.set_image(url=skin_url)
 
