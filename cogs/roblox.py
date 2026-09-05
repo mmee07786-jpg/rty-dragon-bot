@@ -8,20 +8,25 @@ class RobloxChecker(commands.Cog):
         self.bot = bot
 
     @discord.app_commands.command(name="roblox", description="[الكلان] البحث عن حساب روبلوكس ومعرفة حالته واللعبة التي يلعبها")
-    @discord.app_commands.describe(username="اكتب اسم يوزر روبلوكس (Username الحقيقي وليس اسم العرض)")
+    @discord.app_commands.describe(username="اكتب يوزر روبلوكس (Username الحقيقي بدقة)")
     async def roblox(self, interaction: discord.Interaction, username: str):
         await interaction.response.defer()
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Content-Type": "application/json"
         }
 
         async with aiohttp.ClientSession(headers=headers) as session:
             try:
-                # 1. البحث عن الـ User ID
-                search_url = "https://users.roblox.com/v1/users/search"
-                params = {"keyword": username, "limit": 1}
-                async with session.get(search_url, params=params) as resp:
+                # الطريقة الصحيحة والمحدثة للبحث عن يوزر في روبلوكس عبر POST
+                search_url = "https://users.roblox.com/v1/usernames/users"
+                payload = {
+                    "usernames": [username],
+                    "excludeBannedUsers": True
+                }
+                
+                async with session.post(search_url, json=payload) as resp:
                     if resp.status != 200:
                         await interaction.followup.send(f"❌ | فشل الاتصال بروبلوكس (كود الخطأ: `{resp.status}`).", ephemeral=True)
                         return
@@ -29,14 +34,14 @@ class RobloxChecker(commands.Cog):
                     data = await resp.json()
                     users = data.get("data", [])
                     if not users:
-                        await interaction.followup.send(f"❌ | لم يتم العثور على مستخدم روبلوكس بهذا اليوزر: `{username}`\n*(تأكد من كتابة الـ Username الحقيقي وليس Display Name)*", ephemeral=True)
+                        await interaction.followup.send(f"❌ | لم يتم العثور على مستخدم روبلوكس بهذا اليوزر: `{username}`\n*(تأكد من كتابة اليوزر الرسمي الصحيح وليس اسم العرض)*", ephemeral=True)
                         return
                     
                     user_id = users[0]["id"]
                     display_name = users[0]["displayName"]
                     name = users[0]["name"]
 
-                # 2. جلب معلومات الحساب
+                # 2. جلب معلومات الحساب الأساسية
                 info_url = f"https://users.roblox.com/v1/users/{user_id}"
                 async with session.get(info_url) as resp:
                     user_info = await resp.json()
@@ -72,7 +77,7 @@ class RobloxChecker(commands.Cog):
                         elif p_type == 3:
                             game_status = "يعمل على Roblox Studio 💻"
 
-                # تصميم الـ Embed
+                # تصميم الـ Embed الاحترافي
                 embed = discord.Embed(
                     title=f"🎮 | ملف لاعب Roblox: {name}",
                     description=f"**الاسم المعروض:** `{display_name}`\n**معرف الحساب (ID):** `{user_id}`\n**تاريخ الانضمام:** `{created_at}`\n\n**الحالة الآن:** {game_status}\n**مكان التواجد:**\n{place_info}",
@@ -95,4 +100,3 @@ class RobloxChecker(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RobloxChecker(bot))
-
