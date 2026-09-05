@@ -16,7 +16,8 @@ def load_data():
         "top_channels": {},
         "top_messages": {},
         "level_channels": {},
-        "custom_level_messages": {}
+        "custom_level_messages": {},
+        "leveling_status": {} # مخزن حالة التلفيل لكل سيرفر (True / False)
     }
 
 def save_data(data):
@@ -38,6 +39,12 @@ class Leveling(commands.Cog):
             return
 
         guild_id = str(message.guild.id)
+
+        # التحقق هل نظام التلفيل مفعل في هذا السيرفر أم لا (افتراضياً مغلق False)
+        leveling_status = self.data.get("leveling_status", {})
+        if not leveling_status.get(guild_id, False):
+            return # إذا كان مغلقاً، يتجاهل الرسالة بالكامل ولا يحسب أي XP
+
         user_id = str(message.author.id)
 
         if "server_levels" not in self.data:
@@ -78,6 +85,23 @@ class Leveling(commands.Cog):
                 pass
             
             save_data(self.data)
+
+    @app_commands.command(name="toggle-leveling", description="[ خاص بالإدارة ] تفعيل أو إيقاف نظام التلفيل في السيرفر")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def toggle_leveling(self, interaction: discord.Interaction):
+        guild_id = str(interaction.guild.id)
+        if "leveling_status" not in self.data:
+            self.data["leveling_status"] = {}
+        
+        current_status = self.data["leveling_status"].get(guild_id, False)
+        new_status = not current_status
+        self.data["leveling_status"][guild_id] = new_status
+        save_data(self.data)
+
+        if new_status:
+            await interaction.response.send_message("✅ | تم **تفعيل** نظام التلفيل بنجاح في السيرفر! أصبح البوت يحسب النقاط الآن.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ | تم **إيقاف وتعطيل** نظام التلفيل في السيرفر! لن يتم احتساب أي نقاط.", ephemeral=True)
 
     @app_commands.command(name="rank", description="معرفة لفلك الحالي ونقاط الـ XP بالتفصيل")
     async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
@@ -149,7 +173,7 @@ class Leveling(commands.Cog):
         save_data(self.data)
         await interaction.response.send_message(f"✅ | تم تعيين قناة إشعارات التلفيل بنجاح إلى {channel.mention} !", ephemeral=True)
 
-    @app_commands.command(name="disable-level-channel", description="[ خاص بالإدارة ] إلغاء وتעطيل قناة التلفيل المخصصة (لتظهر الرسائل بنفس روم الدردشة)")
+    @app_commands.command(name="disable-level-channel", description="[ خاص بالإدارة ] إلغاء وتعطيل قناة التلفيل المخصصة (لتظهر الرسائل بنفس روم الدردشة)")
     @app_commands.checks.has_permissions(administrator=True)
     async def disable_level_channel(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id)
@@ -182,7 +206,7 @@ class Leveling(commands.Cog):
         save_data(self.data)
         await interaction.response.send_message(f"✅ | تم تعيين قناة التوبات بنجاح إلى {channel.mention} !", ephemeral=True)
 
-    @app_commands.command(name="disable-top-channel", description="[ خاص بالإدارة ] إلغاء وتעطيل إرسال التوبات الأسبوعية")
+    @app_commands.command(name="disable-top-channel", description="[ خاص بالإدارة ] إلغاء وتعطيل إرسال التوبات الأسبوعية")
     @app_commands.checks.has_permissions(administrator=True)
     async def disable_top_channel(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id)
@@ -208,6 +232,12 @@ class Leveling(commands.Cog):
     async def weekly_leaderboard_loop(self):
         for guild in self.bot.guilds:
             guild_id = str(guild.id)
+            
+            # التأكد أن السيرفر مفعل لديه التلفيل حتى يرسل التوب الأسبوعي
+            leveling_status = self.data.get("leveling_status", {})
+            if not leveling_status.get(guild_id, False):
+                continue
+
             server_levels = self.data.get("server_levels", {})
             top_channels = self.data.get("top_channels", {})
             top_messages = self.data.get("top_messages", {})
@@ -240,4 +270,3 @@ class Leveling(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Leveling(bot))
-
