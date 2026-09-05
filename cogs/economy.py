@@ -30,7 +30,6 @@ class Economy(commands.Cog):
         user_id = str(target.id)
 
         data = load_data()
-        # الأرصدة أصبحت عالمية وموحدة لكل السيرفرات
         balances = data.get("balances", {})
         bal = balances.get(user_id, 0)
         
@@ -60,6 +59,43 @@ class Economy(commands.Cog):
         save_data(data)
 
         await interaction.followup.send(f"✅ | تم بنجاح إضافة **{amount} أورا** إلى رصيد العضو {member.mention}.\nرصيده الحالي العام: **{new_bal} أورا** 🪙")
+
+    @app_commands.command(name="take_money", description="[خاص بمنشئ البوت فقط] سحب عملات من عضو متطاول وتأديبه")
+    async def take_money(self, interaction: discord.Interaction, member: discord.Member, amount: int):
+        await interaction.response.defer(ephemeral=True)
+
+        # التحقق من أن المستخدم هو منشئ البوت فقط
+        if interaction.user.id != (await self.bot.application_info()).owner.id:
+            await interaction.followup.send("❌ | عذراً، هذا الأمر مخصص **لمنشئ البوت** فقط لتأديب المتطاولين!", ephemeral=True)
+            return
+
+        if amount <= 0:
+            await interaction.followup.send("❌ | يجب أن يكون المبلغ المراد سحبه أكبر من صفر!", ephemeral=True)
+            return
+
+        user_id = str(member.id)
+        data = load_data()
+        
+        if "balances" not in data:
+            data["balances"] = {}
+
+        current_bal = data["balances"].get(user_id, 0)
+
+        # إذا كان رصيده أقل من المبلغ المطلوب سحبه، نسحب ما تبقى لديه فقط
+        if current_bal < amount:
+            amount = current_bal
+
+        new_bal = current_bal - amount
+        data["balances"][user_id] = new_bal
+        save_data(data)
+
+        embed = discord.Embed(
+            title="⚖️ تأديب وسحب أموال",
+            description=f"تم سحب **{amount} أورا** من العضو {member.mention} لأنه كان يتباهى ويتطاول على الشباب! 😎\n💰 رصيده الحالي العام: **{new_bal} أورا**",
+            color=discord.Color.red()
+        )
+        embed.set_footer(text=f"بواسطة المطور الشخصي للبوت")
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="store_add", description="[خاص بالإدارة] إضافة سلعة جديدة لمتجر هذا السيرفر فقط مع الوصف والسعر")
     @app_commands.checks.has_permissions(administrator=True)
@@ -153,7 +189,6 @@ class Economy(commands.Cog):
             await interaction.followup.send(f"❌ | رصيدك غير كافٍ! رصيدك العام الحالي هو `{user_balance} أورا` بينما السعر المطلوب هو `{item_price} أورا`.", ephemeral=True)
             return
 
-        # خصم المبلغ من رصيده العام
         data["balances"][user_id] -= item_price
         save_data(data)
 
@@ -162,3 +197,4 @@ class Economy(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
+
