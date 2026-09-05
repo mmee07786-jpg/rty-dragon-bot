@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import json
 import os
+import asyncio
 
 DATA_FILE = "raid_data.json"
 
@@ -55,7 +56,8 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message("🚀 | Done!", ephemeral=True)
+        # رد سريع للمشرف حتى لا تگول الكونسول إن التفاعل انتهى
+        await interaction.response.send_message("🚀 | جاري إرسال الريد بالخاص للأعضاء على شكل دفعات...", ephemeral=True)
 
         embed = discord.Embed(
             title="⚔️ **VLX Clan Raid Notification** ⚔️",
@@ -85,7 +87,43 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
 
         view = RaidView(self.server_link.value)
 
+        # 1. أولاً: إرسال الإعلان في الروم الحالية
         await interaction.channel.send(content="@here 🔔 **New Raid Notification:**", embed=embed, view=view)
+
+        # 2. ثانياً: تصنيف الأعضاء (متصلين وغير متصلين) وتجنب البوتات
+        online_members = []
+        offline_members = []
+
+        for member in interaction.guild.members:
+            if member.bot:
+                continue
+            # فحص الحالة (متصل، مشهور كمتصل online/idle/dnd يعتبرون نشطين أو حسب الحالة المتاحة)
+            if member.status != discord.Status.offline:
+                online_members.append(member)
+            else:
+                offline_members.append(member)
+
+        # دالة مساعدة لإرسال الرسائل بدفعات وبشكل آمن
+        async def send_in_batches(member_list, batch_size, delay):
+            for i in range(0, len(member_list), batch_size):
+                batch = member_list[i:i + batch_size]
+                tasks = []
+                for member in batch:
+                    async def send_dm(m):
+                        try:
+                            await m.send(content="📩 **Raid Notification Direct Message:**", embed=embed, view=view)
+                        except Exception:
+                            pass # في حال كان غالق الخاص
+                    tasks.append(send_dm(member))
+                
+                # تنفيذ الدفعة الحالية بالتوازي
+                await asyncio.gather(*tasks)
+                # انتظار بسيط بين كل دفعة ودفعة لتجنب سبام ديسكورد
+                await asyncio.sleep(delay)
+
+        # تشغيل إرسال الدفعات في الخلفية حتى لا يعلق البوت
+        asyncio.create_task(send_in_batches(online_members, batch_size=30, delay=1.5))
+        asyncio.create_task(send_in_batches(offline_members, batch_size=20, delay=2.0))
 
 class RaidEndModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
     duration = discord.ui.TextInput(
