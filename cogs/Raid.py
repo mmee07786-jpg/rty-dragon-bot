@@ -3,7 +3,6 @@ from discord.ext import commands
 from discord import app_commands
 import json
 import os
-import asyncio
 
 DATA_FILE = "raid_data.json"
 
@@ -22,7 +21,7 @@ def save_raid_data(data):
 
 class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement"):
     server_link = discord.ui.TextInput(
-        label="Enemy server link",
+        label="Server Link",
         placeholder="",
         style=discord.TextStyle.short,
         required=True
@@ -35,10 +34,10 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
     )
     targets = discord.ui.TextInput(
         label="Targets / Matchup",
-        placeholder="VLX X TAL",
+        placeholder="",
         style=discord.TextStyle.short,
         required=True,
-        default="VLX X TAL"
+        default=""
     )
     counts = discord.ui.TextInput(
         label="Our Count & Their Count",
@@ -56,7 +55,7 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message("🚀 | Broadcasting raid notification with @here and DMs...", ephemeral=True)
+        await interaction.response.send_message("🚀 | Done!", ephemeral=True)
 
         embed = discord.Embed(
             title="⚔️ **VLX Clan Raid Notification** ⚔️",
@@ -87,17 +86,6 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
         view = RaidView(self.server_link.value)
 
         await interaction.channel.send(content="@here 🔔 **New Raid Notification:**", embed=embed, view=view)
-
-        try:
-            members = [m for m in interaction.guild.members if not m.bot]
-            for member in members:
-                try:
-                    await member.send(content="📩 **Raid Notification Direct Message:**", embed=embed, view=view)
-                    await asyncio.sleep(0.8)
-                except Exception:
-                    continue
-        except Exception as e:
-            print(f"Error sending DM: {e}")
 
 class RaidEndModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
     duration = discord.ui.TextInput(
