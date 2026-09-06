@@ -96,7 +96,6 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         data["win_streak"] = data.get("win_streak", 0) + 1
         current_streak = data["win_streak"]
 
-        # تسجيل وتحديث عدد الرايدات لكل عضو تم منشنته تلقائياً حتى لو كانوا 200+
         user_ids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
         for uid in user_ids:
             if uid not in data["raider_stats"]:
@@ -143,20 +142,39 @@ class RaidSystemCog(commands.Cog):
 
     @app_commands.command(name="raid-end", description="[ Admin Only ] Conclude the raid and record results")
     @app_commands.checks.has_permissions(administrator=True)
-    async def raid_end(self, interaction: discord.Interaction):
+    async def raid-end(self, interaction: discord.Interaction):
         await interaction.response.send_modal(RaidEndInfoModal())
 
-    @app_commands.command(name="raid-list", description="نشر لستة المشاركين (الحد الأقصى 30 عضو)")
-    @app_commands.describe(members_list="اكتب أو الصق أسماء الـ 30 عضو هنا كحد أقصى")
-    async def raid_list(self, interaction: discord.Interaction, members_list: str):
-        lines = members_list.strip().split("\n")
-        if len(lines) > 30:
-            lines = lines[:30]
-            
-        final_list = "\n".join(lines)
-        
-        embed = discord.Embed(title="📋 | Raid List (Max 30 Members)", description=final_list, color=EMBED_COLOR)
-        embed.set_footer(text=f"Published by {interaction.user.name} | VLX Clan")
+    @app_commands.command(name="raid-list", description="Auto-generate and send the top 30 raiders list in English")
+    async def raid_list(self, interaction: discord.Interaction):
+        data = load_raid_data()
+        stats = data.get("raider_stats", {})
+
+        if not stats:
+            await interaction.response.send_message("❌ | No raid statistics recorded yet!", ephemeral=True)
+            return
+
+        # ترتيب الأعضاء تنازلياً حسب عدد الرايدات وأخذ أول 30 شخص كحد أقصى
+        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:30]
+
+        description = ""
+        for index, (uid, count) in enumerate(sorted_raiders, start=1):
+            user = interaction.guild.get_member(int(uid))
+            name = user.mention if user else f"User ID: {uid}"
+            medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"#{index}"
+            description += f"{medal} {name} ──> **{count}** Raids Won\n"
+
+        if not description:
+            description = "No participants found."
+
+        embed = discord.Embed(
+            title="📋 | VLX Clan Active Raiders List (Top 30)",
+            description=description,
+            color=EMBED_COLOR
+        )
+        embed.set_footer(text=f"Requested by {interaction.user.name} | VLX Clan System")
+
+        # إرسال القائمة مباشرة بالروم وبدون الحاجة لأي ويب هوك
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="raid-mentions", description="نشر منشنات المشاركين (يتحمل أكثر من 200 عضو دفعة وحدة)")
@@ -207,4 +225,3 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
-
