@@ -55,7 +55,6 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
         await interaction.channel.send(content="@here 🔔 **New Raid Notification:**", embed=embed, view=view)
 
 
-# نموذج مبسط ومستقر جداً لتفادي أخطاء ديسكورد (أقل من 5 حقول)
 class RaidInfoModal(discord.ui.Modal, title="🏁 | Raid Details"):
     raid_number = discord.ui.TextInput(label="RAID Number", placeholder="", style=discord.TextStyle.short, required=True)
     enemy = discord.ui.TextInput(label="ENEMY", placeholder="", style=discord.TextStyle.short, required=True)
@@ -63,11 +62,7 @@ class RaidInfoModal(discord.ui.Modal, title="🏁 | Raid Details"):
     duration = discord.ui.TextInput(label="DURATION", placeholder="", style=discord.TextStyle.short, required=True)
     status_reason = discord.ui.TextInput(label="STATUS", placeholder="", style=discord.TextStyle.short, required=True)
 
-    def __init__(self):
-        super().__init__()
-
     async def on_submit(self, interaction: discord.Interaction):
-        # الانتقال للخطوة الثانية بسلاسة وبدون أي وقت مستقطع
         view = RaidExtraModalView(
             self.raid_number.value,
             self.enemy.value,
@@ -162,4 +157,37 @@ class RaidParticipantsModal(discord.ui.Modal, title="👥 | MVPs & Media"):
 
         media_val = self.media_links.value.strip() if self.media_links.value else ""
         if media_val and media_val.lower() != "skip":
-            report_content += f"**𝐏𝐑𝐎𝐎𝐅𝐒 / 𝐌𝐄
+            report_content += f"**𝐏𝐑𝐎𝐎𝐅𝐒 / 𝐌𝐄𝐃𝐈𝐀:**\n╰➤ {media_val}\n\n"
+
+        report_content += (
+            f"🔥 **Win Streak:** `{current_streak} in a row`\n\n"
+            f"╰────────────────╯"
+        )
+
+        embed = discord.Embed(color=EMBED_COLOR, description=report_content)
+        embed.set_footer(text=f"Raid Ended by {interaction.user.name} | VLX Clan")
+
+        await interaction.channel.send(content="🏁 **Raid Final Report & Results:**", embed=embed)
+        await interaction.followup.send("✅ | تم نشر التقرير النهائي بنجاح!", ephemeral=True)
+
+
+class RaidCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="raid-start", description="[ Admin Only ] Start a raid with announcement")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def raid_start(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(RaidStartModal())
+
+    @app_commands.command(name="raid-end", description="[ Admin Only ] Conclude the raid and record results")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def raid_end(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(RaidInfoModal())
+
+async def setup(bot):
+    await bot.add_cog(RaidCog(bot))
+    # هذا السطر يقوم بمزامنة الأوامر فوراً مع سيرفرك بمجرد تشغيل الكود
+    await bot.tree.sync()
+    print("✅ | تم تفعيل ومزامنة أوامر الرايد (raid-start & raid-end) بنجاح!")
+
