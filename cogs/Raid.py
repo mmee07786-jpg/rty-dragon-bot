@@ -55,78 +55,28 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
         await interaction.channel.send(content="@here 🔔 **New Raid Notification:**", embed=embed, view=view)
 
 
-class RaidEndModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
-    raid_number = discord.ui.TextInput(label="RAID Number", placeholder="129", style=discord.TextStyle.short, required=True)
-    enemy = discord.ui.TextInput(label="ENEMY", placeholder="IVRAID", style=discord.TextStyle.short, required=True)
-    ally = discord.ui.TextInput(label="ALLY", placeholder="VALTRYX", style=discord.TextStyle.short, required=True)
-    duration = discord.ui.TextInput(label="DURATION", placeholder="30m", style=discord.TextStyle.short, required=True)
-    status_reason = discord.ui.TextInput(label="STATUS", placeholder="auto win", style=discord.TextStyle.short, required=True)
+class FinalReportModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
+    # تم الحفاظ على الحقول فارغة تماماً بدون أي أمثلة (Placeholders)
+    raid_number = discord.ui.TextInput(label="RAID Number", placeholder="", style=discord.TextStyle.short, required=True)
+    enemy = discord.ui.TextInput(label="ENEMY", placeholder="", style=discord.TextStyle.short, required=True)
+    ally = discord.ui.TextInput(label="ALLY", placeholder="", style=discord.TextStyle.short, required=True)
+    duration = discord.ui.TextInput(label="DURATION", placeholder="", style=discord.TextStyle.short, required=True)
+    status_reason = discord.ui.TextInput(label="STATUS", placeholder="", style=discord.TextStyle.short, required=True)
 
-    async def on_submit(self, interaction: discord.Interaction):
-        view = RaidSearchButtonView(
-            self.raid_number.value,
-            self.enemy.value,
-            self.ally.value,
-            self.duration.value,
-            self.status_reason.value,
-            interaction.user
-        )
-        await interaction.response.send_message(
-            "👇 **اضغط على الزر أدناه لكتابة أو البحث وإضافة أسماء/منشنات المشاركين (بدون قيود):**",
-            view=view,
-            ephemeral=True
-        )
-
-
-class RaidSearchButtonView(discord.ui.View):
-    def __init__(self, raid_number, enemy, ally, duration, status_reason, author):
-        super().__init__(timeout=180)
-        self.raid_number = raid_number
-        self.enemy = enemy
-        self.ally = ally
-        self.duration = duration
-        self.status_reason = status_reason
-        self.author = author
-
-    @discord.ui.button(label="🔍 بحث وإدخال المشاركين (MVPs)", style=discord.ButtonStyle.green, emoji="⭐")
-    async def open_search_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user != self.author:
-            await interaction.response.send_message("❌ | هذه القائمة ليست لك!", ephemeral=True)
-            return
-
-        await interaction.response.send_modal(
-            FinalReportModal(
-                self.raid_number,
-                self.enemy,
-                self.ally,
-                self.duration,
-                self.status_reason
-            )
-        )
-
-
-class FinalReportModal(discord.ui.Modal, title="👥 | بحث وإدخال المشاركين"):
     mvps_input = discord.ui.TextInput(
-        label="اكتب أسماء أو منشنات الأعضاء (ابحث واكتبهم هنا)",
-        placeholder="مثال: @user1 @user2 أو اكتب أجزاء من أسمائهم...",
+        label="MVPs (اكتب أسماء أو منشنات الأعضاء هنا)",
+        placeholder="",
         style=discord.TextStyle.paragraph,
         required=True
     )
 
+    # التعديل المطلوب: سؤال بالإنجليزية مع خيار الـ Skip
     media_links = discord.ui.TextInput(
-        label="روابط الصور / الفيديوهات (اختياري - بلا حدود)",
-        placeholder="ضع الروابط هنا إن وجدت...",
+        label="Do you want to upload a video or photo?",
+        placeholder="Send links or type 'skip' to skip...",
         style=discord.TextStyle.paragraph,
         required=False
     )
-
-    def __init__(self, raid_number, enemy, ally, duration, status_reason):
-        super().__init__()
-        self.raid_number = raid_number
-        self.enemy = enemy
-        self.ally = ally
-        self.duration = duration
-        self.status_reason = status_reason
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -139,25 +89,27 @@ class FinalReportModal(discord.ui.Modal, title="👥 | بحث وإدخال ال�
         current_streak = data["win_streak"]
         save_raid_data(data)
 
-        # التنسيق المطلوب تماماً بالإطارات والأسهم
+        # التنسيق المطلوب بالإطارات والأسهم تماماً
         report_content = (
             f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n"
             f"**𝐑𝐀𝐈𝐃:**\n"
-            f"╰➤{self.raid_number}\n\n"
+            f"╰➤{self.raid_number.value}\n\n"
             f"**𝐄𝐍𝐄𝐌𝐘:**\n"
-            f"╰➤{self.enemy}\n\n"
+            f"╰➤{self.enemy.value}\n\n"
             f"**𝐀𝐋𝐋𝐘:**\n"
-            f"╰➤{self.ally}\n\n"
+            f"╰➤{self.ally.value}\n\n"
             f"**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n"
-            f"╰➤{self.duration}\n\n"
+            f"╰➤{self.duration.value}\n\n"
             f"**𝐒𝐓𝐀𝐓𝐔𝐒:**\n"
-            f"╰➤{self.status_reason}\n\n"
+            f"╰➤{self.status_reason.value}\n\n"
             f"**𝐌𝐕𝐏𝐒:**\n"
             f"╰➤ {self.mvps_input.value}\n\n"
         )
 
-        if self.media_links and self.media_links.value.strip():
-            report_content += f"**𝐏𝐑𝐎𝐎𝐅𝐒 / 𝐌𝐄𝐃𝐈𝐀:**\n╰➤ {self.media_links.value}\n\n"
+        # التحقق إذا كتب المستخدم 'skip' أو ترك الحقل فارغاً، لن يتم إضافته للتقرير
+        media_val = self.media_links.value.strip() if self.media_links.value else ""
+        if media_val and media_val.lower() != "skip":
+            report_content += f"**𝐏𝐑𝐎𝐎𝐅𝐒 / 𝐌𝐄𝐃𝐈𝐀:**\n╰➤ {media_val}\n\n"
 
         report_content += (
             f"🔥 **Win Streak:** `{current_streak} in a row`\n\n"
@@ -168,7 +120,7 @@ class FinalReportModal(discord.ui.Modal, title="👥 | بحث وإدخال ال�
         embed.set_footer(text=f"Raid Ended by {interaction.user.name} | VLX Clan")
 
         await interaction.channel.send(content="🏁 **Raid Final Report & Results:**", embed=embed)
-        await interaction.followup.send("✅ | تم نشر التقرير النهائي بجميع المشاركين بنجاح!", ephemeral=True)
+        await interaction.followup.send("✅ | تم نشر التقرير النهائي بنجاح وبدون أي أمثلة معطلة!", ephemeral=True)
 
 
 class RaidCog(commands.Cog):
@@ -183,7 +135,7 @@ class RaidCog(commands.Cog):
     @app_commands.command(name="raid-end", description="[ Admin Only ] Conclude the raid and record results")
     @app_commands.checks.has_permissions(administrator=True)
     async def raid_end(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(RaidEndModal())
+        await interaction.response.send_modal(FinalReportModal())
 
 async def setup(bot):
     await bot.add_cog(RaidCog(bot))
