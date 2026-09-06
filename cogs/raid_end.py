@@ -26,7 +26,6 @@ class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Re
     status_reason = discord.ui.TextInput(label="STATUS", placeholder="", style=discord.TextStyle.short, required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # الانتقال لاختيار الأعضاء عبر القائمة التفاعلية لضمان عدم حدوث خطأ في الوقت
         view = RaidMembersSelectView(
             self.raid_number.value,
             self.enemy.value,
@@ -36,7 +35,7 @@ class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Re
             interaction.user
         )
         await interaction.response.send_message(
-            "👇 **اضغط على الزر أدناه لاختيار أعضاء الـ MVPs (لستة كاملة مع إمكانية البحث والتحديد):**",
+            "👇 **اضغط على الزر أدناه لكتابة وبحث وإضافة أسماء/منشنات المشاركين (بدون قيود):**",
             view=view,
             ephemeral=True
         )
@@ -52,19 +51,13 @@ class RaidMembersSelectView(discord.ui.View):
         self.status_reason = status_reason
         self.author = author
 
-    @discord.ui.button(label="🔍 فتح لستة واختيار الأعضاء (MVPs)", style=discord.ButtonStyle.green, emoji="⭐")
+    @discord.ui.button(label="⭐ بحث وإدخال المشاركين (MVPs)", style=discord.ButtonStyle.green, emoji="🔍")
     async def open_selector(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.author:
             await interaction.response.send_message("❌ | هذه القائمة ليست لك!", ephemeral=True)
             return
 
-        # جلب جميع أعضاء السيرفر لتضمينهم في قائمة الاختيار
-        guild = interaction.guild
-        await guild.fetch_members(limit=None) # جلب كل الأعضاء
-        members = [m for m in guild.members if not m.bot]
-
-        # ديسكورد يسمح بحد أقصى 25 خياراً في القائمة المنسدلة للأسف، لذا نقسمهم لأول 25 أو نعمل خيار بحث نصي متطور إذا العدد كبير
-        # لتجنب مشكلة الـ 25 خيار وتوفير "بحث كتابي شامل" لكل الأعضاء بدون استثناء كما طلبت سابقاً:
+        # يفتح المودال بشكل فوري وسريع جداً بدون أي عمليات جلب ثقيلة
         await interaction.response.send_modal(
             RaidFinalMediaModal(
                 self.raid_number,
@@ -78,7 +71,7 @@ class RaidMembersSelectView(discord.ui.View):
 
 class RaidFinalMediaModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
     mvps_input = discord.ui.TextInput(
-        label="MVPs (اكتب أو امنشن الأعضاء - بلا حدود)",
+        label="MVPs (ابحث واكتب أسماء أو منشنات الأعضاء هنا)",
         placeholder="مثال: @user1 @user2 أو اكتب أسمائهم...",
         style=discord.TextStyle.paragraph,
         required=True
@@ -110,7 +103,6 @@ class RaidFinalMediaModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         current_streak = data["win_streak"]
         save_raid_data(data)
 
-        # التنسيق المطلوب تماماً بالإطارات والأسهم
         report_content = (
             f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n"
             f"**𝐑𝐀𝐈𝐃:**\n"
@@ -127,10 +119,8 @@ class RaidFinalMediaModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
             f"╰➤ {self.mvps_input.value}\n\n"
         )
 
-        # التعامل مع الروابط المتعددة (صور أو فيديوهات) إذا لم يكتب المستخدم skip
         media_val = self.media_links.value.strip() if self.media_links.value else ""
         if media_val and media_val.lower() != "skip":
-            # يدعم روابط متعددة مفصولة بمسافات أو أسطر جديدة
             report_content += f"**𝐏𝐑𝐎𝐎𝐅𝐒 / 𝐌𝐄𝐃𝐈𝐀:**\n╰➤ {media_val}\n\n"
 
         report_content += (
@@ -142,7 +132,7 @@ class RaidFinalMediaModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         embed.set_footer(text=f"Raid Ended by {interaction.user.name} | VLX Clan")
 
         await interaction.channel.send(content="🏁 **Raid Final Report & Results:**", embed=embed)
-        await interaction.followup.send("✅ | تم نشر التقرير النهائي بجميع المشاركين والروابط المتعددة بنجاح!", ephemeral=True)
+        await interaction.followup.send("✅ | تم نشر التقرير النهائي بنجاح!", ephemeral=True)
 
 
 class RaidEndCog(commands.Cog):
