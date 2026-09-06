@@ -140,9 +140,9 @@ class RaidSystemCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="raid-end", description="[ Admin Only ] Conclude the raid and record results")
+    @app_commands.command(name="end-raid", description="[ Admin Only ] Conclude the raid and record results")
     @app_commands.checks.has_permissions(administrator=True)
-    async def raid-end(self, interaction: discord.Interaction):
+    async def end_raid(self, interaction: discord.Interaction):
         await interaction.response.send_modal(RaidEndInfoModal())
 
     @app_commands.command(name="raid-list", description="Auto-generate and send the top 30 raiders list in English")
@@ -154,7 +154,6 @@ class RaidSystemCog(commands.Cog):
             await interaction.response.send_message("❌ | No raid statistics recorded yet!", ephemeral=True)
             return
 
-        # ترتيب الأعضاء تنازلياً حسب عدد الرايدات وأخذ أول 30 شخص كحد أقصى
         sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:30]
 
         description = ""
@@ -174,7 +173,6 @@ class RaidSystemCog(commands.Cog):
         )
         embed.set_footer(text=f"Requested by {interaction.user.name} | VLX Clan System")
 
-        # إرسال القائمة مباشرة بالروم وبدون الحاجة لأي ويب هوك
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="raid-mentions", description="نشر منشنات المشاركين (يتحمل أكثر من 200 عضو دفعة وحدة)")
