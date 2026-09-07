@@ -73,7 +73,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
 
     media_links = discord.ui.TextInput(
         label="Do you want to upload a video or photo?",
-        placeholder="ضع أكثر من رابط (كل رابط بسطر) أو اكتب 'skip' للتخطي...",
+        placeholder="ضع رابط الصورة أو الفيديو هنا...",
         style=discord.TextStyle.paragraph,
         required=False
     )
@@ -112,7 +112,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
             f"╰➤{self.enemy}\n\n"
             f"**𝐀𝐋𝐋𝐘:**\n"
             f"╰➤{self.ally}\n\n"
-            f"**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n"
+            f"**𝐃𝐔𝐑𝐀Ｔ𝐈𝐎𝐍:**\n"
             f"╰➤{self.duration}\n\n"
             f"**𝐒𝐓𝐀𝐓𝐔𝐒:**\n"
             f"╰➤{self.status_reason}\n\n"
@@ -121,8 +121,14 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         )
 
         media_val = self.media_links.value.strip() if self.media_links.value else ""
+        extracted_image_url = None
+
         if media_val and media_val.lower() != "skip":
-            report_content += f"**𝐏𝐑𝐎𝐎𝐅𝐒 / 𝐌𝐄𝐃𝐈𝐀:**\n╰➤ {media_val}\n\n"
+            # البحث عن أول رابط داخل النص المدخل
+            urls = re.findall(r'https?://[^\s]+', media_val)
+            if urls:
+                extracted_image_url = urls[0] # استخراج أول رابط لمعالجته كصورة للإيمبد
+                report_content += f"**𝐏𝐑𝐎𝐎𝐅𝐒 / 𝐌𝐄𝐃𝐈𝐀:**\n╰➤ {media_val}\n\n"
 
         report_content += (
             f"🔥 **Win Streak:** `{current_streak} in a row`\n\n"
@@ -130,6 +136,11 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         )
 
         embed = discord.Embed(color=EMBED_COLOR, description=report_content)
+        
+        # إذا وجد رابط صورة أو إثبات، سيتم عرضه بشكل مباشر ومرتب داخل الإيمبد نفسه!
+        if extracted_image_url:
+            embed.set_image(url=extracted_image_url)
+
         embed.set_footer(text=f"Raid Ended by {interaction.user.name} | VLX Clan")
 
         await interaction.channel.send(content="🏁 **Raid Final Report & Results:**", embed=embed)
@@ -201,7 +212,7 @@ class RaidSystemCog(commands.Cog):
     @app_commands.command(name="raid-top", description="عرض قائمة أكثر الأشخاص مشاركة في الرايدات (Leaderboard)")
     async def raid_top(self, interaction: discord.Interaction):
         data = load_raid_data()
-        stats = data.get("raider_stats", {})
+        stats = data.get("raider_stats,") or data.get("raider_stats", {})
         
         if not stats:
             await interaction.response.send_message("❌ | لا توجد أي إحصائيات مسجلة لرايدات حتى الآن!")
@@ -222,4 +233,9 @@ class RaidSystemCog(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
 async def setup(bot):
-    await bot.add_cog(RaidSystemCog(bot))
+    @bot.tree.command(name="raid-top", description="عرض قائمة أكثر الأشخاص مشاركة في الرايدات (Leaderboard)")
+    async def raid_top_global(interaction: discord.Interaction):
+        cog = bot.get_cog("RaidSystemCog")
+        if cog:
+            await cog.raid_top(interaction)
+
