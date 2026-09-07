@@ -1,314 +1,199 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ItzF18 Bot - الصفحة الرسمية</title>
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: Tahoma, sans-serif;
-        }
+import discord
+from discord.ext import commands
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
+import uvicorn
+import json
+import os
+import asyncio
 
-        /* خلفية متحركة لا نهائية تتدرج بين الأسود والرمادي والفاتح */
-        body {
-            background: linear-gradient(135deg, #0b0b0b, #1a1a1a, #333333, #717171, #333333, #1a1a1a, #0b0b0b);
-            background-size: 500% 500%;
-            animation: gradientAnimation 18s ease infinite;
-            color: #ffffff;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
+# إعداد تطبيق FastAPI والبوت معاً
+app = FastAPI()
+intents = discord.Intents.default()
+intents.members = True
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-        @keyframes gradientAnimation {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
+SETTINGS_FILE = "server_settings.json"
 
-        /* المربع الأسود الشفاف الزجاجي */
-        .container {
-            max-width: 600px;
-            width: 100%;
-            background: rgba(18, 18, 18, 0.35);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            padding: 35px 20px;
-            border-radius: 20px;
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            text-align: center;
-        }
+def load_all_settings():
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except:
+                return {}
+    return {}
 
-        h1 {
-            font-size: 26px;
-            margin-bottom: 8px;
-            color: #ffffff;
-            text-shadow: 0 2px 10px rgba(255, 255, 255, 0.3);
-        }
+def save_all_settings(data):
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
-        .subtitle {
-            color: #e0e0e0;
-            font-size: 13.5px;
-            margin-bottom: 25px;
-        }
-
-        /* الأزرار الصغيرة والمتناسقة */
-        .buttons-grid {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            align-items: center;
-        }
-
-        .btn {
-            width: 55%;
-            background: rgba(25, 25, 25, 0.5);
-            backdrop-filter: blur(5px);
-            color: #ffffff;
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            padding: 12px 18px;
-            border-radius: 10px;
-            font-size: 14.5px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        }
-
-        .btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: #ffffff;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(255, 255, 255, 0.2);
-        }
-
-        /* نوافذ الشرح المنبثقة */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.75);
-            backdrop-filter: blur(8px);
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            z-index: 100;
-        }
-
-        .modal-content {
-            background: rgba(20, 20, 20, 0.85);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            max-width: 650px;
-            width: 100%;
-            max-height: 85vh;
-            overflow-y: auto;
-            padding: 30px;
-            border-radius: 16px;
-            text-align: right;
-            box-shadow: 0 15px 40px rgba(0,0,0,0.9);
-            position: relative;
-        }
-
-        .modal-content h2 {
-            color: #ffffff;
-            margin-bottom: 20px;
-            font-size: 18px;
-            border-bottom: 1px solid rgba(255,255,255,0.15);
-            padding-bottom: 10px;
-        }
-
-        .modal-content h3 {
-            color: #dddddd;
-            font-size: 15px;
-            margin-top: 18px;
-            margin-bottom: 6px;
-        }
-
-        .modal-content p, .modal-content li {
-            color: #cccccc;
-            font-size: 13px;
-            line-height: 1.7;
-            margin-bottom: 6px;
-        }
-
-        .modal-content ul {
-            padding-right: 20px;
-            margin-bottom: 10px;
-        }
-
-        code {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 2px 5px;
-            border-radius: 4px;
-            color: #ffffff;
-            font-family: monospace;
-        }
-
-        .close-btn {
-            display: inline-block;
-            background: rgba(50, 50, 50, 0.8);
-            color: white;
-            padding: 9px 20px;
-            border-radius: 8px;
-            margin-top: 20px;
-            cursor: pointer;
-            border: 1px solid rgba(255,255,255,0.25);
-            transition: 0.2s;
-            text-align: center;
-            width: 100%;
-            font-weight: bold;
-        }
-
-        .close-btn:hover {
-            background: rgba(80, 80, 80, 0.9);
-        }
-
-        .dev-badge {
-            background: rgba(255, 255, 255, 0.06);
-            padding: 12px;
-            border-radius: 10px;
-            margin-top: 10px;
-            border-right: 4px solid #ffffff;
-        }
-
-        .signature {
-            text-align: center;
-            font-size: 10px;
-            color: #888888;
-            margin-top: 15px;
-            letter-spacing: 1px;
-        }
-    </style>
-</head>
-<body>
-
-    <div class="container">
-        <h1>✨ ItzF18 Bot</h1>
-        <p class="subtitle">بوت عربي متكامل لإدارة وحماية السيرفرات باحترافية وسهولة تامة</p>
-
-        <div class="buttons-grid">
-            <!-- الزر الأول: دعوة البوت -->
-            <a href="https://discord.com/oauth2/authorize?client_id=1544073793490915358&permissions=8&integration_type=0&scope=bot+applications.commands" target="_blank" class="btn">دعوة البوت للسيرفر 🚀</a>
-            
-            <!-- الزر الثاني: كيفية الاستخدام -->
-            <button class="btn" onclick="openModal('guideModal')">كيفية استخدام 📖</button>
-            
-            <!-- الزر الثالث: مساعدة ودعم البوت -->
-            <a href="https://discord.gg/YF5UC7GsY" target="_blank" class="btn">مساعدة ودعم البوت 🛟</a>
-
-            <!-- الزر الرابع: طاقم عمل البوت -->
-            <button class="btn" onclick="openModal('staffModal')">طاقم عمل البوت 👑</button>
-        </div>
-    </div>
-
-    <!-- نافذة كيفية الاستخدام -->
-    <div id="guideModal" class="modal">
-        <div class="modal-content">
-            <h2>📖 الدليل الشامل لأوامر وأنظمة ItzF18 Bot</h2>
-            
-            <h3>1. نظام الترحيب (Welcome)</h3>
-            <ul>
-                <li><code>/welcome_setup [الروم]</code>: لتحديد الروم المخصص لإرسال رسائل الترحيب بالأعضاء الجدد.</li>
-                <li><code>/welcome_message [النص]</code>: لتعديل نص الترحيب (استخدم <code>{member}</code> للمنشن التلقائي للعضو).</li>
-                <li><code>/welcome_image [الرابط]</code>: لربط صورة تصميم أو بانر مخصص يظهر داخل رسالة الترحيب.</li>
-                <li><code>/test_welcome</code>: لتجربة شكل رسالة الترحيب لنفسك والتأكد من إعداداتها.</li>
-            </ul>
-
-            <h3>2. نظام دعم السيرفر (Boost)</h3>
-            <ul>
-                <li><code>/boost_setup [الروم]</code>: لتعيين روم إعلانات البوست لشكر الداعمين.</li>
-                <li><code>/boost_message [النص]</code>: لتعديل رسالة الشكر (يمكنك استخدام <code>{member}</code> للمنشن).</li>
-                <li><code>/boost_image [الرابط]</code>: لإضافة صورة أو بانر خاص بـ Boost.</li>
-                <li><code>/test_boost</code>: لتجربة رسالة البوست لنفسك فوريًا.</li>
-            </ul>
-
-            <h3>3. نظام المغادرة (Leave)</h3>
-            <ul>
-                <li><code>/leave_setup [الروم]</code>: لتحديد روم مخصص يرسل فيه البوت إشعاراً عند مغادرة أي عضو.</li>
-                <li><code>/leave_message [النص]</code>: لتعديل نص خروج الشخص من السيرفر.</li>
-                <li><code>/test_leave</code>: لتجربة واختبار رسالة المغادرة.</li>
-            </ul>
-
-            <h3>4. نظام التلفيل (Levels) والنشاط</h3>
-            <ul>
-                <li><code>/rank [العضو]</code>: لمعرفة مستواك الحالي ونقاط الخبرة (XP) المكتسبة من التفاعل.</li>
-                <li><code>/leaderboard</code>: لعرض قائمة صدارة المتفاعلين والأشط بالسيرفر.</li>
-            </ul>
-
-            <h3>5. عملة أورا (Coins) والمتجر</h3>
-            <ul>
-                <li><strong>كيفية عملها:</strong> يجمع الأعضاء العملات تلقائياً عبر التفاعل والمشاركة المستمرة بالسيرفر.</li>
-                <li><code>/balance [العضو]</code>: لمعرفة رصيدك من عملة أورا أو رصيد أي عضو آخر.</li>
-                <li><code>/store</code>: لعرض قائمة السلع والرتب المتاحة في المتجر.</li>
-                <li><code>/buy [اسم السلعة]</code>: لشراء سلعة من المتجر وخصم الثمن من رصيدك.</li>
-                <li><code>/store_add [الاسم] [السعر] [الوصف]</code>: (للمشرفين) لإضافة سلعة جديدة للمتجر.</li>
-                <li><code>/store_remove [اسم السلعة]</code>: (للمشرفين) لحذف سلعة من المتجر.</li>
-            </ul>
-
-            <h3>6. أوامر منشئ البوت (خاصة بك وحدك)</h3>
-            <ul>
-                <li><code>/give [العضو] [المبلغ]</code>: لإضافة عملات أورا ومكافأة أي عضو.</li>
-                <li><code>/take_money [العضو] [المبلغ]</code>: أمر التأديب الخاص بك لسحب العملات ومعاقبة الأعضاء المتطاولين أو الذين يتباهون!</li>
-            </ul>
-
-            <div class="close-btn" onclick="closeModal('guideModal')">إغلاق الدليل</div>
-            <div class="signature">By itzF18</div>
-        </div>
-    </div>
-
-    <!-- نافذة طاقم العمل الترفيهي -->
-    <div id="staffModal" class="modal">
-        <div class="modal-content">
-            <h2>👑 طاقم عمل البوت (فريق الإبداع)</h2>
-            
-            <div class="dev-badge">
-                <p>💻 <strong>المبرمج:</strong> فهد</p>
-            </div>
-            
-            <div class="dev-badge">
-                <p>💡 <strong>صاحب الفكرة:</strong> فهد</p>
-            </div>
-
-            <div class="dev-badge">
-                <p>🛠️ <strong>طاقم العمل:</strong> فهد (أنا وحدي بالكامل!)</p>
-            </div>
-
-            <p style="margin-top: 18px; text-align: center; color: #ffffff; font-weight: bold; line-height: 1.6;">
-                ملاحظة هامة: أنا الشخص الوحيد الذي قام بتصميم وبرمجة وتطوير هذا البوت من الصفر وحتى النهاية! 🤍🔥
-            </p>
-
-            <div class="close-btn" onclick="closeModal('staffModal')">إغلاق النافذة</div>
-        </div>
-    </div>
-
-    <script>
-        function openModal(modalId) {
-            document.getElementById(modalId).style.display = 'flex';
-        }
-
-        function closeModal(modalId) {
-            document.getElementById(modalId).style.display = 'none';
-        }
-
-        // إغلاق النافذة عند النقر خارجها
-        window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
+# 1. عرض صفحة الموقع مباشرة عند فتح الرابط بالمتصفح (HTML مدمج داخل البايثون)
+@app.get("/", response_class=HTMLResponse)
+async def serve_dashboard():
+    return """
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ItzF18 Bot - لوحة التحكم المدمجة</title>
+        <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; font-family: Tahoma, sans-serif; }
+            body {
+                background: linear-gradient(135deg, #0b0b0b, #1a1a1a, #333333, #717171);
+                background-size: 400% 400%;
+                animation: gradientAnimation 15s ease infinite;
+                color: #ffffff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px;
             }
-        }
-    </script>
+            @keyframes gradientAnimation { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+            .container { max-width: 650px; width: 100%; background: rgba(18, 18, 18, 0.4); backdrop-filter: blur(12px); padding: 30px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 15px 35px rgba(0,0,0,0.5); }
+            h1 { font-size: 24px; margin-bottom: 5px; text-align: center; }
+            .subtitle { font-size: 13px; color: #ddd; text-align: center; margin-bottom: 20px; }
+            .section-box { background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 10px; margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.1); }
+            .section-box h3 { font-size: 15px; margin-bottom: 10px; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
+            label { display: block; font-size: 12px; color: #bbb; margin-top: 8px; margin-bottom: 3px; }
+            input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #fff; font-size: 13px; }
+            .btn { width: 100%; background: rgba(50, 50, 50, 0.8); color: white; padding: 12px; border-radius: 10px; font-weight: bold; cursor: pointer; border: 1px solid rgba(255,255,255,0.3); transition: 0.3s; margin-top: 10px; }
+            .btn:hover { background: rgba(255, 255, 255, 0.2); border-color: #fff; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>✨ ItzF18 Bot Dashboard</h1>
+            <p class="subtitle">لوحة تحكم مدمجة لإدارة إعدادات السيرفر وإرسالها للبوت فوراً</p>
 
-</body>
-</html>
+            <div class="section-box">
+                <label>معرف السيرفر (Guild ID):</label>
+                <input type="text" id="guildIdInput" placeholder="أدخل ID السيرفر هنا...">
+            </div>
+
+            <div class="section-box">
+                <h3>👋 نظام الترحيب (Welcome)</h3>
+                <label>روم الترحيب (Channel ID):</label>
+                <input type="text" id="welcomeChannel" placeholder="ID روم الترحيب">
+                <label>رسالة الترحيب:</label>
+                <input type="text" id="welcomeMsg" value="أهلاً بك يا {user} في سيرفر {server}">
+            </div>
+
+            <div class="section-box">
+                <h3>🚀 نظام البوست (Boost)</h3>
+                <label>روم البوست (Channel ID):</label>
+                <input type="text" id="boostChannel" placeholder="ID روم البوست">
+                <label>رسالة الشكر للبوست:</label>
+                <input type="text" id="boostMsg" value="شكراً لدعمك السيرفر يا {user}! 🚀">
+            </div>
+
+            <div class="section-box">
+                <h3>🎫 نظام التكت (Tickets)</h3>
+                <label>روم إرسال بانل التكت (Channel ID):</label>
+                <input type="text" id="ticketChannel" placeholder="ID روم التكت">
+                <label>روم تصنيف رومات التكت (Category ID):</label>
+                <input type="text" id="ticketCategory" placeholder="ID التصنيف (Category)">
+            </div>
+
+            <button onclick="saveAllSettings()" class="btn">حفظ وإرسال جميع التحديثات للبوت 🚀</button>
+        </div>
+
+        <script>
+            async function saveAllSettings() {
+                const guildId = document.getElementById('guildIdInput').value.trim();
+                if (!guildId) {
+                    alert('❌ | يرجى إدخال ID السيرفر أولاً!');
+                    return;
+                }
+
+                const settingsData = {
+                    welcome_enabled: true,
+                    welcome_channel: document.getElementById('welcomeChannel').value,
+                    welcome_message: document.getElementById('welcomeMsg').value,
+
+                    boost_enabled: true,
+                    boost_channel: document.getElementById('boostChannel').value,
+                    boost_message: document.getElementById('boostMsg').value,
+
+                    ticket_enabled: true,
+                    ticket_channel: document.getElementById('ticketChannel').value,
+                    ticket_category: document.getElementById('ticketCategory').value
+                };
+
+                try {
+                    const response = await fetch('/api/update-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ guild_id: guildId, settings: settingsData })
+                    });
+
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        alert('✅ | تم دمج وحفظ الإعدادات وتحديث البوت بنجاح!');
+                    } else {
+                        alert('❌ | حدث خطأ أثناء الحفظ.');
+                    }
+                } catch (error) {
+                    console.error(error);
+                    alert('❌ | تعذر الاتصال بسيرفر البوت.');
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+
+# 2. استقبال الإشارة وتحديث الإعدادات
+@app.post("/api/update-settings")
+async def update_settings(payload: dict):
+    guild_id = str(payload.get("guild_id"))
+    new_settings = payload.get("settings", {})
+    
+    if not guild_id:
+        raise HTTPException(status_code=400, detail="Missing guild_id")
+    
+    all_data = load_all_settings()
+    all_data[guild_id] = new_settings
+    save_all_settings(all_data)
+    
+    return {"status": "success", "message": "All settings updated successfully!"}
+
+# 3. أحداث البوت (الترحيب والبوست)
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
+
+@bot.event
+async def on_member_join(member):
+    data = load_all_settings()
+    guild_id = str(member.guild.id)
+    if guild_id in data and data[guild_id].get("welcome_enabled", False):
+        settings = data[guild_id]
+        channel = member.guild.get_channel(int(settings.get("welcome_channel", 0)))
+        if channel:
+            msg = settings.get("welcome_message", "Welcome {user}!").replace("{user}", member.mention).replace("{server}", member.guild.name)
+            await channel.send(msg)
+
+@bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    if before.premium_since is None and after.premium_since is not None:
+        data = load_all_settings()
+        guild_id = str(after.guild.id)
+        if guild_id in data and data[guild_id].get("boost_enabled", False):
+            settings = data[guild_id]
+            channel = after.guild.get_channel(int(settings.get("boost_channel", 0)))
+            if channel:
+                msg = settings.get("boost_message", "Thanks for boosting!").replace("{user}", after.mention)
+                await channel.send(msg)
+
+# تشغيل البوت وخادم الويب معاً في نفس الوقت
+async def main():
+    # تشغيل سيرفر FastAPI بالخلفية
+    config = uvicorn.Config(app, host="0.0.0.0", port=5000, log_level="warning")
+    server = uvicorn.Server(config)
+    
+    # تشغيل الاثنين سوية
+    await asyncio.gather(
+        server.serve(),
+        bot.start("TOKEN_BOT_MTAA")  # استبدل هذا التوكن بتوكن بوتك الحقيقي
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
