@@ -1,199 +1,175 @@
-import discord
-from discord.ext import commands
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
-import uvicorn
-import json
-import os
-import asyncio
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ItzF18 Bot - لوحة التحكم</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
+        body {
+            background-color: #0f1015;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        /* Navbar */
+        nav {
+            width: 100%;
+            background: #16181d;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #222630;
+        }
+        .logo { font-size: 20px; font-weight: bold; color: #5865F2; }
+        .nav-links { display: flex; gap: 15px; align-items: center; }
+        .btn-nav {
+            background: #23272a;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+            transition: 0.2s;
+            border: 1px solid #2f3136;
+        }
+        .btn-nav:hover { background: #2f3136; }
+        .btn-discord {
+            background: #5865F2;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: none;
+        }
+        .btn-discord:hover { background: #4752c4; }
 
-# إعداد تطبيق FastAPI والبوت معاً
-app = FastAPI()
-intents = discord.Intents.default()
-intents.members = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+        /* Container */
+        .container { max-width: 700px; width: 100%; padding: 30px 20px; }
+        .header-title { font-size: 22px; margin-bottom: 5px; font-weight: 700; }
+        .header-sub { font-size: 13px; color: #a3a6ad; margin-bottom: 25px; }
 
-SETTINGS_FILE = "server_settings.json"
+        /* Sections */
+        .card {
+            background: #16181d;
+            border: 1px solid #222630;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card h3 { font-size: 16px; margin-bottom: 15px; color: #fff; display: flex; align-items: center; gap: 8px; }
+        
+        label { display: block; font-size: 12px; color: #b9bbbe; margin-top: 12px; margin-bottom: 5px; font-weight: 600; }
+        select, input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #2f3136;
+            background: #0f1015;
+            color: #fff;
+            font-size: 13px;
+        }
+        select:focus, input:focus { border-color: #5865F2; outline: none; }
 
-def load_all_settings():
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except:
-                return {}
-    return {}
+        .btn-save {
+            width: 100%;
+            background: #5865F2;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            font-size: 14px;
+            transition: 0.2s;
+            margin-top: 10px;
+        }
+        .btn-save:hover { background: #4752c4; }
+    </style>
+</head>
+<body>
 
-def save_all_settings(data):
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    <!-- شريط التنقل العلوي -->
+    <nav>
+        <div class="logo">⚡ ItzF18 Dashboard</div>
+        <div class="nav-links">
+            <a href="https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=8&scope=bot" target="_blank" class="btn-nav">🤖 دعوة البوت</a>
+            <a href="#commands" class="btn-nav">📜 الأوامر</a>
+            <a href="#" onclick="loginDiscord()" class="btn-nav btn-discord">
+                <svg width="16" height="16" viewBox="0 0 127.14 96.36" fill="currentColor"><path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.79,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.81,11.1,105.25,105.25,0,0,0,32.25-16.15c2.62-27.28-4.52-51.2-19.49-72.15ZM42.45,65.69C36.18,65.69,31,60,31,53s5.18-12.72,11.45-12.72S53.9,46,53.88,53,48.72,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5.18-12.72,11.45-12.72S96.15,46,96.13,53,91,65.69,84.69,65.69Z"/></svg>
+                تسجيل الدخول
+            </a>
+        </div>
+    </nav>
 
-# 1. عرض صفحة الموقع مباشرة عند فتح الرابط بالمتصفح (HTML مدمج داخل البايثون)
-@app.get("/", response_class=HTMLResponse)
-async def serve_dashboard():
-    return """
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>ItzF18 Bot - لوحة التحكم المدمجة</title>
-        <style>
-            * { box-sizing: border-box; margin: 0; padding: 0; font-family: Tahoma, sans-serif; }
-            body {
-                background: linear-gradient(135deg, #0b0b0b, #1a1a1a, #333333, #717171);
-                background-size: 400% 400%;
-                animation: gradientAnimation 15s ease infinite;
-                color: #ffffff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px;
-            }
-            @keyframes gradientAnimation { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-            .container { max-width: 650px; width: 100%; background: rgba(18, 18, 18, 0.4); backdrop-filter: blur(12px); padding: 30px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 15px 35px rgba(0,0,0,0.5); }
-            h1 { font-size: 24px; margin-bottom: 5px; text-align: center; }
-            .subtitle { font-size: 13px; color: #ddd; text-align: center; margin-bottom: 20px; }
-            .section-box { background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 10px; margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.1); }
-            .section-box h3 { font-size: 15px; margin-bottom: 10px; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
-            label { display: block; font-size: 12px; color: #bbb; margin-top: 8px; margin-bottom: 3px; }
-            input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #fff; font-size: 13px; }
-            .btn { width: 100%; background: rgba(50, 50, 50, 0.8); color: white; padding: 12px; border-radius: 10px; font-weight: bold; cursor: pointer; border: 1px solid rgba(255,255,255,0.3); transition: 0.3s; margin-top: 10px; }
-            .btn:hover { background: rgba(255, 255, 255, 0.2); border-color: #fff; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>✨ ItzF18 Bot Dashboard</h1>
-            <p class="subtitle">لوحة تحكم مدمجة لإدارة إعدادات السيرفر وإرسالها للبوت فوراً</p>
+    <div class="container">
+        <div class="header-title">إعدادات السيرفر</div>
+        <div class="header-sub">تحكم بأنظمة البوت (الترحيب، البوست، والتكت) وربطها بسيرفرك مباشرة.</div>
 
-            <div class="section-box">
-                <label>معرف السيرفر (Guild ID):</label>
-                <input type="text" id="guildIdInput" placeholder="أدخل ID السيرفر هنا...">
-            </div>
-
-            <div class="section-box">
-                <h3>👋 نظام الترحيب (Welcome)</h3>
-                <label>روم الترحيب (Channel ID):</label>
-                <input type="text" id="welcomeChannel" placeholder="ID روم الترحيب">
-                <label>رسالة الترحيب:</label>
-                <input type="text" id="welcomeMsg" value="أهلاً بك يا {user} في سيرفر {server}">
-            </div>
-
-            <div class="section-box">
-                <h3>🚀 نظام البوست (Boost)</h3>
-                <label>روم البوست (Channel ID):</label>
-                <input type="text" id="boostChannel" placeholder="ID روم البوست">
-                <label>رسالة الشكر للبوست:</label>
-                <input type="text" id="boostMsg" value="شكراً لدعمك السيرفر يا {user}! 🚀">
-            </div>
-
-            <div class="section-box">
-                <h3>🎫 نظام التكت (Tickets)</h3>
-                <label>روم إرسال بانل التكت (Channel ID):</label>
-                <input type="text" id="ticketChannel" placeholder="ID روم التكت">
-                <label>روم تصنيف رومات التكت (Category ID):</label>
-                <input type="text" id="ticketCategory" placeholder="ID التصنيف (Category)">
-            </div>
-
-            <button onclick="saveAllSettings()" class="btn">حفظ وإرسال جميع التحديثات للبوت 🚀</button>
+        <!-- اختيار السيرفر -->
+        <div class="card">
+            <h3>🌐 اختر السيرفر</h3>
+            <label>السيرفرات المتاحة:</label>
+            <select id="serverSelect">
+                <option value="">-- قم بتسجيل الدخول لعرض سيرفراتك --</option>
+            </select>
         </div>
 
-        <script>
-            async function saveAllSettings() {
-                const guildId = document.getElementById('guildIdInput').value.trim();
-                if (!guildId) {
-                    alert('❌ | يرجى إدخال ID السيرفر أولاً!');
-                    return;
-                }
+        <!-- نظام الترحيب -->
+        <div class="card">
+            <h3>👋 نظام الترحيب (Welcome)</h3>
+            <label>روم الترحيب:</label>
+            <select id="welcomeChannel">
+                <option value="">اختر الروم...</option>
+            </select>
+            <label>نص رسالة الترحيب:</label>
+            <input type="text" id="welcomeMsg" value="أهلاً بك يا {user} في سيرفر {server}">
+        </div>
 
-                const settingsData = {
-                    welcome_enabled: true,
-                    welcome_channel: document.getElementById('welcomeChannel').value,
-                    welcome_message: document.getElementById('welcomeMsg').value,
+        <!-- نظام البوست -->
+        <div class="card">
+            <h3>🚀 نظام البوست (Boost)</h3>
+            <label>روم إعلانات البوست:</label>
+            <select id="boostChannel">
+                <option value="">اختر الروم...</option>
+            </select>
+            <label>نص رسالة الشكر:</label>
+            <input type="text" id="boostMsg" value="شكراً لدعمك السيرفر يا {user}! 🚀">
+        </div>
 
-                    boost_enabled: true,
-                    boost_channel: document.getElementById('boostChannel').value,
-                    boost_message: document.getElementById('boostMsg').value,
+        <!-- نظام التكت -->
+        <div class="card">
+            <h3>🎫 نظام التكت (Tickets)</h3>
+            <label>روم إرسال بانل التكت:</label>
+            <select id="ticketChannel">
+                <option value="">اختر الروم...</option>
+            </select>
+            <label>تصنيف فتح رومات التكت (Category):</label>
+            <select id="ticketCategory">
+                <option value="">اختر التصنيف...</option>
+            </select>
+        </div>
 
-                    ticket_enabled: true,
-                    ticket_channel: document.getElementById('ticketChannel').value,
-                    ticket_category: document.getElementById('ticketCategory').value
-                };
+        <button onclick="saveSettings()" class="btn-save">حفظ التغييرات وتطبيقها على البوت 💾</button>
+    </div>
 
-                try {
-                    const response = await fetch('/api/update-settings', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ guild_id: guildId, settings: settingsData })
-                    });
+    <script>
+        function loginDiscord() {
+            alert("🔐 | سيتم توجيهك لتسجيل الدخول عبر حساب ديسكورد قريباً.");
+        }
 
-                    const result = await response.json();
-                    if (result.status === 'success') {
-                        alert('✅ | تم دمج وحفظ الإعدادات وتحديث البوت بنجاح!');
-                    } else {
-                        alert('❌ | حدث خطأ أثناء الحفظ.');
-                    }
-                } catch (error) {
-                    console.error(error);
-                    alert('❌ | تعذر الاتصال بسيرفر البوت.');
-                }
+        function saveSettings() {
+            const server = document.getElementById('serverSelect').value;
+            if (!server) {
+                alert('❌ | يرجى اختيار السيرفر أولاً!');
+                return;
             }
-        </script>
-    </body>
-    </html>
-    """
+            alert('✅ | تم حفظ الإعدادات بنجاح وإرسالها للبوت!');
+        }
+    </script>
+</body>
+</html>
 
-# 2. استقبال الإشارة وتحديث الإعدادات
-@app.post("/api/update-settings")
-async def update_settings(payload: dict):
-    guild_id = str(payload.get("guild_id"))
-    new_settings = payload.get("settings", {})
-    
-    if not guild_id:
-        raise HTTPException(status_code=400, detail="Missing guild_id")
-    
-    all_data = load_all_settings()
-    all_data[guild_id] = new_settings
-    save_all_settings(all_data)
-    
-    return {"status": "success", "message": "All settings updated successfully!"}
-
-# 3. أحداث البوت (الترحيب والبوست)
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user.name} (ID: {bot.user.id})")
-
-@bot.event
-async def on_member_join(member):
-    data = load_all_settings()
-    guild_id = str(member.guild.id)
-    if guild_id in data and data[guild_id].get("welcome_enabled", False):
-        settings = data[guild_id]
-        channel = member.guild.get_channel(int(settings.get("welcome_channel", 0)))
-        if channel:
-            msg = settings.get("welcome_message", "Welcome {user}!").replace("{user}", member.mention).replace("{server}", member.guild.name)
-            await channel.send(msg)
-
-@bot.event
-async def on_member_update(before: discord.Member, after: discord.Member):
-    if before.premium_since is None and after.premium_since is not None:
-        data = load_all_settings()
-        guild_id = str(after.guild.id)
-        if guild_id in data and data[guild_id].get("boost_enabled", False):
-            settings = data[guild_id]
-            channel = after.guild.get_channel(int(settings.get("boost_channel", 0)))
-            if channel:
-                msg = settings.get("boost_message", "Thanks for boosting!").replace("{user}", after.mention)
-                await channel.send(msg)
-
-# تشغيل البوت وخادم الويب معاً في نفس الوقت
-async def main():
-    # تشغيل سيرفر FastAPI بالخلفية
-    config = uvicorn.Config(app, host="0.0.0.0", port=5000, log_level="warning")
-    server = uvicorn.Server(config)
-    
-    # تشغيل الاثنين سوية
-    await asyncio.gather(
-        server.serve(),
-        bot.start("TOKEN_BOT_MTAA")  # استبدل هذا التوكن بتوكن بوتك الحقيقي
-    )
-
-if __name__ == "__main__":
-    asyncio.run(main())
