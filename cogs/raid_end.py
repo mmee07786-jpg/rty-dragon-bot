@@ -112,7 +112,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
             f"╰➤{self.enemy}\n\n"
             f"**𝐀𝐋𝐋𝐘:**\n"
             f"╰➤{self.ally}\n\n"
-            f"**𝐃𝐔𝐑𝐀Ｔ𝐈𝐎𝐍:**\n"
+            f"**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n"
             f"╰➤{self.duration}\n\n"
             f"**𝐒𝐓𝐀𝐓𝐔𝐒:**\n"
             f"╰➤{self.status_reason}\n\n"
@@ -124,10 +124,9 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         extracted_image_url = None
 
         if media_val and media_val.lower() != "skip":
-            # البحث عن أول رابط داخل النص المدخل
             urls = re.findall(r'https?://[^\s]+', media_val)
             if urls:
-                extracted_image_url = urls[0] # استخراج أول رابط لمعالجته كصورة للإيمبد
+                extracted_image_url = urls[0]
                 report_content += f"**𝐏𝐑𝐎𝐎𝐅𝐒 / 𝐌𝐄𝐃𝐈𝐀:**\n╰➤ {media_val}\n\n"
 
         report_content += (
@@ -137,7 +136,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
 
         embed = discord.Embed(color=EMBED_COLOR, description=report_content)
         
-        # إذا وجد رابط صورة أو إثبات، سيتم عرضه بشكل مباشر ومرتب داخل الإيمبد نفسه!
+        # عرض الصورة مباشرة داخل الإيمبد وحل مشكلة ظهورها كابط فقط
         if extracted_image_url:
             embed.set_image(url=extracted_image_url)
 
@@ -155,6 +154,17 @@ class RaidSystemCog(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def end_raid(self, interaction: discord.Interaction):
         await interaction.response.send_modal(RaidEndInfoModal())
+
+    # أمر مزامنة الأوامر لتجنب اختفاء /end-raid من السلاش
+    @app_commands.command(name="sync", description="[ Admin Only ] تحديث ومزامنة أوامر البوت")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def sync_commands(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            synced = await self.bot.tree.sync()
+            await interaction.followup.send(f"✅ | تم مزامنة وتحديث `{len(synced)}` أمر بنجاح وإظهارها في السلاش!", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ | حدث خطأ أثناء المزامنة: `{e}`", ephemeral=True)
 
     @app_commands.command(name="raid-list", description="Auto-generate and send the top 30 raiders list in English")
     async def raid_list(self, interaction: discord.Interaction):
@@ -212,7 +222,7 @@ class RaidSystemCog(commands.Cog):
     @app_commands.command(name="raid-top", description="عرض قائمة أكثر الأشخاص مشاركة في الرايدات (Leaderboard)")
     async def raid_top(self, interaction: discord.Interaction):
         data = load_raid_data()
-        stats = data.get("raider_stats,") or data.get("raider_stats", {})
+        stats = data.get("raider_stats", {})
         
         if not stats:
             await interaction.response.send_message("❌ | لا توجد أي إحصائيات مسجلة لرايدات حتى الآن!")
@@ -233,9 +243,5 @@ class RaidSystemCog(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
 async def setup(bot):
-    @bot.tree.command(name="raid-top", description="عرض قائمة أكثر الأشخاص مشاركة في الرايدات (Leaderboard)")
-    async def raid_top_global(interaction: discord.Interaction):
-        cog = bot.get_cog("RaidSystemCog")
-        if cog:
-            await cog.raid_top(interaction)
+    await bot.add_cog(RaidSystemCog(bot))
 
