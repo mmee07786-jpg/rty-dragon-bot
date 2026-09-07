@@ -3,36 +3,27 @@ from discord.ext import commands
 from discord import app_commands
 import json
 import os
-from datetime import datetime
 
 BANNER_URL = "https://cdn.discordapp.com/attachments/1534625592287297789/1545811316474912808/file_00000000c75881f4b2f0ec4b8cdff737-1.png?ex=6a9d8079&is=6a9c2ef9&hm=e9dfe9091e4710e406bd1dbe59c88706418390be9f939991090721b416f27b5f&"
 CONFIG_FILE = "clan_config.json"
 DATA_FILE = "raid_data.json"
-ENTRANTS_FILE = "raid_entrants.json"
-
-def load_json(file_path, default):
-    if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except:
-                return default
-    return default
-
-def save_json(file_path, data):
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
 
 def load_config():
-    return load_json(CONFIG_FILE, {"clan_name": "VLX", "embed_color": 0x8B0000})
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"clan_name": "VLX", "embed_color": 0x8B0000}
 
 def save_config(config):
-    save_json(CONFIG_FILE, config)
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=4)
 
 def load_raid_data():
-    return load_json(DATA_FILE, {"raider_stats": {}, "win_streak": 0})
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"raider_stats": {}, "win_streak": 0}
 
-# مودال بداية الرايد (النسخة النظيفة الأصلية)
 class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement"):
     server_link = discord.ui.TextInput(label="Server Link", placeholder="", style=discord.TextStyle.short, required=True)
     difficulty = discord.ui.TextInput(label="Difficulty", placeholder="", style=discord.TextStyle.short, required=True)
@@ -47,13 +38,6 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
         clan = config.get("clan_name", "VLX")
         embed_color = config.get("embed_color", 0x8B0000)
 
-        # تصفير أو بدء سجل دخول جديد لهذا الإعلان (اختياري، أو يتم تسجيلهم مباشرة)
-        # حفظ رابط السيرفر مؤقتاً في ملف المشاركين لتوجيه الزر
-        entrants_data = load_json(ENTRANTS_FILE, {"link": "", "users": []})
-        entrants_data["link"] = self.server_link.value
-        entrants_data["users"] = [] # تصفير القائمة للرايد الجديد
-        save_json(ENTRANTS_FILE, entrants_data)
-
         embed = discord.Embed(title=f"⚔️ **{clan} Clan Raid Notification** ⚔️", color=embed_color)
         embed.add_field(name="⚔️ Difficulty", value=f"`{self.difficulty.value}`", inline=False)
         embed.add_field(name="🎯 Targets", value=f"`{self.targets.value}`", inline=False)
@@ -61,7 +45,7 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
         embed.add_field(name="📡 Region", value=f"🌍 `{self.region.value}`", inline=False)
         
         instructions = (
-            "→ Click **Join** below to enter the server & record your entry\n"
+            "→ Click **Join** below to enter the server\n"
             "→ Click **Leaderboard** to check top active raiders\n"
             "→ Follow callouts from raid leadership\n"
             "→ Stay until the raid is concluded"
@@ -74,42 +58,14 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
         embed.set_footer(text=f"Raid Initiated by {interaction.user.name} | {clan} Clan")
 
         class RaidView(discord.ui.View):
-            def __init__(self):
-                super().__init__(timeout=None)
-
-            @discord.ui.button(label="Join", style=discord.ButtonStyle.link, url=self.server_link.value, emoji="🎮", custom_id="join_raid_btn")
-            async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-                pass # أزرار الروابط الخارجية لا تفعل كود داخلي مباشرة، لذلك سنستخدم System Listener بالأفل
-
-        # طريقة بديلة لزر Join لضمان تسجيل من يضغط وتوجيهه للرابط:
-        class JoinTrackerView(discord.ui.View):
             def __init__(self, link):
                 super().__init__(timeout=None)
-                self.link = link
+                # زر الانضمام الرابط الأساسي السريع
+                self.add_item(discord.ui.Button(label="Join", style=discord.ButtonStyle.link, url=link, emoji="🎮"))
+                # زر الليدر بورد
+                self.add_item(discord.ui.Button(label="Leaderboard", style=discord.ButtonStyle.secondary, custom_id="show_leaderboard", emoji="🏆"))
 
-            @discord.ui.button(label="Join", style=discord.ButtonStyle.green, emoji="🎮", custom_id="track_join_btn")
-            async def track_join(self, interaction: discord.Interaction):
-                data = load_json(ENTRANTS_FILE, {"link": self.link, "users": []})
-                user_id = str(interaction.user.id)
-                
-                # التحقق إذا مسبقاً مسجل حتى لا يتكرر الشخص
-                existing_ids = [u["id"] for u in data["users"]]
-                if user_id not in existing_ids:
-                    data["users"].append({
-                        "id": user_id,
-                        "time": datetime.now().strftime("%H:%M:%S")
-                    })
-                    save_json(ENTRANTS_FILE, data)
-                
-                # توجيهه للرابط عبر رسالة خاصة مؤقتة تحتوي على رابط السيرفر الحقيقي
-                await interaction.response.send_message(f"🔗 | اضغط على الرابط أدناه للانضمام للسيرفر:\n{self.link}", ephemeral=True)
-
-            @discord.ui.button(label="Leaderboard", style=discord.ButtonStyle.secondary, custom_id="show_leaderboard", emoji="🏆")
-            async def leaderboard_btn(self, interaction: discord.Interaction):
-                # يتم معالجتها عبر الـ Listener العام
-                pass
-
-        view = JoinTrackerView(self.server_link.value)
+        view = RaidView(self.server_link.value)
         await interaction.channel.send(content="@here 🔔 **New Raid Notification:**", embed=embed, view=view)
 
 class RaidStartCog(commands.Cog):
@@ -149,59 +105,30 @@ class RaidStartCog(commands.Cog):
         save_config(config)
         await interaction.response.send_message(f"✅ | تم تحديث لون إعلان الرايد بنجاح إلى `#{cleaned_code}`", ephemeral=True)
 
-    # الأمر الجديد: عرض قائمة الأشخاص الذين دخلوا الرابط بالترتيب
-    @app_commands.command(name="raid-entrants", description="عرض قائمة الأشخاص الذين ضغطوا على زر الانضمام من الأول إلى الأخير")
-    async def raid_entrants(self, interaction: discord.Interaction):
-        entrants_data = load_json(ENTRANTS_FILE, {"users": []})
-        users = entrants_data.get("users", [])
-
-        if not users:
-            await interaction.response.send_message("❌ | لم يقم أي شخص بالضغط على زر الانضمام حتى الآن!", ephemeral=True)
-            return
-
-        description = ""
-        for index, entry in enumerate(users, start=1):
-            user_obj = interaction.guild.get_member(int(entry["id"]))
-            name = user_obj.mention if user_obj else f"User ID: {entry['id']}"
-            medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"#{index}"
-            description += f"{medal} {name} ──> `[ {entry['time']} ]`\n"
-
-        config = load_config()
-        embed = discord.Embed(
-            title="📋 | Raid Entrants List (First to Last)",
-            description=description,
-            color=config.get("embed_color", 0x8B0000)
-        )
-        embed.set_footer(text=f"Total Entrants: {len(users)} | {config.get('clan_name', 'VLX')} Clan")
-        
-        await interaction.response.send_message(embed=embed)
-
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
-        if interaction.type == discord.InteractionType.component:
-            custom_id = interaction.data.get("custom_id")
+        if interaction.type == discord.InteractionType.component and interaction.data.get("custom_id") == "show_leaderboard":
+            data = load_raid_data()
+            stats = data.get("raider_stats", {})
             
-            if custom_id == "show_leaderboard":
-                data = load_raid_data()
-                stats = data.get("raider_stats", {})
-                
-                if not stats:
-                    await interaction.response.send_message("❌ | No raid statistics recorded yet!", ephemeral=True)
-                    return
+            if not stats:
+                await interaction.response.send_message("❌ | No raid statistics recorded yet!", ephemeral=True)
+                return
 
-                sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:10]
-                
-                description = ""
-                for index, (uid, count) in enumerate(sorted_raiders, start=1):
-                    user = interaction.guild.get_member(int(uid))
-                    name = user.mention if user else f"User ID: {uid}"
-                    medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"#{index}"
-                    description += f"{medal} {name} ──> **{count}** Raids\n"
+            sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:10]
+            
+            description = ""
+            for index, (uid, count) in enumerate(sorted_raiders, start=1):
+                user = interaction.guild.get_member(int(uid))
+                name = user.mention if user else f"User ID: {uid}"
+                medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"#{index}"
+                description += f"{medal} {name} ──> **{count}** Raids\n"
 
-                config = load_config()
-                lb_embed = discord.Embed(title="🏆 | Clan Top Raiders (Leaderboard)", description=description, color=config.get("embed_color", 0x8B0000))
-                lb_embed.set_footer(text="Clan Statistics")
-                await interaction.response.send_message(embed=lb_embed, ephemeral=True)
+            config = load_config()
+            lb_embed = discord.Embed(title="🏆 | Clan Top Raiders (Leaderboard)", description=description, color=config.get("embed_color", 0x8B0000))
+            lb_embed.set_footer(text="Clan Statistics")
+            await interaction.response.send_message(embed=lb_embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(RaidStartCog(bot))
+
