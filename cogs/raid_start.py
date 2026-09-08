@@ -32,7 +32,8 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
     region = discord.ui.TextInput(label="Region", placeholder="", style=discord.TextStyle.short, required=True, default="")
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message("🚀 | جاري إرسال إشعار الرايد...", ephemeral=True)
+        # الرد على المودال مباشرة لإرسال إعلان الرايد بالشات العامة بدون رسائل خاصة
+        await interaction.response.defer(ephemeral=True)
 
         config = load_config()
         clan = config.get("clan_name", "VLX")
@@ -60,13 +61,12 @@ class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement
         class RaidView(discord.ui.View):
             def __init__(self, link):
                 super().__init__(timeout=None)
-                # زر الانضمام الرابط الأساسي السريع
                 self.add_item(discord.ui.Button(label="Join", style=discord.ButtonStyle.link, url=link, emoji="🎮"))
-                # زر الليدر بورد
                 self.add_item(discord.ui.Button(label="Leaderboard", style=discord.ButtonStyle.secondary, custom_id="show_leaderboard", emoji="🏆"))
 
         view = RaidView(self.server_link.value)
         await interaction.channel.send(content="@here 🔔 **New Raid Notification:**", embed=embed, view=view)
+        await interaction.delete_original_response()
 
 class RaidStartCog(commands.Cog):
     def __init__(self, bot):
@@ -131,4 +131,3 @@ class RaidStartCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidStartCog(bot))
-
