@@ -6,7 +6,7 @@ class Welcome(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.welcome_channel_id = None
-        self.welcome_message = "منورنا يا {member}، نتمنى لك أوقات ممتعة معنا."
+        self.welcome_message = "منورنا يا {member}, نتمنى لك أوقات ممتعة معنا."
         self.welcome_image = None
 
     @app_commands.command(name="welcome_setup", description="تعيين روم الترحيب بالأعضاء الجدد")
@@ -32,7 +32,6 @@ class Welcome(commands.Cog):
     async def test_welcome(self, interaction: discord.Interaction):
         formatted_msg = self.welcome_message.replace("{member}", interaction.user.mention)
         embed = discord.Embed(
-            title="أهلاً بك في السيرفر! 🎉 (تجربة)",
             description=formatted_msg,
             color=discord.Color.green()
         )
@@ -49,7 +48,6 @@ class Welcome(commands.Cog):
         if channel:
             formatted_msg = self.welcome_message.replace("{member}", member.mention)
             embed = discord.Embed(
-                title="أهلاً بك في السيرفر! 🎉",
                 description=formatted_msg,
                 color=discord.Color.green()
             )
