@@ -32,7 +32,6 @@ class Leave(commands.Cog):
     async def test_leave(self, interaction: discord.Interaction):
         formatted_msg = self.leave_message.replace("{member}", interaction.user.mention)
         embed = discord.Embed(
-            title="عضو غادر السيرفر 🚪 (تجربة)",
             description=formatted_msg,
             color=discord.Color.red()
         )
@@ -45,7 +44,6 @@ class Leave(commands.Cog):
         if self.leave_channel_id is None:
             return
         
-        # البحث الآمن عن الروم عبر الـ Cache أو الـ Fetch لمنع خطأ الـ ID
         channel = self.bot.get_channel(self.leave_channel_id)
         if channel is None:
             try:
@@ -56,7 +54,6 @@ class Leave(commands.Cog):
         if channel:
             formatted_msg = self.leave_message.replace("{member}", member.mention)
             embed = discord.Embed(
-                title="عضو غادر السيرفر 🚪",
                 description=formatted_msg,
                 color=discord.Color.red()
             )
