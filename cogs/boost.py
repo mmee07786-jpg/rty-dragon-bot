@@ -32,7 +32,6 @@ class Boost(commands.Cog):
     async def test_boost(self, interaction: discord.Interaction):
         formatted_msg = self.boost_message.replace("{member}", interaction.user.mention)
         embed = discord.Embed(
-            title="شكراً على البوست! 🚀 (تجربة)",
             description=formatted_msg,
             color=discord.Color.purple()
         )
@@ -49,7 +48,6 @@ class Boost(commands.Cog):
             if channel:
                 formatted_msg = self.boost_message.replace("{member}", after.mention)
                 embed = discord.Embed(
-                    title="شكراً على البوست! 🚀",
                     description=formatted_msg,
                     color=discord.Color.purple()
                 )
