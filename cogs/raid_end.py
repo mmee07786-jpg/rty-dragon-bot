@@ -136,7 +136,6 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
 
         embed = discord.Embed(color=EMBED_COLOR, description=report_content)
         
-        # عرض الصورة مباشرة داخل الإيمبد وحل مشكلة ظهورها كابط فقط
         if extracted_image_url:
             embed.set_image(url=extracted_image_url)
 
@@ -155,7 +154,6 @@ class RaidSystemCog(commands.Cog):
     async def end_raid(self, interaction: discord.Interaction):
         await interaction.response.send_modal(RaidEndInfoModal())
 
-    # أمر مزامنة الأوامر لتجنب اختفاء /end-raid من السلاش
     @app_commands.command(name="sync", description="[ Admin Only ] تحديث ومزامنة أوامر البوت")
     @app_commands.checks.has_permissions(administrator=True)
     async def sync_commands(self, interaction: discord.Interaction):
@@ -242,6 +240,26 @@ class RaidSystemCog(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
 
+    # الأمر الجديد: تعديل وإضافة عدد الرايدات لعضو معين يدوياً (للأدمنية فقط)
+    @app_commands.command(name="raid-add", description="[ Admin Only ] إضافة أو تعيين عدد الرايدات لعضو معين يدوياً")
+    @app_commands.describe(member="اختر العضو المراد تعديل نقاطه", amount="عدد الرايدات الجديد (القيمة النهائية أو المضافة)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def raid_add(self, interaction: discord.Interaction, member: discord.Member, amount: int):
+        data = load_raid_data()
+        if "raider_stats" not in data:
+            data["raider_stats"] = {}
+
+        # تعيين عدد الرايدات مباشرة للعضو
+        data["raider_stats"][str(member.id)] = amount
+        save_raid_data(data)
+
+        embed = discord.Embed(
+            title="✅ | Raid Statistics Updated",
+            description=f"تم تحديث سجل الرايدات للعضو {member.mention}\nصبح إجمالي رايداته: **{amount}** رايد.",
+            color=EMBED_COLOR
+        )
+        embed.set_footer(text=f"Updated by {interaction.user.name} | VLX Clan")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
-
