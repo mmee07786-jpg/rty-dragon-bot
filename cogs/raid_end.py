@@ -23,8 +23,6 @@ def load_raid_data():
                 data = json.load(f)
                 for g_id in data:
                     if isinstance(data[g_id], dict):
-                        if "blacklist" not in data[g_id]:
-                            data[g_id]["blacklist"] = []
                         if "roblox_users" not in data[g_id]:
                             data[g_id]["roblox_users"] = {}
                         if "member_countries" not in data[g_id]:
@@ -42,10 +40,8 @@ def get_global_stats(data):
     global_stats = {}
     for g_id, g_data in data.items():
         if isinstance(g_data, dict) and "raider_stats" in g_data:
-            blacklist = g_data.get("blacklist", [])
             for uid, count in g_data["raider_stats"].items():
-                if uid not in blacklist:
-                    global_stats[uid] = global_stats.get(uid, 0) + count
+                global_stats[uid] = global_stats.get(uid, 0) + count
     return global_stats
 
 async def fetch_roblox_avatar(roblox_username):
@@ -133,7 +129,7 @@ class RobloxUserModal(discord.ui.Modal, title="🎮 | ربط يوزر روبلو
         data = load_raid_data()
         
         if self.guild_id not in data:
-            data[self.guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
+            data[self.guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
         if "roblox_users" not in data[self.guild_id]:
             data[self.guild_id]["roblox_users"] = {}
 
@@ -216,10 +212,8 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         data = load_raid_data()
 
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
 
-        if "blacklist" not in data[guild_id]:
-            data[guild_id]["blacklist"] = []
         if "roblox_users" not in data[guild_id]:
             data[guild_id]["roblox_users"] = {}
 
@@ -230,12 +224,9 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
             data[guild_id]["raider_stats"] = {}
 
         user_ids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
-        blacklist = data[guild_id]["blacklist"]
         roblox_dict = data[guild_id]["roblox_users"]
 
         for uid in user_ids:
-            if uid in blacklist:
-                continue
             if uid not in data[guild_id]["raider_stats"]:
                 data[guild_id]["raider_stats"][uid] = 0
             data[guild_id]["raider_stats"][uid] += 1
@@ -330,12 +321,10 @@ class RaidSystemCog(commands.Cog):
             return
 
         stats = g_data.get("raider_stats", {})
-        blacklist = g_data.get("blacklist", [])
         roblox_dict = g_data.get("roblox_users", {})
         countries_dict = g_data.get("member_countries", {})
         
-        filtered_stats = {uid: count for uid, count in stats.items() if uid not in blacklist}
-        sorted_raiders = sorted(filtered_stats.items(), key=lambda x: x[1], reverse=True)[:10]
+        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:10]
 
         if not sorted_raiders:
             embed = discord.Embed(
@@ -411,7 +400,7 @@ class RaidSystemCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
         if "member_countries" not in data[guild_id]:
             data[guild_id]["member_countries"] = {}
 
@@ -462,7 +451,7 @@ class RaidSystemCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
         if "roblox_users" not in data[guild_id]:
             data[guild_id]["roblox_users"] = {}
 
@@ -472,70 +461,6 @@ class RaidSystemCog(commands.Cog):
         await interaction.response.send_message(f"✅ | تم تحديث يوزر روبلوكس وسكنك الجديد (`{username.strip()}`) بنجاح!", ephemeral=True)
         await self.send_or_update_top_message(guild_id, interaction.guild)
 
-    @app_commands.command(name="raid-ban", description="[ Owner Only ] حظر عضو من الظهور في التوبات أو حساب نقاطه للأبد")
-    @app_commands.describe(member="اختر العضو المراد حظره")
-    async def raid_ban(self, interaction: discord.Interaction, member: discord.Member):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** فقط!", ephemeral=True)
-            return
-
-        guild_id = str(interaction.guild_id)
-        data = load_raid_data()
-        if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
-
-        if "blacklist" not in data[guild_id]:
-            data[guild_id]["blacklist"] = []
-
-        uid = str(member.id)
-        if uid in data[guild_id]["blacklist"]:
-            await interaction.response.send_message(f"⚠️ | العضو {member.mention} محظور مسبقاً من التوبات!", ephemeral=True)
-            return
-
-        data[guild_id]["blacklist"].append(uid)
-        save_raid_data(data)
-
-        await self.send_or_update_top_message(guild_id, interaction.guild)
-
-        embed = discord.Embed(
-            title="🚫 | Raid Leaderboard Ban",
-            description=f"تم حظر العضو {member.mention} من التوبات والرايدات للأبد بنجاح!",
-            color=EMBED_COLOR
-        )
-        embed.set_footer(text=f"Banned by {interaction.user.name} | VLX Clan")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="raid-unban", description="[ Owner Only ] رفع الحظر عن عضو وإرجاعه للتوبات")
-    @app_commands.describe(member="اختر العضو لرفع الحظر عنه")
-    async def raid_unban(self, interaction: discord.Interaction, member: discord.Member):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** فقط!", ephemeral=True)
-            return
-
-        guild_id = str(interaction.guild_id)
-        data = load_raid_data()
-        if guild_id not in data or "blacklist" not in data[guild_id]:
-            await interaction.response.send_message("❌ | لا توجد قائمة حظر مسجلة في هذا السيرفر!", ephemeral=True)
-            return
-
-        uid = str(member.id)
-        if uid not in data[guild_id]["blacklist"]:
-            await interaction.response.send_message(f"⚠️ | العضو {member.mention} ليس محظوراً أساساً!", ephemeral=True)
-            return
-
-        data[guild_id]["blacklist"].remove(uid)
-        save_raid_data(data)
-
-        await self.send_or_update_top_message(guild_id, interaction.guild)
-
-        embed = discord.Embed(
-            title="✅ | Raid Leaderboard Unban",
-            description=f"تم رفع الحظر عن العضو {member.mention} وإرجاعه للتوبات بنجاح!",
-            color=EMBED_COLOR
-        )
-        embed.set_footer(text=f"Unbanned by {interaction.user.name} | VLX Clan")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
     @app_commands.command(name="set-raid-top", description="[ خاص بالإدارة ] تحديد قناة إرسال وتحديث توب الرايدات بالشكل المزخرف مع الشريط المتحرك")
     @app_commands.describe(channel="اختر القناة التي سيعمل فيها التوب")
     @app_commands.checks.has_permissions(administrator=True)
@@ -543,7 +468,7 @@ class RaidSystemCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
 
         data[guild_id]["top_channel_id"] = str(channel.id)
         data[guild_id].pop("top_message_id", None)
@@ -584,15 +509,12 @@ class RaidSystemCog(commands.Cog):
         data = load_raid_data()
         guild_data = data.get(guild_id, {})
         stats = guild_data.get("raider_stats", {})
-        blacklist = guild_data.get("blacklist", [])
 
-        filtered_stats = {uid: count for uid, count in stats.items() if uid not in blacklist}
-
-        if not filtered_stats:
+        if not stats:
             await interaction.response.send_message("❌ | No raid statistics recorded yet in this server!", ephemeral=True)
             return
 
-        sorted_raiders = sorted(filtered_stats.items(), key=lambda x: x[1], reverse=True)[:30]
+        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:30]
         description = ""
         for index, (uid, count) in enumerate(sorted_raiders, start=1):
             user = interaction.guild.get_member(int(uid)) or self.bot.get_user(int(uid))
@@ -656,7 +578,7 @@ class RaidSystemCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
             
         data[guild_id]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
