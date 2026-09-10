@@ -28,16 +28,6 @@ def save_raid_data(d):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=4)
 
-def get_global_stats(d):
-    gs = {}
-    for g_id, g in d.items():
-        if isinstance(g, dict) and "raider_stats" in g:
-            blacklist = g.get("blacklist", [])
-            for u, c in g["raider_stats"].items():
-                if u not in blacklist:
-                    gs[u] = gs.get(u, 0) + c
-    return gs
-
 async def fetch_roblox_avatar(username):
     try:
         async with aiohttp.ClientSession() as s:
@@ -178,10 +168,10 @@ class RaidSystemCog(commands.Cog):
         cdict = data[gid].get("member_countries", {})
         
         filtered = {u: c for u, c in stats.items() if u not in blacklist}
-        top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:10]
+        top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:20] # معدلة لتصبح 20 توب
         
         if not top:
-            emb = discord.Embed(title="🏆 | VLX Top Raiders", description="لا توجد نقاط مسجلة.", color=EMBED_COLOR)
+            emb = discord.Embed(title="🏆 | VLX Top 20 Raiders", description="لا توجد نقاط مسجلة.", color=EMBED_COLOR)
             emb.set_image(url=GIF_BANNER_URL)
             mid = data[gid].get("top_message_id")
             if mid:
@@ -269,7 +259,7 @@ class RaidSystemCog(commands.Cog):
         await interaction.response.send_message(f"✅ | تم التحديث (`{username.strip()}`)", ephemeral=True)
         await self.send_or_update_top_message(gid, interaction.guild)
 
-    @app_commands.command(name="set-raid-top", description="تحديد قناة التوب")
+    @app_commands.command(name="set-raid-top", description="تحديد قناة التوب 20")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_raid_top(self, interaction: discord.Interaction, channel: discord.TextChannel):
         gid = str(interaction.guild_id)
@@ -278,7 +268,7 @@ class RaidSystemCog(commands.Cog):
         data[gid]["top_channel_id"] = str(channel.id)
         data[gid].pop("top_message_id", None)
         save_raid_data(data)
-        await interaction.response.send_message(f"✅ | تم التفعيل في {channel.mention}", ephemeral=True)
+        await interaction.response.send_message(f"✅ | تم تفعيل لوحة التوب 20 في {channel.mention}", ephemeral=True)
         await self.send_or_update_top_message(gid, interaction.guild)
 
     @app_commands.command(name="disable-raid-top", description="إلغاء التوب")
@@ -294,54 +284,19 @@ class RaidSystemCog(commands.Cog):
         else:
             await interaction.response.send_message("❌ | غير مفعلة أساساً.", ephemeral=True)
 
-    @app_commands.command(name="sync", description="مزامنة الأوامر")
+    @app_commands.command(name="sync", description="مزامنة الأوامر فورياً للسيرفر")
     async def sync_commands(self, interaction: discord.Interaction):
         if interaction.user.id != OWNER_ID:
             await interaction.response.send_message("❌ | للمالك فقط!", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
-        synced = await self.bot.tree.sync()
-        await interaction.followup.send(f"✅ | تمت المزامنة (`{len(synced)}`)", ephemeral=True)
-
-    @app_commands.command(name="raid-list", description="قائمة التوب 30")
-    async def raid_list(self, interaction: discord.Interaction):
-        gid = str(interaction.guild_id)
-        gdata = load_raid_data().get(gid, {})
-        stats = gdata.get("raider_stats", {})
-        blacklist = gdata.get("blacklist", [])
-        filtered = {u: c for u, c in stats.items() if u not in blacklist}
-        if not filtered:
-            await interaction.response.send_message("❌ | لا توجد بيانات!", ephemeral=True)
-            return
-        top30 = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:30]
-        desc = "".join([f"#{i} <@{u}> ──> **{c}**\n" for i, (u, c) in enumerate(top30, 1)])
-        emb = discord.Embed(title="📋 | Top 30 Raiders", description=desc, color=EMBED_COLOR)
-        await interaction.response.send_message(embed=emb)
+        self.bot.tree.copy_global_to(guild=interaction.guild)
+        synced = await self.bot.tree.sync(guild=interaction.guild)
+        await interaction.followup.send(f"✅ | تمت المزامنة الفورية للسيرفر (`{len(synced)} أمر`)", ephemeral=True)
 
     @app_commands.command(name="raid-mentions", description="نشر المنشنات")
     async def raid_mentions(self, interaction: discord.Interaction, mentions_content: str):
         emb = discord.Embed(title="👥 | Mentions", description=mentions_content, color=EMBED_COLOR)
-        await interaction.response.send_message(embed=emb)
-
-    @app_commands.command(name="raid-rank", description="ترتيب العضو عالمياً")
-    async def raid_rank(self, interaction: discord.Interaction, member: discord.Member = None):
-        target = member or interaction.user
-        cnt = get_global_stats(load_raid_data()).get(str(target.id), 0)
-        emb = discord.Embed(title="📊 | Global Rank", color=EMBED_COLOR)
-        emb.set_thumbnail(url=target.display_avatar.url)
-        emb.add_field(name="User", value=target.mention)
-        emb.add_field(name="Total", value=f"🛡️ `{cnt}`")
-        await interaction.response.send_message(embed=emb)
-
-    @app_commands.command(name="raid-top", description="التوب العالمي")
-    async def raid_top(self, interaction: discord.Interaction):
-        gs = get_global_stats(load_raid_data())
-        if not gs:
-            await interaction.response.send_message("❌ | لا توجد بيانات عالمية!", ephemeral=True)
-            return
-        top10 = sorted(gs.items(), key=lambda x: x[1], reverse=True)[:10]
-        desc = "".join([f"#{i} <@{u}> ──> **{c}**\n" for i, (u, c) in enumerate(top10, 1)])
-        emb = discord.Embed(title="🏆 | Global Leaderboard", description=desc, color=EMBED_COLOR)
         await interaction.response.send_message(embed=emb)
 
     @app_commands.command(name="raid-add", description="إضافة نقاط لعضو")
@@ -414,4 +369,3 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
-
