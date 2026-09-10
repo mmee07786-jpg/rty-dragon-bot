@@ -11,12 +11,26 @@ EMBED_COLOR = 0x8B0000
 def load_raid_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"raider_stats": {}, "win_streak": 0}
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return {}
+    return {}
 
 def save_raid_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
+def get_guild_data(guild_id: str):
+    data = load_raid_data()
+    if guild_id not in data:
+        data[guild_id] = {"raider_stats": {}, "win_streak": 0}
+    return data
+
+def update_guild_data(guild_id: str, guild_data):
+    data = load_raid_data()
+    data[guild_id] = guild_data
+    save_raid_data(data)
 
 
 # مودال معلومات الرايد الأساسية
@@ -88,21 +102,22 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        data = load_raid_data()
+        guild_id = str(interaction.guild_id)
+        guild_data = get_guild_data(guild_id)
 
-        if "raider_stats" not in data:
-            data["raider_stats"] = {}
+        if "raider_stats" not in guild_data:
+            guild_data["raider_stats"] = {}
 
-        data["win_streak"] = data.get("win_streak", 0) + 1
-        current_streak = data["win_streak"]
+        guild_data["win_streak"] = guild_data.get("win_streak", 0) + 1
+        current_streak = guild_data["win_streak"]
 
         user_ids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
         for uid in user_ids:
-            if uid not in data["raider_stats"]:
-                data["raider_stats"][uid] = 0
-            data["raider_stats"][uid] += 1
+            if uid not in guild_data["raider_stats"]:
+                guild_data["raider_stats"][uid] = 0
+            guild_data["raider_stats"][uid] += 1
 
-        save_raid_data(data)
+        update_guild_data(guild_id, guild_data)
 
         report_content = (
             f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n"
@@ -142,7 +157,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         embed.set_footer(text=f"Raid Ended by {interaction.user.name} | VLX Clan")
 
         await interaction.channel.send(content="🏁 **Raid Final Report & Results:**", embed=embed)
-        await interaction.followup.send("✅ | تم نشر التقرير وتحديث إحصائيات المشاركين بنجاح!", ephemeral=True)
+        await interaction.followup.send("✅ | تم نشر التقرير وتحديث إحصائيات المشاركين في هذا السيرفر بنجاح!", ephemeral=True)
 
 
 class RaidSystemCog(commands.Cog):
@@ -166,11 +181,12 @@ class RaidSystemCog(commands.Cog):
 
     @app_commands.command(name="raid-list", description="Auto-generate and send the top 30 raiders list in English")
     async def raid_list(self, interaction: discord.Interaction):
-        data = load_raid_data()
-        stats = data.get("raider_stats", {})
+        guild_id = str(interaction.guild_id)
+        guild_data = get_guild_data(guild_id)
+        stats = guild_data.get("raider_stats", {})
 
         if not stats:
-            await interaction.response.send_message("❌ | No raid statistics recorded yet!", ephemeral=True)
+            await interaction.response.send_message("❌ | No raid statistics recorded yet in this server!", ephemeral=True)
             return
 
         sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:30]
@@ -205,8 +221,9 @@ class RaidSystemCog(commands.Cog):
     @app_commands.describe(member="اختر العضو (اختياري)")
     async def raid_rank(self, interaction: discord.Interaction, member: discord.Member = None):
         target = member or interaction.user
-        data = load_raid_data()
-        stats = data.get("raider_stats", {})
+        guild_id = str(interaction.guild_id)
+        guild_data = get_guild_data(guild_id)
+        stats = guild_data.get("raider_stats", {})
         
         count = stats.get(str(target.id), 0)
         
@@ -219,11 +236,12 @@ class RaidSystemCog(commands.Cog):
 
     @app_commands.command(name="raid-top", description="عرض قائمة أكثر الأشخاص مشاركة في الرايدات (Leaderboard)")
     async def raid_top(self, interaction: discord.Interaction):
-        data = load_raid_data()
-        stats = data.get("raider_stats", {})
+        guild_id = str(interaction.guild_id)
+        guild_data = get_guild_data(guild_id)
+        stats = guild_data.get("raider_stats", {})
         
         if not stats:
-            await interaction.response.send_message("❌ | لا توجد أي إحصائيات مسجلة لرايدات حتى الآن!")
+            await interaction.response.send_message("❌ | لا توجد أي إحصائيات مسجلة لرايدات في هذا السيرفر حتى الآن!")
             return
 
         sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -240,22 +258,22 @@ class RaidSystemCog(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
 
-    # الأمر الجديد: تعديل وإضافة عدد الرايدات لعضو معين يدوياً (للأدمنية فقط)
     @app_commands.command(name="raid-add", description="[ Admin Only ] إضافة أو تعيين عدد الرايدات لعضو معين يدوياً")
-    @app_commands.describe(member="اختر العضو المراد تعديل نقاطه", amount="عدد الرايدات الجديد (القيمة النهائية أو المضافة)")
+    @app_commands.describe(member="اختر العضو المراد تعديل نقاطه", amount="عدد الرايدات الجديد")
     @app_commands.checks.has_permissions(administrator=True)
     async def raid_add(self, interaction: discord.Interaction, member: discord.Member, amount: int):
-        data = load_raid_data()
-        if "raider_stats" not in data:
-            data["raider_stats"] = {}
+        guild_id = str(interaction.guild_id)
+        guild_data = get_guild_data(guild_id)
+        
+        if "raider_stats" not in guild_data:
+            guild_data["raider_stats"] = {}
 
-        # تعيين عدد الرايدات مباشرة للعضو
-        data["raider_stats"][str(member.id)] = amount
-        save_raid_data(data)
+        guild_data["raider_stats"][str(member.id)] = amount
+        update_guild_data(guild_id, guild_data)
 
         embed = discord.Embed(
             title="✅ | Raid Statistics Updated",
-            description=f"تم تحديث سجل الرايدات للعضو {member.mention}\nصبح إجمالي رايداته: **{amount}** رايد.",
+            description=f"تم تحديث سجل الرايدات للعضو {member.mention} في **هذا السيرفر فقط**\nصبح إجمالي رايداته: **{amount}** رايد.",
             color=EMBED_COLOR
         )
         embed.set_footer(text=f"Updated by {interaction.user.name} | VLX Clan")
@@ -263,3 +281,4 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
+
