@@ -1,15 +1,19 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import json
 import os
 import re
+import time
 
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
 
-# 🔴 الآيدي الخاص بك (فهد)
+# 🔴 الآيدي الخاص بك (فهد) - المالك الوحيد المخول بصلاحيات التعديل المطلقة
 OWNER_ID = 1107355943408259112
+
+# مخزن مؤقت لأوقات استخدام الأدمن لأمر end-raid لكل سيرفر (Guild ID -> Timestamp)
+admin_cooldowns = {}
 
 def load_raid_data():
     if os.path.exists(DATA_FILE):
@@ -26,7 +30,6 @@ def save_raid_data(data):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 def get_global_stats(data):
-    # دمج النقاط لكل الأعضاء عالمياً من كل السيرفرات لأجل التوب العام والرانك
     global_stats = {}
     for g_id, g_data in data.items():
         if isinstance(g_data, dict) and "raider_stats" in g_data:
@@ -34,8 +37,6 @@ def get_global_stats(data):
                 global_stats[uid] = global_stats.get(uid, 0) + count
     return global_stats
 
-
-# مودال معلومات الرايد الأساسية
 class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
     raid_number = discord.ui.TextInput(label="RAID Number", placeholder="", style=discord.TextStyle.short, required=True)
     enemy = discord.ui.TextInput(label="ENEMY", placeholder="", style=discord.TextStyle.short, required=True)
@@ -58,7 +59,6 @@ class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Re
             ephemeral=True
         )
 
-
 class RaidFinalMediaView(discord.ui.View):
     def __init__(self, raid_number, enemy, ally, duration, status_reason, author):
         super().__init__(timeout=180)
@@ -78,7 +78,6 @@ class RaidFinalMediaView(discord.ui.View):
             RaidSubmitModal(self.raid_number, self.enemy, self.ally, self.duration, self.status_reason)
         )
 
-
 class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
     mvps_input = discord.ui.TextInput(
         label="MVPs (قم بلصق المنشنات هنا)",
@@ -86,7 +85,6 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         style=discord.TextStyle.paragraph,
         required=True
     )
-
     media_links = discord.ui.TextInput(
         label="Do you want to upload a video or photo?",
         placeholder="ضع رابط الصورة أو الفيديو هنا...",
@@ -110,14 +108,12 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         if guild_id not in data:
             data[guild_id] = {"raider_stats": {}, "win_streak": 0}
 
-        # زيادة سلسلة الانتصارات Win Streak الخاصة بهذا السيرفر
         data[guild_id]["win_streak"] = data[guild_id].get("win_streak", 0) + 1
         current_streak = data[guild_id]["win_streak"]
 
         if "raider_stats" not in data[guild_id]:
             data[guild_id]["raider_stats"] = {}
 
-        # زيادة نقاط الأعضاء تصاعدياً في هذا السيرفر
         user_ids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
         for uid in user_ids:
             if uid not in data[guild_id]["raider_stats"]:
@@ -157,7 +153,6 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         )
 
         embed = discord.Embed(color=EMBED_COLOR, description=report_content)
-        
         if extracted_image_url:
             embed.set_image(url=extracted_image_url)
 
@@ -166,7 +161,6 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         await interaction.channel.send(content="🏁 **Raid Final Report & Results:**", embed=embed)
         await interaction.followup.send("✅ | تم نشر التقرير وتحديث نقاط الرايدات في هذا السيرفر بنجاح!", ephemeral=True)
 
-
 class RaidSystemCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -174,6 +168,34 @@ class RaidSystemCog(commands.Cog):
     @app_commands.command(name="end-raid", description="[ Admin Only ] Conclude the raid and record results")
     @app_commands.checks.has_permissions(administrator=True)
     async def end_raid(self, interaction: discord.Interaction):
+        # استثناء فهد (المالك) من أي قيود أو أوقات انتظار
+        if interaction.user.id == OWNER_ID:
+            await interaction.response.send_modal(RaidEndInfoModal())
+            return
+
+        guild_id = str(interaction.guild_id)
+        current_time = time.time()
+        cooldown_duration = 3 * 3600  # 3 ساعات بالثواني
+
+        if guild_id in admin_cooldowns:
+            elapsed_time = current_time - admin_cooldowns[guild_id]
+            if elapsed_time < cooldown_duration:
+                remaining_seconds = int(cooldown_duration - elapsed_time)
+                hours = remaining_seconds // 3600
+                minutes = (remaining_seconds % 3600) // 60
+                seconds = remaining_seconds % 60
+                
+                # العداد المتحرك الذي يحدث نفسه ويعرض الوقت المتبقي بدقة لكل محاولة جديدة
+                await interaction.response.send_message(
+                    f"⏳ | عذراً، لا يمكنك استخدام أمر الـ End Raid حالياً.\n"
+                    f"يجب الانتظار لمدة **3 ساعات** بين كل رايد وآخر للأدمنية.\n"
+                    f"⏱️ **الوقـت المتبقـي بدقة:** `{hours} ساعة و {minutes} دقيقة و {seconds} ثانية`",
+                    ephemeral=True
+                )
+                return
+
+        # تسجيل وقت الاستخدام الجديد لهذا السيرفر للأدمن
+        admin_cooldowns[guild_id] = current_time
         await interaction.response.send_modal(RaidEndInfoModal())
 
     @app_commands.command(name="sync", description="[ Owner Only ] تحديث ومزامنة أوامر البوت")
@@ -185,7 +207,7 @@ class RaidSystemCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         try:
             synced = await self.bot.tree.sync()
-            await interaction.followup.send(f"✅ | تم مزامنة وتحديث `{len(synced)}` أمر بنجاح وإظهارها في السلاش!", ephemeral=True)
+            await interaction.followup.send(f"✅ | تم مزامنة وتحديث `{len(synced)}` أمر بنجاح!", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ | حدث خطأ أثناء المزامنة: `{e}`", ephemeral=True)
 
@@ -193,7 +215,6 @@ class RaidSystemCog(commands.Cog):
     async def raid_list(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
-        
         guild_data = data.get(guild_id, {})
         stats = guild_data.get("raider_stats", {})
 
@@ -202,7 +223,6 @@ class RaidSystemCog(commands.Cog):
             return
 
         sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:30]
-
         description = ""
         for index, (uid, count) in enumerate(sorted_raiders, start=1):
             user = interaction.guild.get_member(int(uid)) or self.bot.get_user(int(uid))
@@ -210,52 +230,41 @@ class RaidSystemCog(commands.Cog):
             medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"#{index}"
             description += f"{medal} {name} ──> **{count}** Raids Won\n"
 
-        if not description:
-            description = "No participants found."
-
-        embed = discord.Embed(
-            title="📋 | VLX Clan Active Raiders List (Top 30 - This Server)",
-            description=description,
-            color=EMBED_COLOR
-        )
+        embed = discord.Embed(title="📋 | VLX Clan Active Raiders List (Top 30 - This Server)", description=description, color=EMBED_COLOR)
         embed.set_footer(text=f"Requested by {interaction.user.name} | VLX Clan System")
-
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="raid-mentions", description="نشر منشنات المشاركين (يتحمل أكثر من 200 عضو دفعة وحدة)")
-    @app_commands.describe(mentions_content="الصق منشنات الأعضاء هنا (تدعم أعداد ضخمة فوق الـ 200 عضو)")
+    @app_commands.command(name="raid-mentions", description="نشر منشنات المشاركين")
+    @app_commands.describe(mentions_content="الصق منشنات الأعضاء هنا")
     async def raid_mentions(self, interaction: discord.Interaction, mentions_content: str):
-        embed = discord.Embed(title="👥 | Raid Members Mentions (200+ Supported)", description=mentions_content, color=EMBED_COLOR)
+        embed = discord.Embed(title="👥 | Raid Members Mentions", description=mentions_content, color=EMBED_COLOR)
         embed.set_footer(text=f"Mentions by {interaction.user.name} | VLX Clan")
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="raid-rank", description="معرفة عدد الرايدات العالمية التي شارك بها العضو")
+    @app_commands.command(name="raid-rank", description="معرفة عدد الرايدات العالمية للعضو")
     @app_commands.describe(member="اختر العضو (اختياري)")
     async def raid_rank(self, interaction: discord.Interaction, member: discord.Member = None):
         target = member or interaction.user
         data = load_raid_data()
         global_stats = get_global_stats(data)
-        
         count = global_stats.get(str(target.id), 0)
         
         embed = discord.Embed(title="📊 | Global Raider Rank Statistics", color=EMBED_COLOR)
         embed.set_thumbnail(url=target.display_avatar.url)
         embed.add_field(name="User", value=target.mention, inline=False)
         embed.add_field(name="Total Global Raids Participated", value=f"🛡️ `{count} Raids`", inline=False)
-        
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="raid-top", description="عرض قائمة أكثر الأشخاص مشاركة في الرايدات عالمياً (Global Leaderboard)")
+    @app_commands.command(name="raid-top", description="عرض قائمة أفضل المشاركين عالمياً")
     async def raid_top(self, interaction: discord.Interaction):
         data = load_raid_data()
         global_stats = get_global_stats(data)
         
         if not global_stats:
-            await interaction.response.send_message("❌ | لا توجد أي إحصائيات مسجلة لرايدات عالمياً حتى الآن!", ephemeral=True)
+            await interaction.response.send_message("❌ | لا توجد أي إحصائيات مسجلة عالمياً حتى الآن!", ephemeral=True)
             return
 
         sorted_raiders = sorted(global_stats.items(), key=lambda x: x[1], reverse=True)[:10]
-        
         description = ""
         for index, (uid, count) in enumerate(sorted_raiders, start=1):
             user = interaction.guild.get_member(int(uid)) or self.bot.get_user(int(uid))
@@ -265,20 +274,17 @@ class RaidSystemCog(commands.Cog):
 
         embed = discord.Embed(title="🏆 | VLX Clan Global Raid Leaderboard (Top 10)", description=description, color=EMBED_COLOR)
         embed.set_footer(text="VLX Clan Global Statistics")
-        
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="raid-add", description="[ Owner Only ] إضافة أو تعيين عدد الرايدات لعضو معين في هذا السيرفر")
-    @app_commands.describe(member="اختر العضو المراد تعديل نقاطه", amount="عدد الرايدات الجديد")
+    @app_commands.command(name="raid-add", description="[ Owner Only ] إضافة أو تعيين عدد الرايدات لعضو معين")
+    @app_commands.describe(member="اختر العضو", amount="عدد الرايدات")
     async def raid_add(self, interaction: discord.Interaction, member: discord.Member, amount: int):
-        # التحقق مما إذا كان المستخدم هو أنت حصرياً
         if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** (مالك البوت) فقط!", ephemeral=True)
+            await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** فقط!", ephemeral=True)
             return
 
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
-        
         if guild_id not in data:
             data[guild_id] = {"raider_stats": {}, "win_streak": 0}
             
@@ -287,11 +293,42 @@ class RaidSystemCog(commands.Cog):
 
         embed = discord.Embed(
             title="✅ | Raid Statistics Updated",
-            description=f"تم تحديث سجل الرايدات للعضو {member.mention} في **هذا السيرفر**\nوأصبح رصيده: **{amount}** رايد.",
+            description=f"تم تحديث سجل الرايدات للعضو {member.mention}\nوأصبح رصيده: **{amount}** رايد.",
             color=EMBED_COLOR
         )
         embed.set_footer(text=f"Updated by Developer (Fahd) | VLX Clan")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @app_commands.command(name="raid-reset", description="[ Owner Only ] تصفير أو حذف نقاط ورايدات عضو معين أو كل السيرفر")
+    @app_commands.describe(member="اختر العضو لتصفير نقاطه (اختياري)")
+    async def raid_reset(self, interaction: discord.Interaction, member: discord.Member = None):
+        # القفل الحصري: لا يسمح لأي شخص بالاستخدام نهائياً سوى فهد
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** فقط!", ephemeral=True)
+            return
+
+        guild_id = str(interaction.guild_id)
+        data = load_raid_data()
+
+        if guild_id not in data:
+            await interaction.response.send_message("❌ | لا توجد بيانات مسجلة في هذا السيرفر أساساً!", ephemeral=True)
+            return
+
+        if member:
+            # تصفير نقاط عضو محدد فقط
+            if str(member.id) in data[guild_id].get("raider_stats", {}):
+                data[guild_id]["raider_stats"][str(member.id)] = 0
+                save_raid_data(data)
+                await interaction.response.send_message(f"✅ | تم تصفير نقاط الرايدات للعضو {member.mention} بنجاح!", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ | هذا العضو ليس لديه أي نقاط مسجلة مسبقاً في هذا السيرفر.", ephemeral=True)
+        else:
+            # تصفير السيرفر بالكامل (الستريك ونقاط الجميع)
+            data[guild_id]["raider_stats"] = {}
+            data[guild_id]["win_streak"] = 0
+            save_raid_data(data)
+            await interaction.response.send_message("✅ | تم تصفير جميع إحصائيات وسلسلة انتصارات هذا السيرفر بالكامل بنجاح!", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
+
