@@ -108,13 +108,16 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         if "raider_stats" not in guild_data:
             guild_data["raider_stats"] = {}
 
+        # تحديث سلسلة الانتصارات Win Streak للسيرفر
         guild_data["win_streak"] = guild_data.get("win_streak", 0) + 1
         current_streak = guild_data["win_streak"]
 
+        # استخراج منشنات الأعضاء وزيادة نقاطهم بشكل تصاعدي تلقائي (+1 لكل رايد يتم إنجازه)
         user_ids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
         for uid in user_ids:
             if uid not in guild_data["raider_stats"]:
                 guild_data["raider_stats"][uid] = 0
+            # زيادة الرايدات تصاعدياً فوق عددهم السابق
             guild_data["raider_stats"][uid] += 1
 
         update_guild_data(guild_id, guild_data)
@@ -157,7 +160,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         embed.set_footer(text=f"Raid Ended by {interaction.user.name} | VLX Clan")
 
         await interaction.channel.send(content="🏁 **Raid Final Report & Results:**", embed=embed)
-        await interaction.followup.send("✅ | تم نشر التقرير وتحديث إحصائيات المشاركين في هذا السيرفر بنجاح!", ephemeral=True)
+        await interaction.followup.send("✅ | تم نشر التقرير وزيادة نقاط الرايدات للأعضاء المذكورين تصاعدياً بنجاح في هذا السيرفر!", ephemeral=True)
 
 
 class RaidSystemCog(commands.Cog):
