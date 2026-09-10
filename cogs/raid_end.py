@@ -5,7 +5,6 @@ import json
 import os
 import re
 import time
-import aiohttp
 
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
@@ -164,22 +163,27 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
 class RaidSystemCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.weekly_webhook_loop.start()
+        self.weekly_message_loop.start()
 
     def cog_unload(self):
-        self.weekly_webhook_loop.cancel()
+        self.weekly_message_loop.cancel()
 
-    async def send_or_update_webhook_top(self, guild_id, guild):
+    async def send_or_update_top_message(self, guild_id, guild):
         data = load_raid_data()
         if guild_id not in data:
             return
         
         g_data = data[guild_id]
-        webhook_url = g_data.get("webhook_url")
-        if not webhook_url:
+        channel_id = g_data.get("top_channel_id")
+        if not channel_id:
+            return
+
+        channel = guild.get_channel(int(channel_id))
+        if not channel:
             return
 
         stats = g_data.get("raider_stats", {})
+        # ترتيب الأعضاء تنازلياً حسب عدد الرايدات (الأكثر في الأعلى)
         sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:20]
 
         description = ""
@@ -187,7 +191,7 @@ class RaidSystemCog(commands.Cog):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             name = member.mention if member else f"User ID: {uid}"
             
-            # التصميم المطابق للصورة تماماً
+            # التصميم المطابق للزخرفة المطلوبة
             description += (
                 f"┌─── 「 TOP {index} 」 ───┐\n"
                 f"│ │\n"
@@ -200,44 +204,43 @@ class RaidSystemCog(commands.Cog):
         if not description:
             description = "لا توجد أي نقاط رايدات مسجلة حتى الآن."
 
-        embed = {
-            "title": "🏆 | VLX Clan Weekly Top 20 Raiders",
-            "description": description,
-            "color": 9109504,
-            "footer": {"text": "VLX Clan Automated Weekly Top System"}
-        }
+        embed = discord.Embed(
+            title="🏆 | VLX Clan Weekly Top 20 Raiders",
+            description=description,
+            color=EMBED_COLOR
+        )
+        embed.set_footer(text="VLX Clan Automated Weekly Top System")
 
-        payload = {"embeds": [embed]}
+        msg_id = g_data.get("top_message_id")
+        
+        if msg_id:
+            try:
+                msg = await channel.fetch_message(int(msg_id))
+                await msg.edit(embed=embed)
+                return
+            except discord.NotFound:
+                pass # إذا تم حذف الرسالة، سيتم إرسال رسالة جديدة أدناه
 
-        async with aiohttp.ClientSession() as session:
-            msg_id = g_data.get("webhook_message_id")
-            if msg_id:
-                edit_url = f"{webhook_url}/messages/{msg_id}"
-                async with session.patch(edit_url, json=payload) as resp:
-                    if resp.status == 200:
-                        return
-            
-            async with session.post(f"{webhook_url}?wait=true", json=payload) as resp:
-                if resp.status == 200:
-                    res_json = await resp.json()
-                    g_data["webhook_message_id"] = res_json.get("id")
-                    save_raid_data(data)
+        # إرسال رسالة جديدة لأول مرة أو إذا تم حذف القديمة
+        new_msg = await channel.send(embed=embed)
+        g_data["top_message_id"] = str(new_msg.id)
+        save_raid_data(data)
 
     @tasks.loop(hours=168)
-    async def weekly_webhook_loop(self):
+    async def weekly_message_loop(self):
         data = load_raid_data()
         for guild_id, g_data in data.items():
-            if g_data.get("webhook_url"):
+            if g_data.get("top_channel_id"):
                 guild = self.bot.get_guild(int(guild_id))
                 if guild:
-                    await self.send_or_update_webhook_top(guild_id, guild)
+                    await self.send_or_update_top_message(guild_id, guild)
                     # تصفير النقاط وسلسلة الانتصارات أسبوعياً تلقائياً
                     g_data["raider_stats"] = {}
                     g_data["win_streak"] = 0
                     save_raid_data(data)
 
-    @weekly_webhook_loop.before_loop
-    async def before_weekly_webhook(self):
+    @weekly_message_loop.before_loop
+    async def before_weekly_message(self):
         await self.bot.wait_until_ready()
 
     @app_commands.command(name="end-raid", description="[ Admin Only ] Conclude the raid and record results")
@@ -270,37 +273,34 @@ class RaidSystemCog(commands.Cog):
         admin_cooldowns[guild_id] = current_time
         await interaction.response.send_modal(RaidEndInfoModal())
 
-    @app_commands.command(name="set-raid-webhook", description="[ خاص بالإدارة ] تعيين رابط الويب هوك لعرض أفضل 20 رايدر بالشكل المزخرف وتحديثه أسبوعياً")
-    @app_commands.describe(webhook_url="الصق رابط الويب هوك هنا", channel="القناة التي سيتم إرسال التوب فيها")
+    @app_commands.command(name="set-raid-top", description="[ خاص بالإدارة ] تحديد قناة إرسال وتحديث توب الرايدات أسبوعياً بشكل تلقائي ومزخرف")
+    @app_commands.describe(channel="اختر القناة التي سيعمل فيها التوب")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_raid_webhook(self, interaction: discord.Interaction, webhook_url: str, channel: discord.TextChannel):
+    async def set_raid_top(self, interaction: discord.Interaction, channel: discord.TextChannel):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
             data[guild_id] = {"raider_stats": {}, "win_streak": 0}
 
-        data[guild_id]["webhook_url"] = webhook_url
-        data[guild_id]["webhook_channel_id"] = channel.id
-        # مسح الـ message_id القديم ليتم إرسال رسالة جديدة بالويب هوك فوراً
-        data[guild_id].pop("webhook_message_id", None)
+        data[guild_id]["top_channel_id"] = str(channel.id)
+        data[guild_id].pop("top_message_id", None) # مسح الـ ID القديم لإنشاء رسالة جديدة
         save_raid_data(data)
 
-        await interaction.response.send_message("✅ | تم تفعيل ويب هوك توب الرايدات بنجاح! جاري إرسال القائمة المزخرفة الآن...", ephemeral=True)
-        await self.send_or_update_webhook_top(guild_id, interaction.guild)
+        await interaction.response.send_message(f"✅ | تم تفعيل توب الرايدات في القناة {channel.mention} بنجاح! جاري إرسال القائمة مرتبة الآن...", ephemeral=True)
+        await self.send_or_update_top_message(guild_id, interaction.guild)
 
-    @app_commands.command(name="disable-raid-webhook", description="[ خاص بالإدارة ] إلغاء وتعطيل خاصية ويب هوك توب الرايدات الأسبوعي")
+    @app_commands.command(name="disable-raid-top", description="[ خاص بالإدارة ] إلغاء وتعطيل خاصية توب الرايدات الأسبوعي في هذا السيرفر")
     @app_commands.checks.has_permissions(administrator=True)
-    async def disable_raid_webhook(self, interaction: discord.Interaction):
+    async def disable_raid_top(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
-        if guild_id in data and "webhook_url" in data[guild_id]:
-            data[guild_id].pop("webhook_url", None)
-            data[guild_id].pop("webhook_channel_id", None)
-            data[guild_id].pop("webhook_message_id", None)
+        if guild_id in data and "top_channel_id" in data[guild_id]:
+            data[guild_id].pop("top_channel_id", None)
+            data[guild_id].pop("top_message_id", None)
             save_raid_data(data)
-            await interaction.response.send_message("✅ | تم إلغاء وتعطيل خاصية ويب هوك توب الرايدات في هذا السيرفر بنجاح.", ephemeral=True)
+            await interaction.response.send_message("✅ | تم إلغاء وتعطيل خاصية توب الرايدات الأسبوعي في هذا السيرفر بنجاح.", ephemeral=True)
         else:
-            await interaction.response.send_message("❌ | لا يوجد ويب هوك مفعل أساساً في هذا السيرفر!", ephemeral=True)
+            await interaction.response.send_message("❌ | خاصية توب الرايدات غير مفعلة أساساً في هذا السيرفر!", ephemeral=True)
 
     @app_commands.command(name="sync", description="[ Owner Only ] تحديث ومزامنة أوامر البوت")
     async def sync_commands(self, interaction: discord.Interaction):
@@ -395,6 +395,10 @@ class RaidSystemCog(commands.Cog):
         data[guild_id]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
 
+        # تحديث الرسالة فوراً إن وجدت
+        guild = interaction.guild
+        await self.send_or_update_top_message(guild_id, guild)
+
         embed = discord.Embed(
             title="✅ | Raid Statistics Updated",
             description=f"تم تحديث سجل الرايدات للعضو {member.mention}\nوأصبح رصيده: **{amount}** رايد.",
@@ -421,6 +425,7 @@ class RaidSystemCog(commands.Cog):
             if str(member.id) in data[guild_id].get("raider_stats", {}):
                 data[guild_id]["raider_stats"][str(member.id)] = 0
                 save_raid_data(data)
+                await self.send_or_update_top_message(guild_id, interaction.guild)
                 await interaction.response.send_message(f"✅ | تم تصفير نقاط الرايدات للعضو {member.mention} بنجاح!", ephemeral=True)
             else:
                 await interaction.response.send_message("❌ | هذا العضو ليس لديه أي نقاط مسجلة مسبقاً في هذا السيرفر.", ephemeral=True)
@@ -428,6 +433,7 @@ class RaidSystemCog(commands.Cog):
             data[guild_id]["raider_stats"] = {}
             data[guild_id]["win_streak"] = 0
             save_raid_data(data)
+            await self.send_or_update_top_message(guild_id, interaction.guild)
             await interaction.response.send_message("✅ | تم تصفير جميع إحصائيات وسلسلة انتصارات هذا السيرفر بالكامل بنجاح!", ephemeral=True)
 
 async def setup(bot):
