@@ -8,6 +8,7 @@ import time
 
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
+GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa41da3&is=6aa2cc23&hm=d6ba53f570b7920d6f2f3fe64ae84729c07eaf4503123b6d2bb7c9f3733db944&"
 
 # 🔴 الآيدي الخاص بك (فهد)
 OWNER_ID = 1107355943408259112
@@ -19,6 +20,10 @@ def load_raid_data():
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             try:
                 data = json.load(f)
+                # التأكد من وجود قائمة الحظر العامة أو لكل سيرفر
+                for g_id in data:
+                    if isinstance(data[g_id], dict) and "blacklist" not in data[g_id]:
+                        data[g_id]["blacklist"] = []
                 return data
             except json.JSONDecodeError:
                 return {}
@@ -32,8 +37,10 @@ def get_global_stats(data):
     global_stats = {}
     for g_id, g_data in data.items():
         if isinstance(g_data, dict) and "raider_stats" in g_data:
+            blacklist = g_data.get("blacklist", [])
             for uid, count in g_data["raider_stats"].items():
-                global_stats[uid] = global_stats.get(uid, 0) + count
+                if uid not in blacklist:
+                    global_stats[uid] = global_stats.get(uid, 0) + count
     return global_stats
 
 class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
@@ -105,7 +112,10 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         data = load_raid_data()
 
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": []}
+
+        if "blacklist" not in data[guild_id]:
+            data[guild_id]["blacklist"] = []
 
         data[guild_id]["win_streak"] = data[guild_id].get("win_streak", 0) + 1
         current_streak = data[guild_id]["win_streak"]
@@ -113,13 +123,24 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         if "raider_stats" not in data[guild_id]:
             data[guild_id]["raider_stats"] = {}
 
+        # استخراج الآيديات من المنشنات مع تجاهل المحظورين تماماً
         user_ids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
+        blacklist = data[guild_id]["blacklist"]
+        
         for uid in user_ids:
+            if uid in blacklist:
+                continue # تخطي العضو المحظور وعدم إضافة أي نقطة له
             if uid not in data[guild_id]["raider_stats"]:
                 data[guild_id]["raider_stats"][uid] = 0
             data[guild_id]["raider_stats"][uid] += 1
 
         save_raid_data(data)
+
+        # تحديث قائمة التوب تلقائياً في السيرفر بعد كل رايد جديد
+        guild = interaction.guild
+        cog = interaction.client.get_cog("RaidSystemCog")
+        if cog:
+            await cog.send_or_update_top_message(guild_id, guild)
 
         report_content = (
             f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n"
@@ -131,7 +152,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
             f"╰➤{self.ally}\n\n"
             f"**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n"
             f"╰➤{self.duration}\n\n"
-            f"**𝐒𝐓𝐀𝐓𝐔Σ:**\n"
+            f"**𝐒𝐓𝐀𝐓𝐔𝐒:**\n"
             f"╰➤{self.status_reason}\n\n"
             f"**𝐌𝐕𝐏𝐒:**\n"
             f"╰➤ {self.mvps_input.value}\n\n"
@@ -158,7 +179,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         embed.set_footer(text=f"Raid Ended by {interaction.user.name} | VLX Clan")
 
         await interaction.channel.send(content="🏁 **Raid Final Report & Results:**", embed=embed)
-        await interaction.followup.send("✅ | تم نشر التقرير وتحديث نقاط الرايدات في هذا السيرفر بنجاح!", ephemeral=True)
+        await interaction.followup.send("✅ | تم نشر التقرير وتحديث النقاط وقائمة التوب بنجاح!", ephemeral=True)
 
 class RaidSystemCog(commands.Cog):
     def __init__(self, bot):
@@ -183,16 +204,21 @@ class RaidSystemCog(commands.Cog):
             return
 
         stats = g_data.get("raider_stats", {})
-        # ترتيب الأعضاء تنازلياً حسب عدد الرايدات (الأكثر في الأعلى) واخذ أول 10 لعمل إمبدات منفصلة
-        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:10]
+        blacklist = g_data.get("blacklist", [])
+        
+        # تصفية الأعضاء واستبعاد المحظورين نهائياً من القائمة
+        filtered_stats = {uid: count for uid, count in stats.items() if uid not in blacklist}
+
+        # ترتيب الأعضاء تنازلياً حسب عدد الرايدات
+        sorted_raiders = sorted(filtered_stats.items(), key=lambda x: x[1], reverse=True)[:10]
 
         if not sorted_raiders:
             embed = discord.Embed(
-                title="🏆 | VLX Clan Weekly Top Raiders",
+                title="🏆 | VLX Clan Top Raiders",
                 description="لا توجد أي نقاط رايدات مسجلة حتى الآن.",
                 color=EMBED_COLOR
             )
-            embed.set_footer(text="VLX Clan Automated Weekly Top System")
+            embed.set_image(url=GIF_BANNER_URL)
             msg_id = g_data.get("top_message_id")
             if msg_id:
                 try:
@@ -211,25 +237,20 @@ class RaidSystemCog(commands.Cog):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             name = member.mention if member else f"User ID: {uid}"
             
-            # التصميم المنفصل لكل مركز تماماً مثل الصورة الزرقاء
             box_content = (
-                f"┌─── 「 TOP {index} 」 ───┐\n"
-                f"│ │\n"
-                f"│ <<< • . >>>\n"
-                f"│ {name}\n"
-                f"│ Raids Joined: **{count}**\n"
-                f"└─────────────────────┘"
+                f"╔══『 TOP {index} 』══╗\n"
+                f"│  |   |\n"
+                f"│  <<< •  • >>>\n"
+                f"│  {name}\n"
+                f"│  Country:\n"
+                f"│  —\n"
+                f"│  Raids Joined: **{count}**"
             )
 
             emb = discord.Embed(description=box_content, color=EMBED_COLOR)
-            if index == 1:
-                emb.set_author(name="🏆 | VLX Clan Weekly Top Raiders Leaderboard")
-            if index == len(sorted_raiders):
-                emb.set_footer(text="VLX Clan Automated Weekly Top System")
-            
+            emb.set_image(url=GIF_BANNER_URL)
             embeds.append(emb)
 
-        # Discord يسمح بحد أقصى 10 إمبدات في الرسالة الواحدة
         msg_id = g_data.get("top_message_id")
         if msg_id:
             try:
@@ -251,10 +272,6 @@ class RaidSystemCog(commands.Cog):
                 guild = self.bot.get_guild(int(guild_id))
                 if guild:
                     await self.send_or_update_top_message(guild_id, guild)
-                    # تصفير النقاط وسلسلة الانتصارات أسبوعياً تلقائياً
-                    g_data["raider_stats"] = {}
-                    g_data["win_streak"] = 0
-                    save_raid_data(data)
 
     @weekly_message_loop.before_loop
     async def before_weekly_message(self):
@@ -290,23 +307,89 @@ class RaidSystemCog(commands.Cog):
         admin_cooldowns[guild_id] = current_time
         await interaction.response.send_modal(RaidEndInfoModal())
 
-    @app_commands.command(name="set-raid-top", description="[ خاص بالإدارة ] تحديد قناة إرسال وتحديث توب الرايدات أسبوعياً بشكل منفصل ومزخرف")
+    @app_commands.command(name="raid-ban", description="[ Owner Only ] حظر عضو من الظهور في التوبات أو حساب نقاطه للأبد")
+    @app_commands.describe(member="اختر العضو المراد حظره")
+    async def raid_ban(self, interaction: discord.Interaction, member: discord.Member):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** فقط!", ephemeral=True)
+            return
+
+        guild_id = str(interaction.guild_id)
+        data = load_raid_data()
+        if guild_id not in data:
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": []}
+
+        if "blacklist" not in data[guild_id]:
+            data[guild_id]["blacklist"] = []
+
+        uid = str(member.id)
+        if uid in data[guild_id]["blacklist"]:
+            await interaction.response.send_message(f"⚠️ | العضو {member.mention} محظور مسبقاً من التوبات!", ephemeral=True)
+            return
+
+        data[guild_id]["blacklist"].append(uid)
+        save_raid_data(data)
+
+        # تحديث التوب فوراً لإزالته إن كان موجوداً
+        await self.send_or_update_top_message(guild_id, interaction.guild)
+
+        embed = discord.Embed(
+            title="🚫 | Raid Leaderboard Ban",
+            description=f"تم حظر العضو {member.mention} من التوبات والرايدات للأبد بنجاح!",
+            color=EMBED_COLOR
+        )
+        embed.set_footer(text=f"Banned by {interaction.user.name} | VLX Clan")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="raid-unban", description="[ Owner Only ] رفع الحظر عن عضو وإرجاعه للتوبات")
+    @app_commands.describe(member="اختر العضو لرفع الحظر عنه")
+    async def raid_unban(self, interaction: discord.Interaction, member: discord.Member):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** فقط!", ephemeral=True)
+            return
+
+        guild_id = str(interaction.guild_id)
+        data = load_raid_data()
+        if guild_id not in data or "blacklist" not in data[guild_id]:
+            await interaction.response.send_message("❌ | لا توجد قائمة حظر مسجلة في هذا السيرفر!", ephemeral=True)
+            return
+
+        uid = str(member.id)
+        if uid not in data[guild_id]["blacklist"]:
+            await interaction.response.send_message(f"⚠️ | العضو {member.mention} ليس محظوراً أساساً!", ephemeral=True)
+            return
+
+        data[guild_id]["blacklist"].remove(uid)
+        save_raid_data(data)
+
+        # تحديث التوب لإظهاره إذا كان لديه نقاط سابقة
+        await self.send_or_update_top_message(guild_id, interaction.guild)
+
+        embed = discord.Embed(
+            title="✅ | Raid Leaderboard Unban",
+            description=f"تم رفع الحظر عن العضو {member.mention} وإرجاعه للتوبات بنجاح!",
+            color=EMBED_COLOR
+        )
+        embed.set_footer(text=f"Unbanned by {interaction.user.name} | VLX Clan")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="set-raid-top", description="[ خاص بالإدارة ] تحديد قناة إرسال وتحديث توب الرايدات بالشكل المزخرف مع الشريط المتحرك")
     @app_commands.describe(channel="اختر القناة التي سيعمل فيها التوب")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_raid_top(self, interaction: discord.Interaction, channel: discord.TextChannel):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": []}
 
         data[guild_id]["top_channel_id"] = str(channel.id)
         data[guild_id].pop("top_message_id", None)
         save_raid_data(data)
 
-        await interaction.response.send_message(f"✅ | تم تفعيل توب الرايدات المنفصل في القناة {channel.mention} بنجاح! جاري إرسال القوائم...", ephemeral=True)
+        await interaction.response.send_message(f"✅ | تم تفعيل توب الرايدات في القناة {channel.mention} بنجاح! جاري إرسال القوائم بالشكل المطلوب...", ephemeral=True)
         await self.send_or_update_top_message(guild_id, interaction.guild)
 
-    @app_commands.command(name="disable-raid-top", description="[ خاص بالإدارة ] إلغاء وتعطيل خاصية توب الرايدات الأسبوعي في هذا السيرفر")
+    @app_commands.command(name="disable-raid-top", description="[ خاص بالإدارة ] إلغاء وتعطيل خاصية توب الرايدات في هذا السيرفر")
     @app_commands.checks.has_permissions(administrator=True)
     async def disable_raid_top(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild_id)
@@ -315,7 +398,7 @@ class RaidSystemCog(commands.Cog):
             data[guild_id].pop("top_channel_id", None)
             data[guild_id].pop("top_message_id", None)
             save_raid_data(data)
-            await interaction.response.send_message("✅ | تم إلغاء وتعطيل خاصية توب الرايدات الأسبوعي في هذا السيرفر بنجاح.", ephemeral=True)
+            await interaction.response.send_message("✅ | تم إلغاء وتعطيل خاصية توب الرايدات في هذا السيرفر بنجاح.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ | خاصية توب الرايدات غير مفعلة أساساً في هذا السيرفر!", ephemeral=True)
 
@@ -338,12 +421,15 @@ class RaidSystemCog(commands.Cog):
         data = load_raid_data()
         guild_data = data.get(guild_id, {})
         stats = guild_data.get("raider_stats", {})
+        blacklist = guild_data.get("blacklist", [])
 
-        if not stats:
+        filtered_stats = {uid: count for uid, count in stats.items() if uid not in blacklist}
+
+        if not filtered_stats:
             await interaction.response.send_message("❌ | No raid statistics recorded yet in this server!", ephemeral=True)
             return
 
-        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:30]
+        sorted_raiders = sorted(filtered_stats.items(), key=lambda x: x[1], reverse=True)[:30]
         description = ""
         for index, (uid, count) in enumerate(sorted_raiders, start=1):
             user = interaction.guild.get_member(int(uid)) or self.bot.get_user(int(uid))
@@ -407,7 +493,7 @@ class RaidSystemCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": []}
             
         data[guild_id]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
@@ -417,10 +503,10 @@ class RaidSystemCog(commands.Cog):
 
         embed = discord.Embed(
             title="✅ | Raid Statistics Updated",
-            description=f"تم تحديث سجل الرايدات للعضو {member.mention}\nوأصبح رصيده: **{amount}** رايد.",
+            description=f"تم تحديث سجل الرايدات للعضو {member.mention}\nوأصبح إجمالي رايداته: **{amount}** رايد.",
             color=EMBED_COLOR
         )
-        embed.set_footer(text=f"Updated by Developer (Fahd) | VLX Clan")
+        embed.set_footer(text=f"Updated by {interaction.user.name} | VLX Clan")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="raid-reset", description="[ Owner Only ] تصفير أو حذف نقاط ورايدات عضو معين أو كل السيرفر")
