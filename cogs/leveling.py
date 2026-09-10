@@ -10,24 +10,43 @@ DATA_FILE = "level_data.json"
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {
-        "server_levels": {},
-        "top_channels": {},
-        "top_messages": {},
-        "level_channels": {},
-        "custom_level_messages": {},
-        "leveling_status": {} # مخزن حالة التلفيل لكل سيرفر (True / False)
-    }
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return {}
+    return {}
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
+def get_guild_settings(guild_id: str):
+    data = load_data()
+    if "guilds" not in data:
+        data["guilds"] = {}
+    
+    if guild_id not in data["guilds"]:
+        data["guilds"][guild_id] = {
+            "leveling_status": False,
+            "levels": {},
+            "top_channel": None,
+            "top_message": "🔥 | هؤلاء هم الأبطال الأكثر تفاعلاً لهذا الأسبوع !",
+            "level_channel": None,
+            "custom_level_message": "🎉 مبروك {member}! صعدت إلى **Level {level}** 🚀"
+        }
+        save_data(data)
+    return data["guilds"][guild_id]
+
+def update_guild_settings(guild_id: str, guild_data):
+    data = load_data()
+    if "guilds" not in data:
+        data["guilds"] = {}
+    data["guilds"][guild_id] = guild_data
+    save_data(data)
+
 class Leveling(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.data = load_data()
         self.weekly_leaderboard_loop.start()
 
     def cog_unload(self):
@@ -39,23 +58,21 @@ class Leveling(commands.Cog):
             return
 
         guild_id = str(message.guild.id)
+        g_settings = get_guild_settings(guild_id)
 
-        # التحقق هل نظام التلفيل مفعل في هذا السيرفر أم لا (افتراضياً مغلق False)
-        leveling_status = self.data.get("leveling_status", {})
-        if not leveling_status.get(guild_id, False):
-            return # إذا كان مغلقاً، يتجاهل الرسالة بالكامل ولا يحسب أي XP
+        # التحقق هل نظام التلفيل مفعل في هذا السيرفر بالذات أم لا
+        if not g_settings.get("leveling_status", False):
+            return
 
         user_id = str(message.author.id)
+        if "levels" not in g_settings:
+            g_settings["levels"] = {}
 
-        if "server_levels" not in self.data:
-            self.data["server_levels"] = {}
-        if guild_id not in self.data["server_levels"]:
-            self.data["server_levels"][guild_id] = {}
-        if user_id not in self.data["server_levels"][guild_id]:
-            self.data["server_levels"][guild_id][user_id] = {"xp": 0, "level": 1}
+        if user_id not in g_settings["levels"]:
+            g_settings["levels"][user_id] = {"xp": 0, "level": 1}
 
         xp_gain = random.randint(15, 25)
-        user_data = self.data["server_levels"][guild_id][user_id]
+        user_data = g_settings["levels"][user_id]
         user_data["xp"] += xp_gain
 
         xp_needed = user_data["level"] * 100
@@ -65,18 +82,15 @@ class Leveling(commands.Cog):
             user_data["level"] += 1
             new_level = user_data["level"]
             
-            # تحديد الروم المخصص للتلفيل، أو إرسالها في نفس روم الدردشة إذا لم يُحدد روم خاص
+            # تحديد القناة الخاصة بهذا السيرفر حصرياً
             target_channel = message.channel
-            level_channels = self.data.get("level_channels", {})
-            if guild_id in level_channels:
-                custom_channel = message.guild.get_channel(level_channels[guild_id])
+            level_channel_id = g_settings.get("level_channel")
+            if level_channel_id:
+                custom_channel = message.guild.get_channel(level_channel_id)
                 if custom_channel:
                     target_channel = custom_channel
 
-            # جلب رسالة التلفيل المخصصة أو استخدام الرسالة الافتراضية
-            custom_msgs = self.data.get("custom_level_messages", {})
-            msg_template = custom_msgs.get(guild_id, "🎉 مبروك {member}! صعدت إلى **Level {level}** 🚀")
-            
+            msg_template = g_settings.get("custom_level_message", "🎉 مبروك {member}! صعدت إلى **Level {level}** 🚀")
             final_msg = msg_template.replace("{member}", message.author.mention).replace("{level}", str(new_level))
 
             try:
@@ -84,40 +98,41 @@ class Leveling(commands.Cog):
             except:
                 pass
             
-            save_data(self.data)
+        update_guild_settings(guild_id, g_settings)
 
-    @app_commands.command(name="toggle-leveling", description="[ خاص بالإدارة ] تفعيل أو إيقاف نظام التلفيل في السيرفر")
+    @app_commands.command(name="toggle-leveling", description="[ خاص بالإدارة ] تفعيل أو إيقاف نظام التلفيل في هذا السيرفر فقط")
     @app_commands.checks.has_permissions(administrator=True)
     async def toggle_leveling(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild.id)
-        if "leveling_status" not in self.data:
-            self.data["leveling_status"] = {}
+        guild_id = str(interaction.guild_id)
+        g_settings = get_guild_settings(guild_id)
         
-        current_status = self.data["leveling_status"].get(guild_id, False)
+        current_status = g_settings.get("leveling_status", False)
         new_status = not current_status
-        self.data["leveling_status"][guild_id] = new_status
-        save_data(self.data)
+        g_settings["leveling_status"] = new_status
+        update_guild_settings(guild_id, g_settings)
 
         if new_status:
-            await interaction.response.send_message("✅ | تم **تفعيل** نظام التلفيل بنجاح في السيرفر! أصبح البوت يحسب النقاط الآن.", ephemeral=True)
+            await interaction.response.send_message("✅ | تم **تفعيل** نظام التلفيل بنجاح في هذا السيرفر فقط!", ephemeral=True)
         else:
-            await interaction.response.send_message("❌ | تم **إيقاف وتعطيل** نظام التلفيل في السيرفر! لن يتم احتساب أي نقاط.", ephemeral=True)
+            await interaction.response.send_message("❌ | تم **إيقاف وتعطيل** نظام التلفيل في هذا السيرفر فقط!", ephemeral=True)
 
-    @app_commands.command(name="rank", description="معرفة لفلك الحالي ونقاط الـ XP بالتفصيل")
+    @app_commands.command(name="rank", description="معرفة لفلك الحالي ونقاط الـ XP الخاصة بك في هذا السيرفر")
     async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
         await interaction.response.defer(ephemeral=False)
         
         target = member or interaction.user
-        guild_id = str(interaction.guild.id)
+        guild_id = str(interaction.guild_id)
         user_id = str(target.id)
 
-        server_levels = self.data.get("server_levels", {})
-        if guild_id not in server_levels or user_id not in server_levels[guild_id]:
+        g_settings = get_guild_settings(guild_id)
+        levels_data = g_settings.get("levels", {})
+
+        if user_id not in levels_data:
             level = 1
             xp = 0
         else:
-            level = server_levels[guild_id][user_id]["level"]
-            xp = server_levels[guild_id][user_id]["xp"]
+            level = levels_data[user_id]["level"]
+            xp = levels_data[user_id]["xp"]
 
         xp_needed = level * 100
 
@@ -131,18 +146,20 @@ class Leveling(commands.Cog):
         
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="leaderboard", description="عرض قائمة أفضل 10 أعضاء متفاعلين في السيرفر")
+    @app_commands.command(name="leaderboard", description="عرض قائمة أفضل 10 أعضاء متفاعلين في هذا السيرفر")
     async def leaderboard(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
-        guild_id = str(interaction.guild.id)
+        guild_id = str(interaction.guild_id)
 
-        server_levels = self.data.get("server_levels", {})
-        if guild_id not in server_levels or not server_levels[guild_id]:
-            await interaction.followup.send("لا توجد بيانات تفاعل مسجلة حتى الآن ! ❌")
+        g_settings = get_guild_settings(guild_id)
+        levels_data = g_settings.get("levels", {})
+
+        if not levels_data:
+            await interaction.followup.send("لا توجد بيانات تفاعل مسجلة في هذا السيرفر حتى الآن ! ❌")
             return
 
         sorted_users = sorted(
-            server_levels[guild_id].items(),
+            levels_data.items(),
             key=lambda item: (item[1]["level"], item[1]["xp"]),
             reverse=True
         )[:10]
@@ -162,107 +179,99 @@ class Leveling(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="set-level-channel", description="[ خاص بالإدارة ] تحديد القناة المخصصة لإرسال إشعارات صعود الفلل")
+    @app_commands.command(name="set-level-channel", description="[ خاص بالإدارة ] تحديد القناة المخصصة لإرسال إشعارات صعود الفلل لهذا السيرفر")
     @app_commands.describe(channel="اختر القناة المخصصة للفلل")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_level_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        guild_id = str(interaction.guild.id)
-        if "level_channels" not in self.data:
-            self.data["level_channels"] = {}
-        self.data["level_channels"][guild_id] = channel.id
-        save_data(self.data)
-        await interaction.response.send_message(f"✅ | تم تعيين قناة إشعارات التلفيل بنجاح إلى {channel.mention} !", ephemeral=True)
+        guild_id = str(interaction.guild_id)
+        g_settings = get_guild_settings(guild_id)
+        g_settings["level_channel"] = channel.id
+        update_guild_settings(guild_id, g_settings)
+        await interaction.response.send_message(f"✅ | تم تعيين قناة إشعارات التلفيل في هذا السيرفر إلى {channel.mention} !", ephemeral=True)
 
-    @app_commands.command(name="disable-level-channel", description="[ خاص بالإدارة ] إلغاء وتعطيل قناة التلفيل المخصصة (لتظهر الرسائل بنفس روم الدردشة)")
+    @app_commands.command(name="disable-level-channel", description="[ خاص بالإدارة ] إلغاء قناة التلفيل المخصصة لتظهر الرسائل بنسس روم الدردشة")
     @app_commands.checks.has_permissions(administrator=True)
     async def disable_level_channel(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild.id)
-        if "level_channels" in self.data and guild_id in self.data["level_channels"]:
-            del self.data["level_channels"][guild_id]
-            save_data(self.data)
-            await interaction.response.send_message("✅ | تم إلغاء تفعيل قناة التلفيل المخصصة بنجاح. ستعود الرسائل للظهور في نفس روم الدردشة.", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ | لا توجد قناة تلفيل مخصصة مفعلة أساساً في هذا السيرفر!", ephemeral=True)
+        guild_id = str(interaction.guild_id)
+        g_settings = get_guild_settings(guild_id)
+        g_settings["level_channel"] = None
+        update_guild_settings(guild_id, g_settings)
+        await interaction.response.send_message("✅ | تم إلغاء قناة التلفيل المخصصة في هذا السيرفر. ستعود الرسائل في نفس روم الدردشة.", ephemeral=True)
 
-    @app_commands.command(name="set-level-message", description="[ خاص بالإدارة ] تعديل نص رسالة التلفيل (استخدم {member} لذكر العضو و {level} للمستوى)")
+    @app_commands.command(name="set-level-message", description="[ خاص بالإدارة ] تعديل رسالة التلفيل الخاصة بهذا السيرفر")
     @app_commands.describe(message="اكتب رسالة التلفيل الجديدة")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_level_message(self, interaction: discord.Interaction, message: str):
-        guild_id = str(interaction.guild.id)
-        if "custom_level_messages" not in self.data:
-            self.data["custom_level_messages"] = {}
-        self.data["custom_level_messages"][guild_id] = message
-        save_data(self.data)
-        await interaction.response.send_message(f"✅ | تم تحديث رسالة التلفيل بنجاح!\n📝 النص الجديد: `{message}`", ephemeral=True)
+        guild_id = str(interaction.guild_id)
+        g_settings = get_guild_settings(guild_id)
+        g_settings["custom_level_message"] = message
+        update_guild_settings(guild_id, g_settings)
+        await interaction.response.send_message(f"✅ | تم تحديث رسالة التلفيل في هذا السيرفر!\n📝 النص الجديد: `{message}`", ephemeral=True)
 
-    @app_commands.command(name="set-top-channel", description="[ خاص بالإدارة ] تحديد القناة التي سيتم إرسال توبات التفاعل فيها أسبوعياً")
+    @app_commands.command(name="set-top-channel", description="[ خاص بالإدارة ] تحديد قناة التوب الأسبوعي لهذا السيرفر")
     @app_commands.describe(channel="اختر القناة المخصصة")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_top_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        guild_id = str(interaction.guild.id)
-        if "top_channels" not in self.data:
-            self.data["top_channels"] = {}
-        self.data["top_channels"][guild_id] = channel.id
-        save_data(self.data)
-        await interaction.response.send_message(f"✅ | تم تعيين قناة التوبات بنجاح إلى {channel.mention} !", ephemeral=True)
+        guild_id = str(interaction.guild_id)
+        g_settings = get_guild_settings(guild_id)
+        g_settings["top_channel"] = channel.id
+        update_guild_settings(guild_id, g_settings)
+        await interaction.response.send_message(f"✅ | تم تعيين قناة التوبات الأسبوعية في هذا السيرفر إلى {channel.mention} !", ephemeral=True)
 
-    @app_commands.command(name="disable-top-channel", description="[ خاص بالإدارة ] إلغاء وتعطيل إرسال التوبات الأسبوعية")
+    @app_commands.command(name="disable-top-channel", description="[ خاص بالإدارة ] إلغاء تفعيل قناة التوبات الأسبوعية لهذا السيرفر")
     @app_commands.checks.has_permissions(administrator=True)
     async def disable_top_channel(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild.id)
-        if "top_channels" in self.data and guild_id in self.data["top_channels"]:
-            del self.data["top_channels"][guild_id]
-            save_data(self.data)
-            await interaction.response.send_message("✅ | تم إلغاء تفعيل قناة وتوبات التفاعل الأسبوعية بنجاح.", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ | لا توجد قناة توبات مفعلة أساساً في هذا السيرفر!", ephemeral=True)
+        guild_id = str(interaction.guild_id)
+        g_settings = get_guild_settings(guild_id)
+        g_settings["top_channel"] = None
+        update_guild_settings(guild_id, g_settings)
+        await interaction.response.send_message("✅ | تم إلغاء تفعيل قناة التوبات الأسبوعية في هذا السيرفر.", ephemeral=True)
 
-    @app_commands.command(name="set-top-message", description="[ خاص بالإدارة ] تخصيص الرسالة التي ترافق إعلان التوب الأسبوعي")
+    @app_commands.command(name="set-top-message", description="[ خاص بالإدارة ] تخصيص رسالة التوب الأسبوعي لهذا السيرفر")
     @app_commands.describe(message="اكتب نص الرسالة الجديد")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_top_message(self, interaction: discord.Interaction, message: str):
-        guild_id = str(interaction.guild.id)
-        if "top_messages" not in self.data:
-            self.data["top_messages"] = {}
-        self.data["top_messages"][guild_id] = message
-        save_data(self.data)
-        await interaction.response.send_message(f"✅ | تم حفظ رسالة التوب الجديدة بنجاح !", ephemeral=True)
+        guild_id = str(interaction.guild_id)
+        g_settings = get_guild_settings(guild_id)
+        g_settings["top_message"] = message
+        update_guild_settings(guild_id, g_settings)
+        await interaction.response.send_message(f"✅ | تم حفظ رسالة التوب الجديدة لهذا السيرفر بنجاح !", ephemeral=True)
 
     @tasks.loop(hours=168)
     async def weekly_leaderboard_loop(self):
-        for guild in self.bot.guilds:
-            guild_id = str(guild.id)
-            
-            # التأكد أن السيرفر مفعل لديه التلفيل حتى يرسل التوب الأسبوعي
-            leveling_status = self.data.get("leveling_status", {})
-            if not leveling_status.get(guild_id, False):
+        data = load_data()
+        guilds_data = data.get("guilds", {})
+
+        for guild_id, g_settings in guilds_data.items():
+            if not g_settings.get("leveling_status", False):
                 continue
 
-            server_levels = self.data.get("server_levels", {})
-            top_channels = self.data.get("top_channels", {})
-            top_messages = self.data.get("top_messages", {})
+            guild = self.bot.get_guild(int(guild_id))
+            if not guild:
+                continue
 
-            if guild_id in server_levels and server_levels[guild_id]:
-                top_user_id = max(server_levels[guild_id], key=lambda uid: (server_levels[guild_id][uid]["level"], server_levels[guild_id][uid]["xp"]))
+            levels_data = g_settings.get("levels", {})
+            top_channel_id = g_settings.get("top_channel")
+            top_msg = g_settings.get("top_message", "🔥 | هؤلاء هم الأبطال الأكثر تفاعلاً لهذا الأسبوع !")
+
+            if levels_data and top_channel_id:
+                top_user_id = max(levels_data, key=lambda uid: (levels_data[uid]["level"], levels_data[uid]["xp"]))
                 top_member = guild.get_member(int(top_user_id))
                 
-                if top_member and guild_id in top_channels:
-                    channel = guild.get_channel(top_channels[guild_id])
+                if top_member:
+                    channel = guild.get_channel(top_channel_id)
                     if channel:
-                        custom_msg = top_messages.get(guild_id, "🔥 | هؤلاء هم الأبطال الأكثر تفاعلاً لهذا الأسبوع !")
-                        
                         embed = discord.Embed(
                             title="👑 | التوب الأسبوعي للمتفاعلين",
-                            description=f"{custom_msg}\n\n🏆 المركز الأول لهذا الأسبوع: {top_member.mention} 🎯",
+                            description=f"{top_msg}\n\n🏆 المركز الأول لهذا الأسبوع: {top_member.mention} 🎯",
                             color=0x000000
                         )
                         embed.set_thumbnail(url=top_member.display_avatar.url)
-                        
                         await channel.send(embed=embed)
                 
-                # تصفير الرتب للأسبوع الجديد
-                self.data["server_levels"][guild_id] = {}
-                save_data(self.data)
+                # تصفير رتب هذا السيرفر فقط للأسبوع الجديد
+                g_settings["levels"] = {}
+                update_guild_settings(guild_id, g_settings)
 
     @weekly_leaderboard_loop.before_loop
     async def before_weekly_loop(self):
@@ -270,3 +279,4 @@ class Leveling(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Leveling(bot))
+
