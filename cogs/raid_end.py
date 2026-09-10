@@ -5,14 +5,14 @@ import json
 import os
 import re
 import time
+import aiohttp
 
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
 
-# 🔴 الآيدي الخاص بك (فهد) - المالك الوحيد المخول بصلاحيات التعديل المطلقة
+# 🔴 الآيدي الخاص بك (فهد)
 OWNER_ID = 1107355943408259112
 
-# مخزن مؤقت لأوقات استخدام الأدمن لأمر end-raid لكل سيرفر (Guild ID -> Timestamp)
 admin_cooldowns = {}
 
 def load_raid_data():
@@ -164,18 +164,92 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
 class RaidSystemCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.weekly_webhook_loop.start()
+
+    def cog_unload(self):
+        self.weekly_webhook_loop.cancel()
+
+    async def send_or_update_webhook_top(self, guild_id, guild):
+        data = load_raid_data()
+        if guild_id not in data:
+            return
+        
+        g_data = data[guild_id]
+        webhook_url = g_data.get("webhook_url")
+        if not webhook_url:
+            return
+
+        stats = g_data.get("raider_stats", {})
+        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:20]
+
+        description = ""
+        for index, (uid, count) in enumerate(sorted_raiders, start=1):
+            member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
+            name = member.mention if member else f"User ID: {uid}"
+            
+            # التصميم المطابق للصورة تماماً
+            description += (
+                f"┌─── 「 TOP {index} 」 ───┐\n"
+                f"│ │\n"
+                f"│ <<< • . >>>\n"
+                f"│ {name}\n"
+                f"│ Raids Joined: **{count}**\n"
+                f"└─────────────────────┘\n\n"
+            )
+
+        if not description:
+            description = "لا توجد أي نقاط رايدات مسجلة حتى الآن."
+
+        embed = {
+            "title": "🏆 | VLX Clan Weekly Top 20 Raiders",
+            "description": description,
+            "color": 9109504,
+            "footer": {"text": "VLX Clan Automated Weekly Top System"}
+        }
+
+        payload = {"embeds": [embed]}
+
+        async with aiohttp.ClientSession() as session:
+            msg_id = g_data.get("webhook_message_id")
+            if msg_id:
+                edit_url = f"{webhook_url}/messages/{msg_id}"
+                async with session.patch(edit_url, json=payload) as resp:
+                    if resp.status == 200:
+                        return
+            
+            async with session.post(f"{webhook_url}?wait=true", json=payload) as resp:
+                if resp.status == 200:
+                    res_json = await resp.json()
+                    g_data["webhook_message_id"] = res_json.get("id")
+                    save_raid_data(data)
+
+    @tasks.loop(hours=168)
+    async def weekly_webhook_loop(self):
+        data = load_raid_data()
+        for guild_id, g_data in data.items():
+            if g_data.get("webhook_url"):
+                guild = self.bot.get_guild(int(guild_id))
+                if guild:
+                    await self.send_or_update_webhook_top(guild_id, guild)
+                    # تصفير النقاط وسلسلة الانتصارات أسبوعياً تلقائياً
+                    g_data["raider_stats"] = {}
+                    g_data["win_streak"] = 0
+                    save_raid_data(data)
+
+    @weekly_webhook_loop.before_loop
+    async def before_weekly_webhook(self):
+        await self.bot.wait_until_ready()
 
     @app_commands.command(name="end-raid", description="[ Admin Only ] Conclude the raid and record results")
     @app_commands.checks.has_permissions(administrator=True)
     async def end_raid(self, interaction: discord.Interaction):
-        # استثناء فهد (المالك) من أي قيود أو أوقات انتظار
         if interaction.user.id == OWNER_ID:
             await interaction.response.send_modal(RaidEndInfoModal())
             return
 
         guild_id = str(interaction.guild_id)
         current_time = time.time()
-        cooldown_duration = 3 * 3600  # 3 ساعات بالثواني
+        cooldown_duration = 3 * 3600
 
         if guild_id in admin_cooldowns:
             elapsed_time = current_time - admin_cooldowns[guild_id]
@@ -185,18 +259,48 @@ class RaidSystemCog(commands.Cog):
                 minutes = (remaining_seconds % 3600) // 60
                 seconds = remaining_seconds % 60
                 
-                # العداد المتحرك الذي يحدث نفسه ويعرض الوقت المتبقي بدقة لكل محاولة جديدة
                 await interaction.response.send_message(
                     f"⏳ | عذراً، لا يمكنك استخدام أمر الـ End Raid حالياً.\n"
                     f"يجب الانتظار لمدة **3 ساعات** بين كل رايد وآخر للأدمنية.\n"
-                    f"⏱️ **الوقـت المتبقـي بدقة:** `{hours} ساعة و {minutes} دقيقة و {seconds} ثانية`",
+                    f"⏱️ **الوقت المتبقي بدقة:** `{hours} ساعة و {minutes} دقيقة و {seconds} ثانية`",
                     ephemeral=True
                 )
                 return
 
-        # تسجيل وقت الاستخدام الجديد لهذا السيرفر للأدمن
         admin_cooldowns[guild_id] = current_time
         await interaction.response.send_modal(RaidEndInfoModal())
+
+    @app_commands.command(name="set-raid-webhook", description="[ خاص بالإدارة ] تعيين رابط الويب هوك لعرض أفضل 20 رايدر بالشكل المزخرف وتحديثه أسبوعياً")
+    @app_commands.describe(webhook_url="الصق رابط الويب هوك هنا", channel="القناة التي سيتم إرسال التوب فيها")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_raid_webhook(self, interaction: discord.Interaction, webhook_url: str, channel: discord.TextChannel):
+        guild_id = str(interaction.guild_id)
+        data = load_raid_data()
+        if guild_id not in data:
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0}
+
+        data[guild_id]["webhook_url"] = webhook_url
+        data[guild_id]["webhook_channel_id"] = channel.id
+        # مسح الـ message_id القديم ليتم إرسال رسالة جديدة بالويب هوك فوراً
+        data[guild_id].pop("webhook_message_id", None)
+        save_raid_data(data)
+
+        await interaction.response.send_message("✅ | تم تفعيل ويب هوك توب الرايدات بنجاح! جاري إرسال القائمة المزخرفة الآن...", ephemeral=True)
+        await self.send_or_update_webhook_top(guild_id, interaction.guild)
+
+    @app_commands.command(name="disable-raid-webhook", description="[ خاص بالإدارة ] إلغاء وتعطيل خاصية ويب هوك توب الرايدات الأسبوعي")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def disable_raid_webhook(self, interaction: discord.Interaction):
+        guild_id = str(interaction.guild_id)
+        data = load_raid_data()
+        if guild_id in data and "webhook_url" in data[guild_id]:
+            data[guild_id].pop("webhook_url", None)
+            data[guild_id].pop("webhook_channel_id", None)
+            data[guild_id].pop("webhook_message_id", None)
+            save_raid_data(data)
+            await interaction.response.send_message("✅ | تم إلغاء وتعطيل خاصية ويب هوك توب الرايدات في هذا السيرفر بنجاح.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ | لا يوجد ويب هوك مفعل أساساً في هذا السيرفر!", ephemeral=True)
 
     @app_commands.command(name="sync", description="[ Owner Only ] تحديث ومزامنة أوامر البوت")
     async def sync_commands(self, interaction: discord.Interaction):
@@ -302,7 +406,6 @@ class RaidSystemCog(commands.Cog):
     @app_commands.command(name="raid-reset", description="[ Owner Only ] تصفير أو حذف نقاط ورايدات عضو معين أو كل السيرفر")
     @app_commands.describe(member="اختر العضو لتصفير نقاطه (اختياري)")
     async def raid_reset(self, interaction: discord.Interaction, member: discord.Member = None):
-        # القفل الحصري: لا يسمح لأي شخص بالاستخدام نهائياً سوى فهد
         if interaction.user.id != OWNER_ID:
             await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** فقط!", ephemeral=True)
             return
@@ -315,7 +418,6 @@ class RaidSystemCog(commands.Cog):
             return
 
         if member:
-            # تصفير نقاط عضو محدد فقط
             if str(member.id) in data[guild_id].get("raider_stats", {}):
                 data[guild_id]["raider_stats"][str(member.id)] = 0
                 save_raid_data(data)
@@ -323,7 +425,6 @@ class RaidSystemCog(commands.Cog):
             else:
                 await interaction.response.send_message("❌ | هذا العضو ليس لديه أي نقاط مسجلة مسبقاً في هذا السيرفر.", ephemeral=True)
         else:
-            # تصفير السيرفر بالكامل (الستريك ونقاط الجميع)
             data[guild_id]["raider_stats"] = {}
             data[guild_id]["win_streak"] = 0
             save_raid_data(data)
