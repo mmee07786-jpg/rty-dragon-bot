@@ -131,7 +131,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
             f"╰➤{self.ally}\n\n"
             f"**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n"
             f"╰➤{self.duration}\n\n"
-            f"**𝐒𝐓𝐀𝐓𝐔𝐒:**\n"
+            f"**𝐒𝐓𝐀𝐓𝐔Σ:**\n"
             f"╰➤{self.status_reason}\n\n"
             f"**𝐌𝐕𝐏𝐒:**\n"
             f"╰➤ {self.mvps_input.value}\n\n"
@@ -183,46 +183,63 @@ class RaidSystemCog(commands.Cog):
             return
 
         stats = g_data.get("raider_stats", {})
-        # ترتيب الأعضاء تنازلياً حسب عدد الرايدات (الأكثر في الأعلى)
-        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:20]
+        # ترتيب الأعضاء تنازلياً حسب عدد الرايدات (الأكثر في الأعلى) واخذ أول 10 لعمل إمبدات منفصلة
+        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:10]
 
-        description = ""
+        if not sorted_raiders:
+            embed = discord.Embed(
+                title="🏆 | VLX Clan Weekly Top Raiders",
+                description="لا توجد أي نقاط رايدات مسجلة حتى الآن.",
+                color=EMBED_COLOR
+            )
+            embed.set_footer(text="VLX Clan Automated Weekly Top System")
+            msg_id = g_data.get("top_message_id")
+            if msg_id:
+                try:
+                    msg = await channel.fetch_message(int(msg_id))
+                    await msg.edit(embed=embed, embeds=[])
+                    return
+                except discord.NotFound:
+                    pass
+            new_msg = await channel.send(embed=embed)
+            g_data["top_message_id"] = str(new_msg.id)
+            save_raid_data(data)
+            return
+
+        embeds = []
         for index, (uid, count) in enumerate(sorted_raiders, start=1):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             name = member.mention if member else f"User ID: {uid}"
             
-            # التصميم المطابق للزخرفة المطلوبة
-            description += (
+            # التصميم المنفصل لكل مركز تماماً مثل الصورة الزرقاء
+            box_content = (
                 f"┌─── 「 TOP {index} 」 ───┐\n"
                 f"│ │\n"
                 f"│ <<< • . >>>\n"
                 f"│ {name}\n"
                 f"│ Raids Joined: **{count}**\n"
-                f"└─────────────────────┘\n\n"
+                f"└─────────────────────┘"
             )
 
-        if not description:
-            description = "لا توجد أي نقاط رايدات مسجلة حتى الآن."
+            emb = discord.Embed(description=box_content, color=EMBED_COLOR)
+            if index == 1:
+                emb.set_author(name="🏆 | VLX Clan Weekly Top Raiders Leaderboard")
+            if index == len(sorted_raiders):
+                emb.set_footer(text="VLX Clan Automated Weekly Top System")
+            
+            embeds.append(emb)
 
-        embed = discord.Embed(
-            title="🏆 | VLX Clan Weekly Top 20 Raiders",
-            description=description,
-            color=EMBED_COLOR
-        )
-        embed.set_footer(text="VLX Clan Automated Weekly Top System")
-
+        # Discord يسمح بحد أقصى 10 إمبدات في الرسالة الواحدة
         msg_id = g_data.get("top_message_id")
-        
         if msg_id:
             try:
                 msg = await channel.fetch_message(int(msg_id))
-                await msg.edit(embed=embed)
+                await msg.edit(embeds=embeds)
                 return
             except discord.NotFound:
-                pass # إذا تم حذف الرسالة، سيتم إرسال رسالة جديدة أدناه
+                pass
 
-        # إرسال رسالة جديدة لأول مرة أو إذا تم حذف القديمة
-        new_msg = await channel.send(embed=embed)
+        new_msg = await channel.send(embeds=embeds)
         g_data["top_message_id"] = str(new_msg.id)
         save_raid_data(data)
 
@@ -273,7 +290,7 @@ class RaidSystemCog(commands.Cog):
         admin_cooldowns[guild_id] = current_time
         await interaction.response.send_modal(RaidEndInfoModal())
 
-    @app_commands.command(name="set-raid-top", description="[ خاص بالإدارة ] تحديد قناة إرسال وتحديث توب الرايدات أسبوعياً بشكل تلقائي ومزخرف")
+    @app_commands.command(name="set-raid-top", description="[ خاص بالإدارة ] تحديد قناة إرسال وتحديث توب الرايدات أسبوعياً بشكل منفصل ومزخرف")
     @app_commands.describe(channel="اختر القناة التي سيعمل فيها التوب")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_raid_top(self, interaction: discord.Interaction, channel: discord.TextChannel):
@@ -283,10 +300,10 @@ class RaidSystemCog(commands.Cog):
             data[guild_id] = {"raider_stats": {}, "win_streak": 0}
 
         data[guild_id]["top_channel_id"] = str(channel.id)
-        data[guild_id].pop("top_message_id", None) # مسح الـ ID القديم لإنشاء رسالة جديدة
+        data[guild_id].pop("top_message_id", None)
         save_raid_data(data)
 
-        await interaction.response.send_message(f"✅ | تم تفعيل توب الرايدات في القناة {channel.mention} بنجاح! جاري إرسال القائمة مرتبة الآن...", ephemeral=True)
+        await interaction.response.send_message(f"✅ | تم تفعيل توب الرايدات المنفصل في القناة {channel.mention} بنجاح! جاري إرسال القوائم...", ephemeral=True)
         await self.send_or_update_top_message(guild_id, interaction.guild)
 
     @app_commands.command(name="disable-raid-top", description="[ خاص بالإدارة ] إلغاء وتعطيل خاصية توب الرايدات الأسبوعي في هذا السيرفر")
@@ -395,7 +412,6 @@ class RaidSystemCog(commands.Cog):
         data[guild_id]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
 
-        # تحديث الرسالة فوراً إن وجدت
         guild = interaction.guild
         await self.send_or_update_top_message(guild_id, guild)
 
