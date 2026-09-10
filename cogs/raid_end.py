@@ -5,14 +5,15 @@ import json
 import os
 import re
 import time
+import io
+import aiohttp
+from PIL import Image, ImageDraw, ImageFont
 
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
 GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa41da3&is=6aa2cc23&hm=d6ba53f570b7920d6f2f3fe64ae84729c07eaf4503123b6d2bb7c9f3733db944&"
 
-# 🔴 الآيدي الخاص بك (فهد)
 OWNER_ID = 1107355943408259112
-
 admin_cooldowns = {}
 
 def load_raid_data():
@@ -20,10 +21,14 @@ def load_raid_data():
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             try:
                 data = json.load(f)
-                # التأكد من وجود قائمة الحظر العامة أو لكل سيرفر
                 for g_id in data:
-                    if isinstance(data[g_id], dict) and "blacklist" not in data[g_id]:
-                        data[g_id]["blacklist"] = []
+                    if isinstance(data[g_id], dict):
+                        if "blacklist" not in data[g_id]:
+                            data[g_id]["blacklist"] = []
+                        if "roblox_users" not in data[g_id]:
+                            data[g_id]["roblox_users"] = {}
+                        if "member_countries" not in data[g_id]:
+                            data[g_id]["member_countries"] = {}
                 return data
             except json.JSONDecodeError:
                 return {}
@@ -42,6 +47,109 @@ def get_global_stats(data):
                 if uid not in blacklist:
                     global_stats[uid] = global_stats.get(uid, 0) + count
     return global_stats
+
+# دالة لجلب سكن العضو المحدث تلقائياً من روبلوكس (Bust view لتظهر تفاصيل السكن بشكل ممتاز)
+async def fetch_roblox_avatar(roblox_username):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [roblox_username], "excludeBannedUsers": True}) as resp:
+                if resp.status != 200:
+                    return None
+                res_json = await resp.json()
+                data_list = res_json.get("data", [])
+                if not data_list:
+                    return None
+                user_id = data_list[0]["id"]
+
+            # استخدام الـ avatar-bust أو avatar لجلب سكن الشخصية الحقيقي المحدث
+            async with session.get(f"https://thumbnails.roblox.com/v1/users/avatar-bust?userIds={user_id}&size=420x420&format=Png&isCircular=false") as img_resp:
+                if img_resp.status != 200:
+                    return None
+                img_json = await img_resp.json()
+                img_data = img_json.get("data", [])
+                if not img_data:
+                    return None
+                avatar_url = img_data[0]["imageUrl"]
+
+            async with session.get(avatar_url) as avatar_resp:
+                if avatar_resp.status != 200:
+                    return None
+                image_bytes = await avatar_resp.read()
+                return image_bytes
+    except Exception:
+        return None
+
+# دالة لتوليد كرت التوب مع عرض سكن العضو الحقيقي متحدثاً بشكل تلقائي
+async def generate_top_card(index, member_name, country_str, count, avatar_bytes):
+    width, height = 600, 220
+    card = Image.new("RGBA", (width, height), (20, 20, 20, 255))
+    draw = ImageDraw.Draw(card)
+
+    draw.rectangle([5, 5, width - 5, height - 5], outline=(139, 0, 0), width=3)
+
+    text_content = (
+        f"╔══『 TOP {index} 』══╗\n"
+        f"│  |   | {member_name}\n"
+        f"│  <<< •  • >>>\n"
+        f"│\n"
+        f"│  Country: {country_str}\n"
+        f"│  —\n"
+        f"│  Raids Joined: {count}"
+    )
+
+    try:
+        font = ImageFont.truetype("arial.ttf", 18)
+    except IOError:
+        font = ImageFont.load_default()
+
+    draw.text((20, 15), text_content, fill=(255, 255, 255, 255), font=font)
+
+    if avatar_bytes:
+        avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
+        avatar_size = 140
+        avatar_img = avatar_img.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
+
+        # رسم إطار مستطيل/مربع احترافي حول سكن الشخصية
+        frame_box = [435, 38, 435 + avatar_size + 10, 38 + avatar_size + 10]
+        draw.rectangle(frame_box, outline=(0, 255, 100), width=3)
+
+        card.paste(avatar_img, (440, 43), avatar_img)
+
+    output = io.BytesIO()
+    card.save(output, format="PNG")
+    output.seek(0)
+    return output
+
+class RobloxUserModal(discord.ui.Modal, title="🎮 | ربط يوزر روبلوكس"):
+    roblox_username = discord.ui.TextInput(
+        label="ما هو يوزرك في لعبة روبلوكس؟",
+        placeholder="اكتب يوزرك هنا بدقة...",
+        style=discord.TextStyle.short,
+        required=True
+    )
+
+    def __init__(self, guild_id):
+        super().__init__()
+        self.guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        username = self.roblox_username.value.strip()
+        data = load_raid_data()
+        
+        if self.guild_id not in data:
+            data[self.guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
+        if "roblox_users" not in data[self.guild_id]:
+            data[self.guild_id]["roblox_users"] = {}
+
+        data[self.guild_id]["roblox_users"][str(interaction.user.id)] = username
+        save_raid_data(data)
+
+        await interaction.response.send_message(f"✅ | تم حفظ يوزرك (`{username}`) وجلب أحدث سكن لك في روبلوكس بنجاح!", ephemeral=True)
+
+        guild = interaction.client.get_guild(int(self.guild_id))
+        cog = interaction.client.get_cog("RaidSystemCog")
+        if guild and cog:
+            await cog.send_or_update_top_message(self.guild_id, guild)
 
 class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
     raid_number = discord.ui.TextInput(label="RAID Number", placeholder="", style=discord.TextStyle.short, required=True)
@@ -112,10 +220,12 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         data = load_raid_data()
 
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": []}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
 
         if "blacklist" not in data[guild_id]:
             data[guild_id]["blacklist"] = []
+        if "roblox_users" not in data[guild_id]:
+            data[guild_id]["roblox_users"] = {}
 
         data[guild_id]["win_streak"] = data[guild_id].get("win_streak", 0) + 1
         current_streak = data[guild_id]["win_streak"]
@@ -123,20 +233,40 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         if "raider_stats" not in data[guild_id]:
             data[guild_id]["raider_stats"] = {}
 
-        # استخراج الآيديات من المنشنات مع تجاهل المحظورين تماماً
         user_ids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
         blacklist = data[guild_id]["blacklist"]
-        
+        roblox_dict = data[guild_id]["roblox_users"]
+
         for uid in user_ids:
             if uid in blacklist:
-                continue # تخطي العضو المحظور وعدم إضافة أي نقطة له
+                continue
             if uid not in data[guild_id]["raider_stats"]:
                 data[guild_id]["raider_stats"][uid] = 0
             data[guild_id]["raider_stats"][uid] += 1
 
+            if uid not in roblox_dict:
+                try:
+                    member_obj = interaction.guild.get_member(int(uid)) or await interaction.client.fetch_user(int(uid))
+                    if member_obj:
+                        dm_view = discord.ui.View()
+                        dm_btn = discord.ui.Button(label="🎮 اضغط هنا لإدخال يوزر روبلوكس", style=discord.ButtonStyle.blurple)
+                        
+                        async def button_callback(i: discord.Interaction):
+                            await i.response.send_modal(RobloxUserModal(guild_id))
+                        
+                        dm_btn.callback = button_callback
+                        dm_view.add_item(dm_btn)
+
+                        await member_obj.send(
+                            "🎉 **مرحباً بك! لقد دخلت قائمة توب الرايدات في السيرفر.**\n"
+                            "يرجى النقر على الزر أدناه لإدخال يوزرك في لعبة **Roblox** لكي يتم جلب سكنك وتحديثه تلقائياً:",
+                            view=dm_view
+                        )
+                except Exception:
+                    pass
+
         save_raid_data(data)
 
-        # تحديث قائمة التوب تلقائياً في السيرفر بعد كل رايد جديد
         guild = interaction.guild
         cog = interaction.client.get_cog("RaidSystemCog")
         if cog:
@@ -152,9 +282,9 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
             f"╰➤{self.ally}\n\n"
             f"**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n"
             f"╰➤{self.duration}\n\n"
-            f"**𝐒𝐓𝐀𝐓𝐔𝐒:**\n"
+            f"**𝐒𝐓𝐀𝐓𝐔🇸:**\n"
             f"╰➤{self.status_reason}\n\n"
-            f"**𝐌𝐕𝐏𝐒:**\n"
+            f"**𝐌𝐕𝐏🇸:**\n"
             f"╰➤ {self.mvps_input.value}\n\n"
         )
 
@@ -165,7 +295,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
             urls = re.findall(r'https?://[^\s]+', media_val)
             if urls:
                 extracted_image_url = urls[0]
-                report_content += f"**𝐏𝐑𝐎𝐎𝐅𝐒 / 𝐌𝐄𝐃𝐈𝐀:**\n╰➤ {media_val}\n\n"
+                report_content += f"**𝐏𝐑𝐎𝐎𝐅🇸 / 𝐌𝐄𝐃𝐈𝐀:**\n╰➤ {media_val}\n\n"
 
         report_content += (
             f"🔥 **Win Streak:** `{current_streak} in a row`\n\n"
@@ -205,11 +335,10 @@ class RaidSystemCog(commands.Cog):
 
         stats = g_data.get("raider_stats", {})
         blacklist = g_data.get("blacklist", [])
+        roblox_dict = g_data.get("roblox_users", {})
+        countries_dict = g_data.get("member_countries", {})
         
-        # تصفية الأعضاء واستبعاد المحظورين نهائياً من القائمة
         filtered_stats = {uid: count for uid, count in stats.items() if uid not in blacklist}
-
-        # ترتيب الأعضاء تنازلياً حسب عدد الرايدات
         sorted_raiders = sorted(filtered_stats.items(), key=lambda x: x[1], reverse=True)[:10]
 
         if not sorted_raiders:
@@ -223,7 +352,7 @@ class RaidSystemCog(commands.Cog):
             if msg_id:
                 try:
                     msg = await channel.fetch_message(int(msg_id))
-                    await msg.edit(embed=embed, embeds=[])
+                    await msg.edit(embed=embed, embeds=[], attachments=[])
                     return
                 except discord.NotFound:
                     pass
@@ -233,34 +362,37 @@ class RaidSystemCog(commands.Cog):
             return
 
         embeds = []
+        files = []
         for index, (uid, count) in enumerate(sorted_raiders, start=1):
-            member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
-            name = member.mention if member else f"User ID: {uid}"
+            rob_user = roblox_dict.get(uid, "غير متوفر")
+            country_info = countries_dict.get(uid, "—")
             
-            box_content = (
-                f"╔══『 TOP {index} 』══╗\n"
-                f"│  |   |\n"
-                f"│  <<< •  • >>>\n"
-                f"│  {name}\n"
-                f"│  Country:\n"
-                f"│  —\n"
-                f"│  Raids Joined: **{count}**"
-            )
+            # جلب السكن المحدث أوتوماتيكياً في كل مرة يتم فيها تحديث أو إعادة إرسال التوب
+            avatar_bytes = await fetch_roblox_avatar(rob_user) if rob_user != "غير متوفر" else None
+            card_io = await generate_top_card(index, rob_user, country_info, count, avatar_bytes)
+            
+            filename = f"top_{index}.png"
+            f = discord.File(card_io, filename=filename)
+            files.append(f)
 
-            emb = discord.Embed(description=box_content, color=EMBED_COLOR)
-            emb.set_image(url=GIF_BANNER_URL)
+            emb = discord.Embed(color=EMBED_COLOR)
+            emb.set_image(url=f"attachment://{filename}")
             embeds.append(emb)
+
+        banner_embed = discord.Embed(color=EMBED_COLOR)
+        banner_embed.set_image(url=GIF_BANNER_URL)
+        embeds.append(banner_embed)
 
         msg_id = g_data.get("top_message_id")
         if msg_id:
             try:
                 msg = await channel.fetch_message(int(msg_id))
-                await msg.edit(embeds=embeds)
+                await msg.edit(embeds=embeds, attachments=files)
                 return
             except discord.NotFound:
                 pass
 
-        new_msg = await channel.send(embeds=embeds)
+        new_msg = await channel.send(embeds=embeds, files=files)
         g_data["top_message_id"] = str(new_msg.id)
         save_raid_data(data)
 
@@ -276,6 +408,28 @@ class RaidSystemCog(commands.Cog):
     @weekly_message_loop.before_loop
     async def before_weekly_message(self):
         await self.bot.wait_until_ready()
+
+    @app_commands.command(name="set-country", description="[ Admin Only ] تحديد أو تعديل دولة وعلم العضو لتظهر في التوبات")
+    @app_commands.describe(member="اختر العضو", country_value="اكتب اسم الدولة مع علمها (مثال: 🇮🇶 Iraq)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_country(self, interaction: discord.Interaction, member: discord.Member, country_value: str):
+        guild_id = str(interaction.guild_id)
+        data = load_raid_data()
+        if guild_id not in data:
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
+        if "member_countries" not in data[guild_id]:
+            data[guild_id]["member_countries"] = {}
+
+        data[guild_id]["member_countries"][str(member.id)] = country_value.strip()
+        save_raid_data(data)
+
+        await self.send_or_update_top_message(guild_id, interaction.guild)
+
+        await interaction.response.send_message(
+            f"✅ | تم بنجاح تحديث دولة العضو {member.mention} إلى: **{country_value.strip()}**\n"
+            f"🔄 تم تحديث لوحة التوبات تلقائياً.",
+            ephemeral=True
+        )
 
     @app_commands.command(name="end-raid", description="[ Admin Only ] Conclude the raid and record results")
     @app_commands.checks.has_permissions(administrator=True)
@@ -307,6 +461,22 @@ class RaidSystemCog(commands.Cog):
         admin_cooldowns[guild_id] = current_time
         await interaction.response.send_modal(RaidEndInfoModal())
 
+    @app_commands.command(name="set-roblox", description="ربط أو تغيير يوزر روبلوكس الخاص بك يدوياً وجلب سكنك الجديد")
+    @app_commands.describe(username="يوزرك في لعبة روبلوكس")
+    async def set_roblox(self, interaction: discord.Interaction, username: str):
+        guild_id = str(interaction.guild_id)
+        data = load_raid_data()
+        if guild_id not in data:
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
+        if "roblox_users" not in data[guild_id]:
+            data[guild_id]["roblox_users"] = {}
+
+        data[guild_id]["roblox_users"][str(interaction.user.id)] = username.strip()
+        save_raid_data(data)
+
+        await interaction.response.send_message(f"✅ | تم تحديث يوزر روبلوكس وسكنك الجديد (`{username.strip()}`) بنجاح!", ephemeral=True)
+        await self.send_or_update_top_message(guild_id, interaction.guild)
+
     @app_commands.command(name="raid-ban", description="[ Owner Only ] حظر عضو من الظهور في التوبات أو حساب نقاطه للأبد")
     @app_commands.describe(member="اختر العضو المراد حظره")
     async def raid_ban(self, interaction: discord.Interaction, member: discord.Member):
@@ -317,7 +487,7 @@ class RaidSystemCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": []}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
 
         if "blacklist" not in data[guild_id]:
             data[guild_id]["blacklist"] = []
@@ -330,7 +500,6 @@ class RaidSystemCog(commands.Cog):
         data[guild_id]["blacklist"].append(uid)
         save_raid_data(data)
 
-        # تحديث التوب فوراً لإزالته إن كان موجوداً
         await self.send_or_update_top_message(guild_id, interaction.guild)
 
         embed = discord.Embed(
@@ -362,7 +531,6 @@ class RaidSystemCog(commands.Cog):
         data[guild_id]["blacklist"].remove(uid)
         save_raid_data(data)
 
-        # تحديث التوب لإظهاره إذا كان لديه نقاط سابقة
         await self.send_or_update_top_message(guild_id, interaction.guild)
 
         embed = discord.Embed(
@@ -380,7 +548,7 @@ class RaidSystemCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": []}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
 
         data[guild_id]["top_channel_id"] = str(channel.id)
         data[guild_id].pop("top_message_id", None)
@@ -493,7 +661,7 @@ class RaidSystemCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": []}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "blacklist": [], "roblox_users": {}, "member_countries": {}}
             
         data[guild_id]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
