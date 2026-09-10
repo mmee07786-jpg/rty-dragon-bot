@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import json, os, re, time, io, aiohttp
+import json, os, re, io, aiohttp
 from PIL import Image, ImageDraw, ImageFont
 
 DATA_FILE = "raid_data.json"
@@ -168,7 +168,7 @@ class NewRaidSystem(commands.Cog):
         await interaction.response.send_message(f"✅ | تم ربط لوحة التوب بقناة {channel.mention}", ephemeral=True)
         await self.update_top_board(gid, interaction.guild)
 
-    @app_commands.command(name="set-roblox", description="ربط يوزر روبلوكس الخاص بك")
+    @app_commands.command(name="set-roblox", description="ربط يوزر روبلوكس الخاص بك يدوياً")
     async def set_roblox(self, interaction: discord.Interaction, username: str):
         gid = str(interaction.guild_id)
         data = load_data()
