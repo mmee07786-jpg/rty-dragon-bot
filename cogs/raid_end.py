@@ -1,18 +1,12 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import json
-import os
-import re
-import time
-import io
-import aiohttp
+import json, os, re, time, io, aiohttp
 from PIL import Image, ImageDraw, ImageFont
 
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
 GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa41da3&is=6aa2cc23&hm=d6ba53f570b7920d6f2f3fe64ae84729c07eaf4503123b6d2bb7c9f3733db944&"
-
 OWNER_ID = 1107355943408259112
 admin_cooldowns = {}
 
@@ -20,608 +14,404 @@ def load_raid_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             try:
-                data = json.load(f)
-                for g_id in data:
-                    if isinstance(data[g_id], dict):
-                        if "roblox_users" not in data[g_id]:
-                            data[g_id]["roblox_users"] = {}
-                        if "member_countries" not in data[g_id]:
-                            data[g_id]["member_countries"] = {}
-                return data
-            except json.JSONDecodeError:
-                return {}
+                d = json.load(f)
+                for g in d:
+                    if isinstance(d[g], dict):
+                        d[g].setdefault("roblox_users", {})
+                        d[g].setdefault("member_countries", {})
+                        d[g].setdefault("blacklist", [])
+                return d
+            except: return {}
     return {}
 
-def save_raid_data(data):
+def save_raid_data(d):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+        json.dump(d, f, ensure_ascii=False, indent=4)
 
-def get_global_stats(data):
-    global_stats = {}
-    for g_id, g_data in data.items():
-        if isinstance(g_data, dict) and "raider_stats" in g_data:
-            for uid, count in g_data["raider_stats"].items():
-                global_stats[uid] = global_stats.get(uid, 0) + count
-    return global_stats
+def get_global_stats(d):
+    gs = {}
+    for g_id, g in d.items():
+        if isinstance(g, dict) and "raider_stats" in g:
+            blacklist = g.get("blacklist", [])
+            for u, c in g["raider_stats"].items():
+                if u not in blacklist:
+                    gs[u] = gs.get(u, 0) + c
+    return gs
 
-async def fetch_roblox_avatar(roblox_username):
+async def fetch_roblox_avatar(username):
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [roblox_username], "excludeBannedUsers": True}) as resp:
-                if resp.status != 200:
-                    return None
-                res_json = await resp.json()
-                data_list = res_json.get("data", [])
-                if not data_list:
-                    return None
-                user_id = data_list[0]["id"]
+        async with aiohttp.ClientSession() as s:
+            async with s.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [username], "excludeBannedUsers": True}) as r:
+                if r.status != 200: return None
+                j = await r.json()
+                dl = j.get("data", [])
+                if not dl: return None
+                uid = dl[0]["id"]
+            async with s.get(f"https://thumbnails.roblox.com/v1/users/avatar-bust?userIds={uid}&size=420x420&format=Png&isCircular=false") as ir:
+                if ir.status != 200: return None
+                ij = await ir.json()
+                idat = ij.get("data", [])
+                if not idat: return None
+                url = idat[0]["imageUrl"]
+            async with s.get(url) as ar:
+                if ar.status != 200: return None
+                return await ar.read()
+    except: return None
 
-            async with session.get(f"https://thumbnails.roblox.com/v1/users/avatar-bust?userIds={user_id}&size=420x420&format=Png&isCircular=false") as img_resp:
-                if img_resp.status != 200:
-                    return None
-                img_json = await img_resp.json()
-                img_data = img_json.get("data", [])
-                if not img_data:
-                    return None
-                avatar_url = img_data[0]["imageUrl"]
-
-            async with session.get(avatar_url) as avatar_resp:
-                if avatar_resp.status != 200:
-                    return None
-                image_bytes = await avatar_resp.read()
-                return image_bytes
-    except Exception:
-        return None
-
-async def generate_top_card(index, member_name, country_str, count, avatar_bytes):
-    width, height = 600, 220
-    card = Image.new("RGBA", (width, height), (20, 20, 20, 255))
+async def generate_top_card(idx, name, country, count, abytes):
+    w, h = 600, 220
+    card = Image.new("RGBA", (w, h), (20, 20, 20, 255))
     draw = ImageDraw.Draw(card)
-
-    draw.rectangle([5, 5, width - 5, height - 5], outline=(139, 0, 0), width=3)
-
-    text_content = (
-        f"╔══『 TOP {index} 』══╗\n"
-        f"│  |   | {member_name}\n"
-        f"│  <<< •  • >>>\n"
-        f"│\n"
-        f"│  Country: {country_str}\n"
-        f"│  —\n"
-        f"│  Raids Joined: {count}"
-    )
-
-    try:
-        font = ImageFont.truetype("arial.ttf", 18)
-    except IOError:
-        font = ImageFont.load_default()
-
-    draw.text((20, 15), text_content, fill=(255, 255, 255, 255), font=font)
-
-    if avatar_bytes:
-        avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
-        avatar_size = 140
-        avatar_img = avatar_img.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
-
-        frame_box = [435, 38, 435 + avatar_size + 10, 38 + avatar_size + 10]
-        draw.rectangle(frame_box, outline=(0, 255, 100), width=3)
-
-        card.paste(avatar_img, (440, 43), avatar_img)
-
-    output = io.BytesIO()
-    card.save(output, format="PNG")
-    output.seek(0)
-    return output
+    draw.rectangle([5, 5, w - 5, h - 5], outline=(139, 0, 0), width=3)
+    txt = f"╔══『 TOP {idx} 』══╗\n│  |   | {name}\n│  <<< •  • >>>\n│\n│  Country: {country}\n│  —\n│  Raids Joined: {count}"
+    try: font = ImageFont.truetype("arial.ttf", 18)
+    except: font = ImageFont.load_default()
+    draw.text((20, 15), txt, fill=(255, 255, 255, 255), font=font)
+    if abytes:
+        aimg = Image.open(io.BytesIO(abytes)).convert("RGBA").resize((140, 140), Image.Resampling.LANCZOS)
+        draw.rectangle([435, 38, 585, 188], outline=(0, 255, 100), width=3)
+        card.paste(aimg, (440, 43), aimg)
+    out = io.BytesIO()
+    card.save(out, format="PNG")
+    out.seek(0)
+    return out
 
 class RobloxUserModal(discord.ui.Modal, title="🎮 | ربط يوزر روبلوكس"):
-    roblox_username = discord.ui.TextInput(
-        label="ما هو يوزرك في لعبة روبلوكس؟",
-        placeholder="اكتب يوزرك هنا بدقة...",
-        style=discord.TextStyle.short,
-        required=True
-    )
-
-    def __init__(self, guild_id):
+    roblox_username = discord.ui.TextInput(label="يوزرك في روبلوكس", style=discord.TextStyle.short, required=True)
+    def __init__(self, gid):
         super().__init__()
-        self.guild_id = guild_id
-
+        self.gid = gid
     async def on_submit(self, interaction: discord.Interaction):
-        username = self.roblox_username.value.strip()
+        u = self.roblox_username.value.strip()
         data = load_raid_data()
-        
-        if self.guild_id not in data:
-            data[self.guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
-        if "roblox_users" not in data[self.guild_id]:
-            data[self.guild_id]["roblox_users"] = {}
-
-        data[self.guild_id]["roblox_users"][str(interaction.user.id)] = username
+        data.setdefault(self.gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data[self.gid]["roblox_users"][str(interaction.user.id)] = u
         save_raid_data(data)
-
-        await interaction.response.send_message(f"✅ | تم حفظ يوزرك (`{username}`) وجلب أحدث سكن لك في روبلوكس بنجاح!", ephemeral=True)
-
-        guild = interaction.client.get_guild(int(self.guild_id))
+        await interaction.response.send_message(f"✅ | تم حفظ يوزرك (`{u}`) بنجاح!", ephemeral=True)
+        g = interaction.client.get_guild(int(self.gid))
         cog = interaction.client.get_cog("RaidSystemCog")
-        if guild and cog:
-            await cog.send_or_update_top_message(self.guild_id, guild)
+        if g and cog: await cog.send_or_update_top_message(self.gid, g)
 
-class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
-    raid_number = discord.ui.TextInput(label="RAID Number", placeholder="", style=discord.TextStyle.short, required=True)
-    enemy = discord.ui.TextInput(label="ENEMY", placeholder="", style=discord.TextStyle.short, required=True)
-    ally = discord.ui.TextInput(label="ALLY", placeholder="", style=discord.TextStyle.short, required=True)
-    duration = discord.ui.TextInput(label="DURATION", placeholder="", style=discord.TextStyle.short, required=True)
-    status_reason = discord.ui.TextInput(label="STATUS", placeholder="", style=discord.TextStyle.short, required=True)
-
+class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Raid Results"):
+    raid_number = discord.ui.TextInput(label="RAID Number", required=True)
+    enemy = discord.ui.TextInput(label="ENEMY", required=True)
+    ally = discord.ui.TextInput(label="ALLY", required=True)
+    duration = discord.ui.TextInput(label="DURATION", required=True)
+    status_reason = discord.ui.TextInput(label="STATUS", required=True)
     async def on_submit(self, interaction: discord.Interaction):
-        view = RaidFinalMediaView(
-            self.raid_number.value,
-            self.enemy.value,
-            self.ally.value,
-            self.duration.value,
-            self.status_reason.value,
-            interaction.user
-        )
-        await interaction.response.send_message(
-            "👇 **اضغط على الزر أدناه لإدخال الـ MVPs والروابط ونشر التقرير:**",
-            view=view,
-            ephemeral=True
-        )
+        view = RaidFinalMediaView(self.raid_number.value, self.enemy.value, self.ally.value, self.duration.value, self.status_reason.value, interaction.user)
+        await interaction.response.send_message("👇 اضغط أدناه لإدخال المشاركين:", view=view, ephemeral=True)
 
 class RaidFinalMediaView(discord.ui.View):
-    def __init__(self, raid_number, enemy, ally, duration, status_reason, author):
+    def __init__(self, rn, en, al, dur, st, author):
         super().__init__(timeout=180)
-        self.raid_number = raid_number
-        self.enemy = enemy
-        self.ally = ally
-        self.duration = duration
-        self.status_reason = status_reason
-        self.author = author
-
+        self.rn, self.en, self.al, self.dur, self.st, self.author = rn, en, al, dur, st, author
     @discord.ui.button(label="📝 إدخال المشاركين والروابط", style=discord.ButtonStyle.green, emoji="⭐")
     async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.author:
-            await interaction.response.send_message("❌ | هذه القائمة ليست لك!", ephemeral=True)
+            await interaction.response.send_message("❌ | ليس لك!", ephemeral=True)
             return
-        await interaction.response.send_modal(
-            RaidSubmitModal(self.raid_number, self.enemy, self.ally, self.duration, self.status_reason)
-        )
+        await interaction.response.send_modal(RaidSubmitModal(self.rn, self.en, self.al, self.dur, self.st))
 
-class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
-    mvps_input = discord.ui.TextInput(
-        label="MVPs (قم بلصق المنشنات هنا)",
-        placeholder="الصق المنشنات أو الأسماء هنا...",
-        style=discord.TextStyle.paragraph,
-        required=True
-    )
-    media_links = discord.ui.TextInput(
-        label="Do you want to upload a video or photo?",
-        placeholder="ضع رابط الصورة أو الفيديو هنا...",
-        style=discord.TextStyle.paragraph,
-        required=False
-    )
-
-    def __init__(self, raid_number, enemy, ally, duration, status_reason):
+class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media"):
+    mvps_input = discord.ui.TextInput(label="MVPs (منشنات)", style=discord.TextStyle.paragraph, required=True)
+    media_links = discord.ui.TextInput(label="Media Link", style=discord.TextStyle.paragraph, required=False)
+    def __init__(self, rn, en, al, dur, st):
         super().__init__()
-        self.raid_number = raid_number
-        self.enemy = enemy
-        self.ally = ally
-        self.duration = duration
-        self.status_reason = status_reason
-
+        self.rn, self.en, self.al, self.dur, self.st = rn, en, al, dur, st
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        guild_id = str(interaction.guild_id)
+        gid = str(interaction.guild_id)
         data = load_raid_data()
-
-        if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
-
-        if "roblox_users" not in data[guild_id]:
-            data[guild_id]["roblox_users"] = {}
-
-        data[guild_id]["win_streak"] = data[guild_id].get("win_streak", 0) + 1
-        current_streak = data[guild_id]["win_streak"]
-
-        if "raider_stats" not in data[guild_id]:
-            data[guild_id]["raider_stats"] = {}
-
-        user_ids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
-        roblox_dict = data[guild_id]["roblox_users"]
-
-        for uid in user_ids:
-            if uid not in data[guild_id]["raider_stats"]:
-                data[guild_id]["raider_stats"][uid] = 0
-            data[guild_id]["raider_stats"][uid] += 1
-
-            if uid not in roblox_dict:
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data[gid]["win_streak"] = data[gid].get("win_streak", 0) + 1
+        streak = data[gid]["win_streak"]
+        uids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
+        rdict = data[gid]["roblox_users"]
+        blacklist = data[gid].get("blacklist", [])
+        for uid in uids:
+            if uid in blacklist: continue
+            data[gid]["raider_stats"][uid] = data[gid]["raider_stats"].get(uid, 0) + 1
+            if uid not in rdict:
                 try:
-                    member_obj = interaction.guild.get_member(int(uid)) or await interaction.client.fetch_user(int(uid))
-                    if member_obj:
-                        dm_view = discord.ui.View()
-                        dm_btn = discord.ui.Button(label="🎮 اضغط هنا لإدخال يوزر روبلوكس", style=discord.ButtonStyle.blurple)
-                        
-                        async def button_callback(i: discord.Interaction):
-                            await i.response.send_modal(RobloxUserModal(guild_id))
-                        
-                        dm_btn.callback = button_callback
-                        dm_view.add_item(dm_btn)
-
-                        await member_obj.send(
-                            "🎉 **مرحباً بك! لقد دخلت قائمة توب الرايدات في السيرفر.**\n"
-                            "يرجى النقر على الزر أدناه لإدخال يوزرك في لعبة **Roblox** لكي يتم جلب سكنك وتحديثه تلقائياً:",
-                            view=dm_view
-                        )
-                except Exception:
-                    pass
-
+                    m = interaction.guild.get_member(int(uid)) or await interaction.client.fetch_user(int(uid))
+                    if m:
+                        v = discord.ui.View()
+                        b = discord.ui.Button(label="🎮 ربط يوزر روبلوكس", style=discord.ButtonStyle.blurple)
+                        b.callback = lambda i: i.response.send_modal(RobloxUserModal(gid))
+                        v.add_item(b)
+                        await m.send("🎉 أرسل يوزر روبلوكس الخاص بك:", view=v)
+                except: pass
         save_raid_data(data)
-
-        guild = interaction.guild
         cog = interaction.client.get_cog("RaidSystemCog")
-        if cog:
-            await cog.send_or_update_top_message(guild_id, guild)
-
-        report_content = (
-            f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n"
-            f"**𝐑𝐀𝐈𝐃:**\n"
-            f"╰➤{self.raid_number}\n\n"
-            f"**𝐄𝐍𝐄𝐌𝐘:**\n"
-            f"╰➤{self.enemy}\n\n"
-            f"**𝐀𝐋𝐋𝐘:**\n"
-            f"╰➤{self.ally}\n\n"
-            f"**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n"
-            f"╰➤{self.duration}\n\n"
-            f"**𝐒𝐓𝐀𝐓𝐔🇸:**\n"
-            f"╰➤{self.status_reason}\n\n"
-            f"**𝐌𝐕𝐏🇸:**\n"
-            f"╰➤ {self.mvps_input.value}\n\n"
-        )
-
-        media_val = self.media_links.value.strip() if self.media_links.value else ""
-        extracted_image_url = None
-
-        if media_val and media_val.lower() != "skip":
-            urls = re.findall(r'https?://[^\s]+', media_val)
+        if cog: await cog.send_or_update_top_message(gid, interaction.guild)
+        
+        content = f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤{self.rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤{self.en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤{self.al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤{self.dur}\n\n**𝐒𝐓𝐀𝐓𝐔🇸:**\n╰➤{self.st}\n\n**𝐌𝐕𝐏🇸:**\n╰➤ {self.mvps_input.value}\n\n"
+        mval = self.media_links.value.strip() if self.media_links.value else ""
+        img_url = None
+        if mval and mval.lower() != "skip":
+            urls = re.findall(r'https?://[^\s]+', mval)
             if urls:
-                extracted_image_url = urls[0]
-                report_content += f"**𝐏𝐑𝐎𝐎𝐅🇸 / 𝐌𝐄𝐃𝐈𝐀:**\n╰➤ {media_val}\n\n"
-
-        report_content += (
-            f"🔥 **Win Streak:** `{current_streak} in a row`\n\n"
-            f"╰────────────────╯"
-        )
-
-        embed = discord.Embed(color=EMBED_COLOR, description=report_content)
-        if extracted_image_url:
-            embed.set_image(url=extracted_image_url)
-
-        embed.set_footer(text=f"Raid Ended by {interaction.user.name} | VLX Clan")
-
-        await interaction.channel.send(content="🏁 **Raid Final Report & Results:**", embed=embed)
-        await interaction.followup.send("✅ | تم نشر التقرير وتحديث النقاط وقائمة التوب بنجاح!", ephemeral=True)
+                img_url = urls[0]
+                content += f"**𝐏𝐑𝐎𝐎𝐅🇸:**\n╰➤ {mval}\n\n"
+        content += f"🔥 **Win Streak:** `{streak} in a row`\n\n╰────────────────╯"
+        emb = discord.Embed(color=EMBED_COLOR, description=content)
+        if img_url: emb.set_image(url=img_url)
+        emb.set_footer(text=f"Ended by {interaction.user.name} | VLX")
+        await interaction.channel.send(content="🏁 **Raid Report:**", embed=emb)
+        await interaction.followup.send("✅ | تم النشر والتحديث بنجاح!", ephemeral=True)
 
 class RaidSystemCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.weekly_message_loop.start()
+    def cog_unload(self): self.weekly_message_loop.cancel()
 
-    def cog_unload(self):
-        self.weekly_message_loop.cancel()
-
-    async def send_or_update_top_message(self, guild_id, guild):
+    async def send_or_update_top_message(self, gid, guild):
         data = load_raid_data()
-        if guild_id not in data:
-            return
+        if gid not in data or not data[gid].get("top_channel_id"): return
+        ch = guild.get_channel(int(data[gid]["top_channel_id"]))
+        if not ch: return
+        stats = data[gid].get("raider_stats", {})
+        blacklist = data[gid].get("blacklist", [])
+        rdict = data[gid].get("roblox_users", {})
+        cdict = data[gid].get("member_countries", {})
         
-        g_data = data[guild_id]
-        channel_id = g_data.get("top_channel_id")
-        if not channel_id:
-            return
-
-        channel = guild.get_channel(int(channel_id))
-        if not channel:
-            return
-
-        stats = g_data.get("raider_stats", {})
-        roblox_dict = g_data.get("roblox_users", {})
-        countries_dict = g_data.get("member_countries", {})
+        filtered = {u: c for u, c in stats.items() if u not in blacklist}
+        top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:10]
         
-        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:10]
-
-        if not sorted_raiders:
-            embed = discord.Embed(
-                title="🏆 | VLX Clan Top Raiders",
-                description="لا توجد أي نقاط رايدات مسجلة حتى الآن.",
-                color=EMBED_COLOR
-            )
-            embed.set_image(url=GIF_BANNER_URL)
-            msg_id = g_data.get("top_message_id")
-            if msg_id:
+        if not top:
+            emb = discord.Embed(title="🏆 | VLX Top Raiders", description="لا توجد نقاط مسجلة.", color=EMBED_COLOR)
+            emb.set_image(url=GIF_BANNER_URL)
+            mid = data[gid].get("top_message_id")
+            if mid:
                 try:
-                    msg = await channel.fetch_message(int(msg_id))
-                    await msg.edit(embed=embed, embeds=[], attachments=[])
+                    m = await ch.fetch_message(int(mid))
+                    await m.edit(embed=emb, embeds=[], attachments=[])
                     return
-                except discord.NotFound:
-                    pass
-            new_msg = await channel.send(embed=embed)
-            g_data["top_message_id"] = str(new_msg.id)
+                except: pass
+            nm = await ch.send(embed=emb)
+            data[gid]["top_message_id"] = str(nm.id)
             save_raid_data(data)
             return
 
-        embeds = []
-        files = []
-        for index, (uid, count) in enumerate(sorted_raiders, start=1):
-            rob_user = roblox_dict.get(uid, "غير متوفر")
-            country_info = countries_dict.get(uid, "—")
-            
-            avatar_bytes = await fetch_roblox_avatar(rob_user) if rob_user != "غير متوفر" else None
-            card_io = await generate_top_card(index, rob_user, country_info, count, avatar_bytes)
-            
-            filename = f"top_{index}.png"
-            f = discord.File(card_io, filename=filename)
-            files.append(f)
-
+        embeds, files = [], []
+        for i, (uid, cnt) in enumerate(top, 1):
+            usr = rdict.get(uid, "غير متوفر")
+            cou = cdict.get(uid, "—")
+            abytes = await fetch_roblox_avatar(usr) if usr != "غير متوفر" else None
+            io_card = await generate_top_card(i, usr, cou, cnt, abytes)
+            fname = f"top_{i}.png"
+            files.append(discord.File(io_card, filename=fname))
             emb = discord.Embed(color=EMBED_COLOR)
-            emb.set_image(url=f"attachment://{filename}")
+            emb.set_image(url=f"attachment://{fname}")
             embeds.append(emb)
 
-        banner_embed = discord.Embed(color=EMBED_COLOR)
-        banner_embed.set_image(url=GIF_BANNER_URL)
-        embeds.append(banner_embed)
+        b_emb = discord.Embed(color=EMBED_COLOR)
+        b_emb.set_image(url=GIF_BANNER_URL)
+        embeds.append(b_emb)
 
-        msg_id = g_data.get("top_message_id")
-        if msg_id:
+        mid = data[gid].get("top_message_id")
+        if mid:
             try:
-                msg = await channel.fetch_message(int(msg_id))
-                await msg.edit(embeds=embeds, attachments=files)
+                m = await ch.fetch_message(int(mid))
+                await m.edit(embeds=embeds, attachments=files)
                 return
-            except discord.NotFound:
-                pass
-
-        new_msg = await channel.send(embeds=embeds, files=files)
-        g_data["top_message_id"] = str(new_msg.id)
+            except: pass
+        nm = await ch.send(embeds=embeds, files=files)
+        data[gid]["top_message_id"] = str(nm.id)
         save_raid_data(data)
 
     @tasks.loop(hours=168)
     async def weekly_message_loop(self):
-        data = load_raid_data()
-        for guild_id, g_data in data.items():
-            if g_data.get("top_channel_id"):
-                guild = self.bot.get_guild(int(guild_id))
-                if guild:
-                    await self.send_or_update_top_message(guild_id, guild)
+        for gid, gdata in load_raid_data().items():
+            if gdata.get("top_channel_id"):
+                g = self.bot.get_guild(int(gid))
+                if g: await self.send_or_update_top_message(gid, g)
 
     @weekly_message_loop.before_loop
-    async def before_weekly_message(self):
-        await self.bot.wait_until_ready()
+    async def before_weekly(self): await self.bot.wait_until_ready()
 
-    @app_commands.command(name="set-country", description="[ Admin Only ] تحديد أو تعديل دولة وعلم العضو لتظهر في التوبات")
-    @app_commands.describe(member="اختر العضو", country_value="اكتب اسم الدولة مع علمها (مثال: 🇮🇶 Iraq)")
+    @app_commands.command(name="set-country", description="تحديد دولة العضو")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_country(self, interaction: discord.Interaction, member: discord.Member, country_value: str):
-        guild_id = str(interaction.guild_id)
+        gid = str(interaction.guild_id)
         data = load_raid_data()
-        if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
-        if "member_countries" not in data[guild_id]:
-            data[guild_id]["member_countries"] = {}
-
-        data[guild_id]["member_countries"][str(member.id)] = country_value.strip()
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data[gid]["member_countries"][str(member.id)] = country_value.strip()
         save_raid_data(data)
+        await self.send_or_update_top_message(gid, interaction.guild)
+        await interaction.response.send_message(f"✅ | تم تحديث دولة {member.mention} إلى: **{country_value.strip()}**", ephemeral=True)
 
-        await self.send_or_update_top_message(guild_id, interaction.guild)
-
-        await interaction.response.send_message(
-            f"✅ | تم بنجاح تحديث دولة العضو {member.mention} إلى: **{country_value.strip()}**\n"
-            f"🔄 تم تحديث لوحة التوبات تلقائياً.",
-            ephemeral=True
-        )
-
-    @app_commands.command(name="end-raid", description="[ Admin Only ] Conclude the raid and record results")
+    @app_commands.command(name="end-raid", description="إنهاء الرايد")
     @app_commands.checks.has_permissions(administrator=True)
     async def end_raid(self, interaction: discord.Interaction):
         if interaction.user.id == OWNER_ID:
             await interaction.response.send_modal(RaidEndInfoModal())
             return
-
-        guild_id = str(interaction.guild_id)
-        current_time = time.time()
-        cooldown_duration = 3 * 3600
-
-        if guild_id in admin_cooldowns:
-            elapsed_time = current_time - admin_cooldowns[guild_id]
-            if elapsed_time < cooldown_duration:
-                remaining_seconds = int(cooldown_duration - elapsed_time)
-                hours = remaining_seconds // 3600
-                minutes = (remaining_seconds % 3600) // 60
-                seconds = remaining_seconds % 60
-                
-                await interaction.response.send_message(
-                    f"⏳ | عذراً، لا يمكنك استخدام أمر الـ End Raid حالياً.\n"
-                    f"يجب الانتظار لمدة **3 ساعات** بين كل رايد وآخر للأدمنية.\n"
-                    f"⏱️ **الوقت المتبقي بدقة:** `{hours} ساعة و {minutes} دقيقة و {seconds} ثانية`",
-                    ephemeral=True
-                )
-                return
-
-        admin_cooldowns[guild_id] = current_time
+        gid = str(interaction.guild_id)
+        now = time.time()
+        cd = 3 * 3600
+        if gid in admin_cooldowns and now - admin_cooldowns[gid] < cd:
+            rem = int(cd - (now - admin_cooldowns[gid]))
+            await interaction.response.send_message(f"⏳ انتظر `{rem // 3600}س و {(rem % 3600) // 60}د`", ephemeral=True)
+            return
+        admin_cooldowns[gid] = now
         await interaction.response.send_modal(RaidEndInfoModal())
 
-    @app_commands.command(name="set-roblox", description="ربط أو تغيير يوزر روبلوكس الخاص بك يدوياً وجلب سكنك الجديد")
-    @app_commands.describe(username="يوزرك في لعبة روبلوكس")
+    @app_commands.command(name="set-roblox", description="ربط يوزر روبلوكس")
     async def set_roblox(self, interaction: discord.Interaction, username: str):
-        guild_id = str(interaction.guild_id)
+        gid = str(interaction.guild_id)
         data = load_raid_data()
-        if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
-        if "roblox_users" not in data[guild_id]:
-            data[guild_id]["roblox_users"] = {}
-
-        data[guild_id]["roblox_users"][str(interaction.user.id)] = username.strip()
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data[gid]["roblox_users"][str(interaction.user.id)] = username.strip()
         save_raid_data(data)
+        await interaction.response.send_message(f"✅ | تم التحديث (`{username.strip()}`)", ephemeral=True)
+        await self.send_or_update_top_message(gid, interaction.guild)
 
-        await interaction.response.send_message(f"✅ | تم تحديث يوزر روبلوكس وسكنك الجديد (`{username.strip()}`) بنجاح!", ephemeral=True)
-        await self.send_or_update_top_message(guild_id, interaction.guild)
-
-    @app_commands.command(name="set-raid-top", description="[ خاص بالإدارة ] تحديد قناة إرسال وتحديث توب الرايدات بالشكل المزخرف مع الشريط المتحرك")
-    @app_commands.describe(channel="اختر القناة التي سيعمل فيها التوب")
+    @app_commands.command(name="set-raid-top", description="تحديد قناة التوب")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_raid_top(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        guild_id = str(interaction.guild_id)
+        gid = str(interaction.guild_id)
         data = load_raid_data()
-        if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
-
-        data[guild_id]["top_channel_id"] = str(channel.id)
-        data[guild_id].pop("top_message_id", None)
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data[gid]["top_channel_id"] = str(channel.id)
+        data[gid].pop("top_message_id", None)
         save_raid_data(data)
+        await interaction.response.send_message(f"✅ | تم التفعيل في {channel.mention}", ephemeral=True)
+        await self.send_or_update_top_message(gid, interaction.guild)
 
-        await interaction.response.send_message(f"✅ | تم تفعيل توب الرايدات في القناة {channel.mention} بنجاح! جاري إرسال القوائم بالشكل المطلوب...", ephemeral=True)
-        await self.send_or_update_top_message(guild_id, interaction.guild)
-
-    @app_commands.command(name="disable-raid-top", description="[ خاص بالإدارة ] إلغاء وتعطيل خاصية توب الرايدات في هذا السيرفر")
+    @app_commands.command(name="disable-raid-top", description="إلغاء التوب")
     @app_commands.checks.has_permissions(administrator=True)
     async def disable_raid_top(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild_id)
+        gid = str(interaction.guild_id)
         data = load_raid_data()
-        if guild_id in data and "top_channel_id" in data[guild_id]:
-            data[guild_id].pop("top_channel_id", None)
-            data[guild_id].pop("top_message_id", None)
+        if gid in data and "top_channel_id" in data[gid]:
+            data[gid].pop("top_channel_id", None)
+            data[gid].pop("top_message_id", None)
             save_raid_data(data)
-            await interaction.response.send_message("✅ | تم إلغاء وتعطيل خاصية توب الرايدات في هذا السيرفر بنجاح.", ephemeral=True)
+            await interaction.response.send_message("✅ | تم التعطيل.", ephemeral=True)
         else:
-            await interaction.response.send_message("❌ | خاصية توب الرايدات غير مفعلة أساساً في هذا السيرفر!", ephemeral=True)
+            await interaction.response.send_message("❌ | غير مفعلة أساساً.", ephemeral=True)
 
-    @app_commands.command(name="sync", description="[ Owner Only ] تحديث ومزامنة أوامر البوت")
+    @app_commands.command(name="sync", description="مزامنة الأوامر")
     async def sync_commands(self, interaction: discord.Interaction):
         if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** فقط!", ephemeral=True)
+            await interaction.response.send_message("❌ | للمالك فقط!", ephemeral=True)
             return
-            
         await interaction.response.defer(ephemeral=True)
-        try:
-            synced = await self.bot.tree.sync()
-            await interaction.followup.send(f"✅ | تم مزامنة وتحديث `{len(synced)}` أمر بنجاح!", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ | حدث خطأ أثناء المزامنة: `{e}`", ephemeral=True)
+        synced = await self.bot.tree.sync()
+        await interaction.followup.send(f"✅ | تمت المزامنة (`{len(synced)}`)", ephemeral=True)
 
-    @app_commands.command(name="raid-list", description="Auto-generate and send the top 30 raiders list for this server")
+    @app_commands.command(name="raid-list", description="قائمة التوب 30")
     async def raid_list(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild_id)
-        data = load_raid_data()
-        guild_data = data.get(guild_id, {})
-        stats = guild_data.get("raider_stats", {})
-
-        if not stats:
-            await interaction.response.send_message("❌ | No raid statistics recorded yet in this server!", ephemeral=True)
+        gid = str(interaction.guild_id)
+        gdata = load_raid_data().get(gid, {})
+        stats = gdata.get("raider_stats", {})
+        blacklist = gdata.get("blacklist", [])
+        filtered = {u: c for u, c in stats.items() if u not in blacklist}
+        if not filtered:
+            await interaction.response.send_message("❌ | لا توجد بيانات!", ephemeral=True)
             return
+        top30 = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:30]
+        desc = "".join([f"#{i} <@{u}> ──> **{c}**\n" for i, (u, c) in enumerate(top30, 1)])
+        emb = discord.Embed(title="📋 | Top 30 Raiders", description=desc, color=EMBED_COLOR)
+        await interaction.response.send_message(embed=emb)
 
-        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:30]
-        description = ""
-        for index, (uid, count) in enumerate(sorted_raiders, start=1):
-            user = interaction.guild.get_member(int(uid)) or self.bot.get_user(int(uid))
-            name = user.mention if user else f"User ID: {uid}"
-            medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"#{index}"
-            description += f"{medal} {name} ──> **{count}** Raids Won\n"
-
-        embed = discord.Embed(title="📋 | VLX Clan Active Raiders List (Top 30 - This Server)", description=description, color=EMBED_COLOR)
-        embed.set_footer(text=f"Requested by {interaction.user.name} | VLX Clan System")
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="raid-mentions", description="نشر منشنات المشاركين")
-    @app_commands.describe(mentions_content="الصق منشنات الأعضاء هنا")
+    @app_commands.command(name="raid-mentions", description="نشر المنشنات")
     async def raid_mentions(self, interaction: discord.Interaction, mentions_content: str):
-        embed = discord.Embed(title="👥 | Raid Members Mentions", description=mentions_content, color=EMBED_COLOR)
-        embed.set_footer(text=f"Mentions by {interaction.user.name} | VLX Clan")
-        await interaction.response.send_message(embed=embed)
+        emb = discord.Embed(title="👥 | Mentions", description=mentions_content, color=EMBED_COLOR)
+        await interaction.response.send_message(embed=emb)
 
-    @app_commands.command(name="raid-rank", description="معرفة عدد الرايدات العالمية للعضو")
-    @app_commands.describe(member="اختر العضو (اختياري)")
+    @app_commands.command(name="raid-rank", description="ترتيب العضو عالمياً")
     async def raid_rank(self, interaction: discord.Interaction, member: discord.Member = None):
         target = member or interaction.user
-        data = load_raid_data()
-        global_stats = get_global_stats(data)
-        count = global_stats.get(str(target.id), 0)
-        
-        embed = discord.Embed(title="📊 | Global Raider Rank Statistics", color=EMBED_COLOR)
-        embed.set_thumbnail(url=target.display_avatar.url)
-        embed.add_field(name="User", value=target.mention, inline=False)
-        embed.add_field(name="Total Global Raids Participated", value=f"🛡️ `{count} Raids`", inline=False)
-        await interaction.response.send_message(embed=embed)
+        cnt = get_global_stats(load_raid_data()).get(str(target.id), 0)
+        emb = discord.Embed(title="📊 | Global Rank", color=EMBED_COLOR)
+        emb.set_thumbnail(url=target.display_avatar.url)
+        emb.add_field(name="User", value=target.mention)
+        emb.add_field(name="Total", value=f"🛡️ `{cnt}`")
+        await interaction.response.send_message(embed=emb)
 
-    @app_commands.command(name="raid-top", description="عرض قائمة أفضل المشاركين عالمياً")
+    @app_commands.command(name="raid-top", description="التوب العالمي")
     async def raid_top(self, interaction: discord.Interaction):
-        data = load_raid_data()
-        global_stats = get_global_stats(data)
-        
-        if not global_stats:
-            await interaction.response.send_message("❌ | لا توجد أي إحصائيات مسجلة عالمياً حتى الآن!", ephemeral=True)
+        gs = get_global_stats(load_raid_data())
+        if not gs:
+            await interaction.response.send_message("❌ | لا توجد بيانات عالمية!", ephemeral=True)
             return
+        top10 = sorted(gs.items(), key=lambda x: x[1], reverse=True)[:10]
+        desc = "".join([f"#{i} <@{u}> ──> **{c}**\n" for i, (u, c) in enumerate(top10, 1)])
+        emb = discord.Embed(title="🏆 | Global Leaderboard", description=desc, color=EMBED_COLOR)
+        await interaction.response.send_message(embed=emb)
 
-        sorted_raiders = sorted(global_stats.items(), key=lambda x: x[1], reverse=True)[:10]
-        description = ""
-        for index, (uid, count) in enumerate(sorted_raiders, start=1):
-            user = interaction.guild.get_member(int(uid)) or self.bot.get_user(int(uid))
-            name = user.mention if user else f"User ID: {uid}"
-            medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"#{index}"
-            description += f"{medal} {name} ──> **{count}** Raids\n"
-
-        embed = discord.Embed(title="🏆 | VLX Clan Global Raid Leaderboard (Top 10)", description=description, color=EMBED_COLOR)
-        embed.set_footer(text="VLX Clan Global Statistics")
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="raid-add", description="[ Owner Only ] إضافة أو تعيين عدد الرايدات لعضو معين")
-    @app_commands.describe(member="اختر العضو", amount="عدد الرايدات")
+    @app_commands.command(name="raid-add", description="إضافة نقاط لعضو")
     async def raid_add(self, interaction: discord.Interaction, member: discord.Member, amount: int):
         if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** فقط!", ephemeral=True)
+            await interaction.response.send_message("❌ | للمالك فقط!", ephemeral=True)
             return
-
-        guild_id = str(interaction.guild_id)
+        gid = str(interaction.guild_id)
         data = load_raid_data()
-        if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}}
-            
-        data[guild_id]["raider_stats"][str(member.id)] = amount
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data[gid]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
+        await self.send_or_update_top_message(gid, interaction.guild)
+        await interaction.response.send_message(f"✅ | تم تحديث نقاط {member.mention} إلى {amount}", ephemeral=True)
 
-        guild = interaction.guild
-        await self.send_or_update_top_message(guild_id, guild)
-
-        embed = discord.Embed(
-            title="✅ | Raid Statistics Updated",
-            description=f"تم تحديث سجل الرايدات للعضو {member.mention}\nوأصبح إجمالي رايداته: **{amount}** رايد.",
-            color=EMBED_COLOR
-        )
-        embed.set_footer(text=f"Updated by {interaction.user.name} | VLX Clan")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="raid-reset", description="[ Owner Only ] تصفير أو حذف نقاط ورايدات عضو معين أو كل السيرفر")
-    @app_commands.describe(member="اختر العضو لتصفير نقاطه (اختياري)")
+    @app_commands.command(name="raid-reset", description="تصفير النقاط")
     async def raid_reset(self, interaction: discord.Interaction, member: discord.Member = None):
         if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("❌ | عذراً، هذا الأمر مخصص لـ **فهد** فقط!", ephemeral=True)
+            await interaction.response.send_message("❌ | للمالك فقط!", ephemeral=True)
             return
-
-        guild_id = str(interaction.guild_id)
+        gid = str(interaction.guild_id)
         data = load_raid_data()
-
-        if guild_id not in data:
-            await interaction.response.send_message("❌ | لا توجد بيانات مسجلة في هذا السيرفر أساساً!", ephemeral=True)
+        if gid not in data:
+            await interaction.response.send_message("❌ | لا توجد بيانات!", ephemeral=True)
             return
-
         if member:
-            if str(member.id) in data[guild_id].get("raider_stats", {}):
-                data[guild_id]["raider_stats"][str(member.id)] = 0
-                save_raid_data(data)
-                await self.send_or_update_top_message(guild_id, interaction.guild)
-                await interaction.response.send_message(f"✅ | تم تصفير نقاط الرايدات للعضو {member.mention} بنجاح!", ephemeral=True)
-            else:
-                await interaction.response.send_message("❌ | هذا العضو ليس لديه أي نقاط مسجلة مسبقاً في هذا السيرفر.", ephemeral=True)
-        else:
-            data[guild_id]["raider_stats"] = {}
-            data[guild_id]["win_streak"] = 0
+            data[gid]["raider_stats"][str(member.id)] = 0
             save_raid_data(data)
-            await self.send_or_update_top_message(guild_id, interaction.guild)
-            await interaction.response.send_message("✅ | تم تصفير جميع إحصائيات وسلسلة انتصارات هذا السيرفر بالكامل بنجاح!", ephemeral=True)
+            await self.send_or_update_top_message(gid, interaction.guild)
+            await interaction.response.send_message(f"✅ | تم تصفير نقاط {member.mention}", ephemeral=True)
+        else:
+            data[gid]["raider_stats"] = {}
+            data[gid]["win_streak"] = 0
+            save_raid_data(data)
+            await self.send_or_update_top_message(gid, interaction.guild)
+            await interaction.response.send_message("✅ | تم تصفير إحصائيات السيرفر بالكامل.", ephemeral=True)
+
+    @app_commands.command(name="raid-ban", description="[ Owner Only ] حظر عضو من التوبات")
+    async def raid_ban(self, interaction: discord.Interaction, member: discord.Member):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("❌ | للمالك فقط!", ephemeral=True)
+            return
+        gid = str(interaction.guild_id)
+        data = load_raid_data()
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        uid = str(member.id)
+        if uid in data[gid]["blacklist"]:
+            await interaction.response.send_message("⚠️ | العضو محظور مسبقاً!", ephemeral=True)
+            return
+        data[gid]["blacklist"].append(uid)
+        save_raid_data(data)
+        await self.send_or_update_top_message(gid, interaction.guild)
+        await interaction.response.send_message(f"🚫 | تم حظر {member.mention} من التوبات بنجاح.", ephemeral=True)
+
+    @app_commands.command(name="raid-unban", description="[ Owner Only ] رفع الحظر عن عضو")
+    async def raid_unban(self, interaction: discord.Interaction, member: discord.Member):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("❌ | للمالك فقط!", ephemeral=True)
+            return
+        gid = str(interaction.guild_id)
+        data = load_raid_data()
+        uid = str(member.id)
+        if gid not in data or uid not in data[gid].get("blacklist", []):
+            await interaction.response.send_message("⚠️ | العضو ليس محظوراً!", ephemeral=True)
+            return
+        data[gid]["blacklist"].remove(uid)
+        save_raid_data(data)
+        await self.send_or_update_top_message(gid, interaction.guild)
+        await interaction.response.send_message(f"✅ | تم رفع الحظر عن {member.mention} بنجاح.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
+
