@@ -34,7 +34,6 @@ def update_guild_leave_data(guild_id: str, guild_data):
     data[guild_id] = guild_data
     save_leave_data(data)
 
-
 class Leave(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -44,33 +43,27 @@ class Leave(commands.Cog):
     async def leave_setup(self, interaction: discord.Interaction, channel: discord.TextChannel):
         guild_id = str(interaction.guild_id)
         guild_data = get_guild_leave_data(guild_id)
-        
         guild_data["channel_id"] = channel.id
         update_guild_leave_data(guild_id, guild_data)
-
         await interaction.response.send_message(f"✅ تم ضبط روم المغادرة بنجاح في هذا السيرفر: {channel.mention}", ephemeral=True)
 
-    @app_commands.command(name="leave_message", description="تعديل رسالة المغادرة (استخدم {member} للمنشن)")
+    @app_commands.command(name="leave_message", description="تعديل رسالة المغادرة لهذا السيرفر")
     @app_commands.default_permissions(administrator=True)
     async def leave_message_cmd(self, interaction: discord.Interaction, message: str):
         guild_id = str(interaction.guild_id)
         guild_data = get_guild_leave_data(guild_id)
-        
         guild_data["message"] = message
         update_guild_leave_data(guild_id, guild_data)
+        await interaction.response.send_message(f"✅ تم تحديث رسالة المغادرة في هذا السيرفر بنجاح!", ephemeral=True)
 
-        await interaction.response.send_message(f"✅ تم تحديث رسالة المغادرة بنجاح!", ephemeral=True)
-
-    @app_commands.command(name="leave_image", description="تعديل صورة المغادرة")
+    @app_commands.command(name="leave_image", description="تعديل صورة المغادرة لهذا السيرفر")
     @app_commands.default_permissions(administrator=True)
     async def leave_image_cmd(self, interaction: discord.Interaction, image_url: str):
         guild_id = str(interaction.guild_id)
         guild_data = get_guild_leave_data(guild_id)
-        
         guild_data["image_url"] = image_url
         update_guild_leave_data(guild_id, guild_data)
-
-        await interaction.response.send_message(f"✅ تم تحديث صورة المغادرة بنجاح!", ephemeral=True)
+        await interaction.response.send_message(f"✅ تم تحديث صورة المغادرة في هذا السيرفر بنجاح!", ephemeral=True)
 
     @app_commands.command(name="test_leave", description="تجربة رسالة المغادرة لنفسك")
     @app_commands.default_permissions(administrator=True)
@@ -78,17 +71,10 @@ class Leave(commands.Cog):
         guild_id = str(interaction.guild_id)
         guild_data = get_guild_leave_data(guild_id)
         
-        msg_template = guild_data.get("message", "مع السلامة {member}")
-        image_url = guild_data.get("image_url", None)
-
-        formatted_msg = msg_template.replace("{member}", interaction.user.mention)
-        embed = discord.Embed(
-            description=formatted_msg,
-            color=discord.Color.red()
-        )
-        if image_url:
-            embed.set_image(url=image_url)
-            
+        formatted_msg = guild_data["message"].replace("{member}", interaction.user.mention)
+        embed = discord.Embed(description=formatted_msg, color=discord.Color.red())
+        if guild_data["image_url"]:
+            embed.set_image(url=guild_data["image_url"])
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @commands.Cog.listener()
@@ -100,28 +86,17 @@ class Leave(commands.Cog):
         if not channel_id:
             return
         
-        channel = self.bot.get_channel(channel_id)
-        if channel is None:
-            try:
-                channel = await self.bot.fetch_channel(channel_id)
-            except Exception:
-                return
-
+        channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
         if channel:
-            msg_template = guild_data.get("message", "مع السلامة {member}")
-            image_url = guild_data.get("image_url", None)
-
-            formatted_msg = msg_template.replace("{member}", member.mention)
-            embed = discord.Embed(
-                description=formatted_msg,
-                color=discord.Color.red()
-            )
-            if image_url:
-                embed.set_image(url=image_url)
+            formatted_msg = guild_data["message"].replace("{member}", member.mention)
+            embed = discord.Embed(description=formatted_msg, color=discord.Color.red())
+            if guild_data["image_url"]:
+                embed.set_image(url=guild_data["image_url"])
             try:
                 await channel.send(embed=embed)
-            except Exception:
+            except:
                 pass
 
 async def setup(bot):
     await bot.add_cog(Leave(bot))
+
