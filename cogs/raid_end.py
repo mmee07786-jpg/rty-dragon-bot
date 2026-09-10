@@ -48,7 +48,6 @@ def get_global_stats(data):
                     global_stats[uid] = global_stats.get(uid, 0) + count
     return global_stats
 
-# دالة لجلب سكن العضو المحدث تلقائياً من روبلوكس (Bust view لتظهر تفاصيل السكن بشكل ممتاز)
 async def fetch_roblox_avatar(roblox_username):
     try:
         async with aiohttp.ClientSession() as session:
@@ -61,7 +60,6 @@ async def fetch_roblox_avatar(roblox_username):
                     return None
                 user_id = data_list[0]["id"]
 
-            # استخدام الـ avatar-bust أو avatar لجلب سكن الشخصية الحقيقي المحدث
             async with session.get(f"https://thumbnails.roblox.com/v1/users/avatar-bust?userIds={user_id}&size=420x420&format=Png&isCircular=false") as img_resp:
                 if img_resp.status != 200:
                     return None
@@ -79,7 +77,6 @@ async def fetch_roblox_avatar(roblox_username):
     except Exception:
         return None
 
-# دالة لتوليد كرت التوب مع عرض سكن العضو الحقيقي متحدثاً بشكل تلقائي
 async def generate_top_card(index, member_name, country_str, count, avatar_bytes):
     width, height = 600, 220
     card = Image.new("RGBA", (width, height), (20, 20, 20, 255))
@@ -109,7 +106,6 @@ async def generate_top_card(index, member_name, country_str, count, avatar_bytes
         avatar_size = 140
         avatar_img = avatar_img.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
 
-        # رسم إطار مستطيل/مربع احترافي حول سكن الشخصية
         frame_box = [435, 38, 435 + avatar_size + 10, 38 + avatar_size + 10]
         draw.rectangle(frame_box, outline=(0, 255, 100), width=3)
 
@@ -367,7 +363,6 @@ class RaidSystemCog(commands.Cog):
             rob_user = roblox_dict.get(uid, "غير متوفر")
             country_info = countries_dict.get(uid, "—")
             
-            # جلب السكن المحدث أوتوماتيكياً في كل مرة يتم فيها تحديث أو إعادة إرسال التوب
             avatar_bytes = await fetch_roblox_avatar(rob_user) if rob_user != "غير متوفر" else None
             card_io = await generate_top_card(index, rob_user, country_info, count, avatar_bytes)
             
@@ -708,4 +703,3 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
-
