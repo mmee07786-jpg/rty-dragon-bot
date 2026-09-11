@@ -172,7 +172,7 @@ class RaidSystemCog(commands.Cog):
         for i, (uid, cnt) in enumerate(top, 1):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             
-            # تحديد المنشن فقط
+            # تحديد المنشن فقط بالشكل المطلوب
             if member:
                 member_mention = member.mention
             else:
@@ -180,7 +180,7 @@ class RaidSystemCog(commands.Cog):
                 
             cou = cdict.get(uid, "—")
             
-            # الشكل الجديد الدقيق
+            # الشكل الدقيق المطلوب
             text_desc = f"╔══『 TOP {i} 』══╗\n│  | {member_mention} |\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
