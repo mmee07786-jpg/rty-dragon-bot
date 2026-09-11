@@ -167,9 +167,11 @@ class RaidSystemCog(commands.Cog):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             member_mention = member.mention if member else f"<@{uid}>"
                 
+            # جلب البيانات المربوطة بشكل صحيح لكل عضو
             cou = cdict.get(uid, "—")
             rob_user = rob_dict.get(uid, "—")
             
+            # تصميم اللوحة مع جلب اليوزر والدولة الفعليين
             text_desc = f"╔══『 TOP {i} 』══╗\n│  | {member_mention} |\n│  <<< • {rob_user} • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
@@ -257,6 +259,7 @@ class RaidSystemCog(commands.Cog):
         data[gid]["member_countries"][str(member.id)] = country_value.strip()
         save_raid_data(data)
         await interaction.response.send_message(f"✅ | تم تحديث دولة {member.mention}", ephemeral=True)
+        await self.update_all_tops(gid, interaction.guild)
 
     @app_commands.command(name="end-raid", description="إنهاء الرايد وتسجيل النتائج")
     async def end_raid(self, interaction: discord.Interaction):
@@ -284,6 +287,7 @@ class RaidSystemCog(commands.Cog):
         data[gid]["roblox_users"][str(interaction.user.id)] = username.strip()
         save_raid_data(data)
         await interaction.response.send_message(f"✅ | تم ربط يوزر روبلوكس الخاص بك (`{username.strip()}`)", ephemeral=True)
+        await self.update_all_tops(gid, interaction.guild)
 
     @app_commands.command(name="set-roblox-user", description="ربط يوزر روبلوكس لعضو آخر (للإدارة)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -294,6 +298,7 @@ class RaidSystemCog(commands.Cog):
         data[gid]["roblox_users"][str(member.id)] = username.strip()
         save_raid_data(data)
         await interaction.response.send_message(f"✅ | تم ربط يوزر روبلوكس `{username.strip()}` لـ {member.mention}", ephemeral=True)
+        await self.update_all_tops(gid, interaction.guild)
 
     @app_commands.command(name="sync", description="مزامنة الأوامر يدوياً")
     async def sync_commands(self, interaction: discord.Interaction):
@@ -373,6 +378,7 @@ class RaidSystemCog(commands.Cog):
         save_raid_data(data)
         
         await interaction.response.send_message(f"✅ | تمت إضافة `{amount}` رايد لـ {member.mention} وأصبح إجمالي رصيده: `{new_total}`", ephemeral=True)
+        await self.update_all_tops(gid, interaction.guild)
 
     @app_commands.command(name="raid-set", description="تعيين عدد الرايدات المباشر لعضو معين")
     async def raid_set(self, interaction: discord.Interaction, member: discord.Member, amount: int):
@@ -387,6 +393,7 @@ class RaidSystemCog(commands.Cog):
         save_raid_data(data)
         
         await interaction.response.send_message(f"✅ | تم تعيين رصيد {member.mention} مباشرة إلى: `{amount}` رايد", ephemeral=True)
+        await self.update_all_tops(gid, interaction.guild)
 
     @app_commands.command(name="set-avatar-remove", description="حذف الصورة المخصصة لتوب معين وإزالتها")
     @app_commands.checks.has_permissions(administrator=True)
@@ -427,4 +434,3 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
-
