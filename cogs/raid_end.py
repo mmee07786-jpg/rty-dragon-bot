@@ -172,16 +172,16 @@ class RaidSystemCog(commands.Cog):
         for i, (uid, cnt) in enumerate(top, 1):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             
-            # جلب يوزر الديسكورد الخاص بالعضو (Display Name أو Name)
+            # تحديد المنشن فقط
             if member:
-                discord_username = member.name
+                member_mention = member.mention
             else:
-                discord_username = f"User_{uid}"
+                member_mention = f"<@{uid}>"
                 
             cou = cdict.get(uid, "—")
             
-            # الشكل المطلوب مع يوزر الديسكورد
-            text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ <<< • {discord_username} • >>>\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
+            # الشكل الجديد الدقيق
+            text_desc = f"╔══『 TOP {i} 』══╗\n│  | {member_mention} |\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
             if str(i) in custom_avs:
