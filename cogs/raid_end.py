@@ -162,7 +162,6 @@ class RaidSystemCog(commands.Cog):
         blacklist = g_data.get("blacklist", [])
         cdict = g_data.get("member_countries", {})
         custom_avs = g_data.get("custom_avatars", {})
-        roblox_users = g_data.get("roblox_users", {})
         
         filtered = {u: c for u, c in stats.items() if u not in blacklist and c > 0}
         top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:20]
@@ -173,13 +172,16 @@ class RaidSystemCog(commands.Cog):
         for i, (uid, cnt) in enumerate(top, 1):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             
-            rbx_name = roblox_users.get(uid)
-            if not rbx_name:
-                rbx_name = member.name if member else f"User_{uid}"
+            # جلب يوزر الديسكورد الخاص بالعضو (Display Name أو Name)
+            if member:
+                discord_username = member.name
+            else:
+                discord_username = f"User_{uid}"
                 
             cou = cdict.get(uid, "—")
             
-            text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ <<< • {rbx_name} • >>>\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
+            # الشكل المطلوب مع يوزر الديسكورد
+            text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ <<< • {discord_username} • >>>\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
             if str(i) in custom_avs:
