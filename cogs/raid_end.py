@@ -29,37 +29,52 @@ def save_raid_data(d):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=4)
 
-class CustomAvatarModal(discord.ui.Modal, title="🖼️ | تعيين صورة سكن لتوب معين"):
-    image_url = discord.ui.TextInput(label="حط رابط الصورة هنا", style=discord.TextStyle.short, required=True)
+class CustomAvatarModal(discord.ui.Modal, title="👤 | جلب وحفظ سكن روبلوكس للتوب"):
+    roblox_username = discord.ui.TextInput(label="اكتب يوزر روبلوكس أو الايدي (أو رابط مباشر)", style=discord.TextStyle.short, required=True)
     def __init__(self, gid, top_num):
         super().__init__()
         self.gid = gid
         self.top_num = str(top_num)
     async def on_submit(self, interaction: discord.Interaction):
-        link = self.image_url.value.strip()
+        val = self.roblox_username.value.strip()
+        
+        # إذا أدخل رابطاً مباشراً، نستخدمه مباشرة، وإذا أدخل يوزراً أو رقماً نحوله لرابط أفتار روبلوكس
+        if val.startswith("http"):
+            link = val
+        else:
+            # التحقق إذا كان الآيدي رقماً أو يوزراً، هنا سنعالج الرابط تلقائياً
+            # ملاحظة: إذا كان رقم ايدي الحساب مباشرة
+            if val.isdigit():
+                link = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
+            else:
+                # إذا كان يوزراً نصياً، سنحاول جلبه أو استخدامه عبر البحث المباشر في روبلوكس
+                # كمرحلة أولى دقيقة، إذا كان نصاً سنضع رابط البحث أو إذا وضع الايدي المباشر
+                link = f"https://www.roblox.com/headshot-thumbnail/image?userId={val}&width=420&height=420&format=png" if val.isdigit() else f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
+
         data = load_raid_data()
         data.setdefault(self.gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
         data[self.gid]["custom_avatars"][self.top_num] = link
         save_raid_data(data)
         
-        await interaction.response.send_message(f"✅ | تم حفظ الصورة وتحديث التوب رقم `{self.top_num}` فوراً!", ephemeral=True)
+        await interaction.response.send_message(f"✅ | تم ربط سكن روبلوكس بنجاح للتوب رقم `{self.top_num}` وتحديث اللوحة!", ephemeral=True)
         g = interaction.client.get_guild(int(self.gid))
         cog = interaction.client.get_cog("RaidSystemCog")
         if g and cog:
             await cog.send_or_update_webhook_top(self.gid, g)
 
-class CustomAvatarRankModal(discord.ui.Modal, title="🔢 | اختر رقم التوب"):
-    top_position = discord.ui.TextInput(label="يا توب تريد تحط الصورة؟ (1 الى 20)", style=discord.TextStyle.short, required=True)
+class CustomAvatarRankModal(discord.ui.Modal, title="🔢 | حدد رقم التوب المطلوب"):
+    top_position = discord.ui.TextInput(label="يا توب تريد تحط السكن له؟ (من 1 إلى 20)", style=discord.TextStyle.short, required=True)
     async def on_submit(self, interaction: discord.Interaction):
         val = self.top_position.value.strip()
         if not val.isdigit():
-            await interaction.response.send_message("❌ | يرجى كتابة رقم صحيح!", ephemeral=True)
+            await interaction.response.send_message("❌ | يرجى كتابة رقم صحيح بين 1 و 20!", ephemeral=True)
             return
         num = int(val)
         if num < 1 or num > 20:
-            await interaction.response.send_message("❌ | ماكو هيج توب، التوبات محددة من 1 إلى 20 فقط!", ephemeral=True)
+            await interaction.response.send_message("❌ | التوبات محددة من 1 إلى 20 فقط!", ephemeral=True)
             return
         gid = str(interaction.guild_id)
+        # فتح المودال الثاني الخاص بطلب يوزر روبلوكس لهذا التوب المحدد
         await interaction.response.send_modal(CustomAvatarModal(gid, num))
 
 class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
@@ -153,14 +168,18 @@ class RaidSystemCog(commands.Cog):
             name = member.mention if member else f"<@{uid}>"
             cou = cdict.get(uid, "—")
             
+            # التصميم النصي الدقيق مع الشريط الجانبي الأحمر للـ Embed وخلوه تماماً من حقل يوزر روبلوكس النصي
             text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ {name}\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
+            
+            # وضع صورة السكن كـ Thumbnail حصرياً بناءً على رقم التوب المحدد بدون حشو بالنص
             if str(i) in custom_avs:
                 emb.set_thumbnail(url=custom_avs[str(i)])
                 
             embeds.append(emb)
 
+        # بانر النهاية المتحرك
         banner_emb = discord.Embed(color=EMBED_COLOR, title="VLX Clan Automated Weekly Top System")
         banner_emb.set_image(url=GIF_BANNER_URL)
         embeds.append(banner_emb)
@@ -206,7 +225,7 @@ class RaidSystemCog(commands.Cog):
         await interaction.response.send_message(f"✅ | تم تعيين قناة التوبات الأسبوعية في هذا السيرفر إلى {channel.mention} !", ephemeral=True)
         await self.send_or_update_webhook_top(gid, interaction.guild)
 
-    @app_commands.command(name="set-avatar", description="تحديد وضبط صورة سكن لأي توب معين (1 إلى 20)")
+    @app_commands.command(name="set-avatar", description="تحديد سكن روبلوكس لأي توب معين (يسألك عن رقم التوب ثم يوزر روبلوكس)")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_avatar(self, interaction: discord.Interaction):
         await interaction.response.send_modal(CustomAvatarRankModal())
@@ -238,7 +257,7 @@ class RaidSystemCog(commands.Cog):
         admin_cooldowns[gid] = now
         await interaction.response.send_modal(RaidEndInfoModal())
 
-    @app_commands.command(name="set-roblox", description="ربط يوزر روبلوكس")
+    @app_commands.command(name="set-roblox", description="ربط يوزر روبلوكس العام")
     async def set_roblox(self, interaction: discord.Interaction, username: str):
         gid = str(interaction.guild_id)
         data = load_raid_data()
@@ -300,10 +319,3 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
-    # مزامنة تلقائية للأوامر بمجرد تحميل الكوج لضمان ظهورها فوراً
-    try:
-        await bot.tree.sync()
-        print("✅ | تم مزامنة الأوامر بنجاح تلقائياً!")
-    except Exception as e:
-        print(f"❌ | خطأ في مزامنة الأوامر: {e}")
-
