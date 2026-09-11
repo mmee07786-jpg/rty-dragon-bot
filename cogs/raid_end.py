@@ -309,10 +309,51 @@ class RaidSystemCog(commands.Cog):
         synced = await self.bot.tree.sync()
         await interaction.followup.send(f"✅ | تمت المزامنة بنجاح (`{len(synced)}` أمر)", ephemeral=True)
 
-    @app_commands.command(name="raid-list", description="نشر قائمة المنشنات للرايد")
-    async def raid_list(self, interaction: discord.Interaction, mentions_content: str):
-        emb = discord.Embed(title="👥 | Raid Mentions", description=mentions_content, color=EMBED_COLOR)
-        await interaction.response.send_message(embed=emb)
+    @app_commands.command(name="raid-list", description="عرض أكثر 50 عضواً مشاركاً في الرايدات")
+    async def raid_list(self, interaction: discord.Interaction):
+        gid = str(interaction.guild_id)
+        data = load_raid_data()
+        if gid not in data or not data[gid].get("raider_stats"):
+            await interaction.response.send_message("❌ | لا توجد مسجلات رايدات حتى الآن!", ephemeral=True)
+            return
+            
+        stats = data[gid]["raider_stats"]
+        blacklist = data[gid].get("blacklist", [])
+        
+        filtered = {u: c for u, c in stats.items() if u not in blacklist and c > 0}
+        sorted_top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:50]
+        
+        if not sorted_top:
+            await interaction.response.send_message("❌ | لا توجد أي بيانات لعرضها!", ephemeral=True)
+            return
+
+        lines = []
+        for idx, (uid, cnt) in enumerate(sorted_top, 1):
+            if idx == 1:
+                medal = "🥇"
+            elif idx == 2:
+                medal = "🥈"
+            elif idx == 3:
+                medal = "🥉"
+            else:
+                medal = f"#{idx}"
+            
+            lines.append(f"{medal} <@{uid}> ──> **{cnt}** Raids Won")
+
+        chunk = ""
+        chunks = []
+        for line in lines:
+            if len(chunk) + len(line) + 1 > 1900:
+                chunks.append(chunk)
+                chunk = line + "\n"
+            else:
+                chunk += line + "\n"
+        if chunk:
+            chunks.append(chunk)
+
+        await interaction.response.send_message(content=chunks[0], ephemeral=False)
+        for extra_chunk in chunks[1:]:
+            await interaction.channel.send(content=extra_chunk)
 
     @app_commands.command(name="raid-add", description="إضافة أو خصم عدد الرايدات لعضو معين")
     async def raid_add(self, interaction: discord.Interaction, member: discord.Member, amount: int):
@@ -353,6 +394,7 @@ class RaidSystemCog(commands.Cog):
             if str(top_number) in data[gid]["custom_avatars"]:
                 del data[gid]["custom_avatars"][str(top_number)]
                 save_raid_data(data)
+                await self.update_all_tops(gid, interaction.guild)
                 await interaction.response.send_message(f"✅ | تم إزالة الصورة المخصصة للتوب رقم `{top_number}` بنجاح وإرجاع الشريط المتحرك.", ephemeral=True)
                 return
         await interaction.response.send_message(f"❌ | لا توجد صورة مخصصة مسجلة للتوب رقم `{top_number}`.", ephemeral=True)
@@ -370,13 +412,16 @@ class RaidSystemCog(commands.Cog):
         if member:
             data[gid]["raider_stats"][str(member.id)] = 0
             save_raid_data(data)
+            await self.update_all_tops(gid, interaction.guild)
             await interaction.response.send_message(f"✅ | تم تصفير نقاط العضو", ephemeral=True)
         else:
             data[gid]["raider_stats"] = {}
             data[gid]["win_streak"] = 0
             data[gid]["custom_avatars"] = {}
             save_raid_data(data)
+            await self.update_all_tops(gid, interaction.guild)
             await interaction.response.send_message("✅ | تم تصفير السيرفر بالكامل.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
+
