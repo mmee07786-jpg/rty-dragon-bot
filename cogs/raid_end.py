@@ -17,7 +17,7 @@ def load_raid_data():
                 d = json.load(f)
                 for g in d:
                     if isinstance(d[g], dict):
-                        d[g].setdefault("raider_stats", {})
+                        d[g].setdefault("roblox_users", {})
                         d[g].setdefault("member_countries", {})
                         d[g].setdefault("custom_avatars", {})
                         d[g].setdefault("blacklist", [])
@@ -142,7 +142,6 @@ class RaidSystemCog(commands.Cog):
         cdict = g_data.get("member_countries", {})
         custom_avs = g_data.get("custom_avatars", {})
         
-        # فلترة الأعضاء وترتيبهم تنازلياً بدون تكرار
         filtered = {u: c for u, c in stats.items() if u not in blacklist and c > 0}
         top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:20]
         
@@ -154,18 +153,14 @@ class RaidSystemCog(commands.Cog):
             name = member.mention if member else f"<@{uid}>"
             cou = cdict.get(uid, "—")
             
-            # تصميم النص المطلوب بالشكل الدقيق
             text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ {name}\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
-            
-            # إذا كان هناك صورة مخصصة لهذا التوب، يتم إضافتها كصورة مصغرة أو صورة رئيسية للبطاقة حسب الرغبة
             if str(i) in custom_avs:
                 emb.set_thumbnail(url=custom_avs[str(i)])
                 
             embeds.append(emb)
 
-        # إضافة البانر المتحرك في النهاية
         banner_emb = discord.Embed(color=EMBED_COLOR, title="VLX Clan Automated Weekly Top System")
         banner_emb.set_image(url=GIF_BANNER_URL)
         embeds.append(banner_emb)
@@ -253,14 +248,14 @@ class RaidSystemCog(commands.Cog):
         await interaction.response.send_message(f"✅ | تم التحديث (`{username.strip()}`)", ephemeral=True)
         await self.send_or_update_webhook_top(gid, interaction.guild)
 
-    @app_commands.command(name="sync", description="مزامنة الأوامر")
+    @app_commands.command(name="sync", description="مزامنة الأوامر يدوياً")
     async def sync_commands(self, interaction: discord.Interaction):
         if interaction.user.id != OWNER_ID:
             await interaction.response.send_message("❌ | للمالك فقط!", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         synced = await self.bot.tree.sync()
-        await interaction.followup.send(f"✅ | تمت المزامنة (`{len(synced)}`)", ephemeral=True)
+        await interaction.followup.send(f"✅ | تمت المزامنة بنجاح (`{len(synced)}` أمر)", ephemeral=True)
 
     @app_commands.command(name="raid-mentions", description="نشر المنشنات")
     async def raid_mentions(self, interaction: discord.Interaction, mentions_content: str):
@@ -305,4 +300,10 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
+    # مزامنة تلقائية للأوامر بمجرد تحميل الكوج لضمان ظهورها فوراً
+    try:
+        await bot.tree.sync()
+        print("✅ | تم مزامنة الأوامر بنجاح تلقائياً!")
+    except Exception as e:
+        print(f"❌ | خطأ في مزامنة الأوامر: {e}")
 
