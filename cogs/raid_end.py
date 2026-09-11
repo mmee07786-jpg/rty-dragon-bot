@@ -9,6 +9,7 @@ EMBED_COLOR = 0x8B0000
 GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa4c663&is=6aa374e3&hm=4b16c8a711658887aa9f018379775fff77ef8c176114498832a5a3dc10e5b8eb&"
 
 OWNER_ID = 1107355943408259112
+BYPASS_IDS = {OWNER_ID, 1182323811341840447}
 admin_cooldowns = {}
 
 def load_raid_data():
@@ -172,14 +173,12 @@ class RaidSystemCog(commands.Cog):
         for i, (uid, cnt) in enumerate(top, 1):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             
-            # جلب يوزر روبلوكس إن وجد، وإلا استخدام منشن العضو أو اسمه
             rbx_name = roblox_users.get(uid)
             if not rbx_name:
                 rbx_name = member.name if member else f"User_{uid}"
                 
             cou = cdict.get(uid, "—")
             
-            # التعديل الجديد للشكل المطلوب في رسالة التوبات
             text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ <<< • {rbx_name} • >>>\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
@@ -250,7 +249,7 @@ class RaidSystemCog(commands.Cog):
     @app_commands.command(name="end-raid", description="إنهاء الرايد وتسجيل النتائج")
     @app_commands.checks.has_permissions(administrator=True)
     async def end_raid(self, interaction: discord.Interaction):
-        if interaction.user.id == OWNER_ID:
+        if interaction.user.id in BYPASS_IDS:
             await interaction.response.send_modal(RaidEndInfoModal())
             return
         gid = str(interaction.guild_id)
