@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
 GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa41da3&is=6aa2cc23&hm=d6ba53f570b7920d6f2f3fe64ae84729c07eaf4503123b6d2bb7c9f3733db944&"
+
 OWNER_ID = 1107355943408259112
 admin_cooldowns = {}
 
@@ -19,6 +20,7 @@ def load_raid_data():
                     if isinstance(d[g], dict):
                         d[g].setdefault("roblox_users", {})
                         d[g].setdefault("member_countries", {})
+                        d[g].setdefault("custom_avatars", {})
                         d[g].setdefault("blacklist", [])
                 return d
             except: return {}
@@ -48,39 +50,74 @@ async def fetch_roblox_avatar(username):
                 return await ar.read()
     except: return None
 
+async def download_custom_avatar(url):
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url) as r:
+                if r.status == 200:
+                    return await r.read()
+    except: pass
+    return None
+
 async def generate_top_card(idx, name, country, count, abytes):
     w, h = 600, 220
     card = Image.new("RGBA", (w, h), (20, 20, 20, 255))
     draw = ImageDraw.Draw(card)
     draw.rectangle([5, 5, w - 5, h - 5], outline=(139, 0, 0), width=3)
+    
     txt = f"╔══『 TOP {idx} 』══╗\n│  {name}\n│  <<< •  • >>>\n│\n│  Country: {country}\n│  —\n│  Raids Joined: {count}"
     try: font = ImageFont.truetype("arial.ttf", 18)
     except: font = ImageFont.load_default()
+    
     draw.text((20, 15), txt, fill=(255, 255, 255, 255), font=font)
+    
     if abytes:
-        aimg = Image.open(io.BytesIO(abytes)).convert("RGBA").resize((140, 140), Image.Resampling.LANCZOS)
-        draw.rectangle([435, 38, 585, 188], outline=(0, 255, 100), width=3)
-        card.paste(aimg, (440, 43), aimg)
+        try:
+            # قص وصق الصورة بشكل مربع تماماً داخل الإطار المحدد
+            aimg = Image.open(io.BytesIO(abytes)).convert("RGBA").resize((145, 145), Image.Resampling.LANCZOS)
+            draw.rectangle([433, 36, 583, 186], outline=(0, 255, 100), width=3)
+            card.paste(aimg, (436, 39), aimg)
+        except: pass
+
     out = io.BytesIO()
     card.save(out, format="PNG")
     out.seek(0)
     return out
 
-class RobloxUserModal(discord.ui.Modal, title="🎮 | ربط يوزر روبلوكس"):
-    roblox_username = discord.ui.TextInput(label="شنو يوزرك بالعبة روبلوكس؟", style=discord.TextStyle.short, required=True)
-    def __init__(self, gid):
+class CustomAvatarModal(discord.ui.Modal, title="🖼️ | تعيين صورة سكن لتوب معين"):
+    image_url = discord.ui.TextInput(label="حط رابط الصورة هنا", style=discord.TextStyle.short, required=True)
+    def __init__(self, gid, top_num):
         super().__init__()
         self.gid = gid
+        self.top_num = str(top_num)
     async def on_submit(self, interaction: discord.Interaction):
-        u = self.roblox_username.value.strip()
+        link = self.image_url.value.strip()
         data = load_raid_data()
-        data.setdefault(self.gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
-        data[self.gid]["roblox_users"][str(interaction.user.id)] = u
+        data.setdefault(self.gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
+        data[self.gid]["custom_avatars"][self.top_num] = link
         save_raid_data(data)
-        await interaction.response.send_message(f"✅ | تم حفظ يوزرك (`{u}`) بنجاح!", ephemeral=True)
+        
+        await interaction.response.send_message(f"✅ | تم حفظ الصورة وتحديث التوب رقم `{self.top_num}` فوراً!", ephemeral=True)
+        
+        # تحديث رسالة الويب هوك بشكل مباشر وفوري عند إرسال الرابط
         g = interaction.client.get_guild(int(self.gid))
         cog = interaction.client.get_cog("RaidSystemCog")
-        if g and cog: await cog.send_or_update_webhook_top(self.gid, g)
+        if g and cog:
+            await cog.send_or_update_webhook_top(self.gid, g)
+
+class CustomAvatarRankModal(discord.ui.Modal, title="🔢 | اختر رقم التوب"):
+    top_position = discord.ui.TextInput(label="يا توب تريد تحط الصورة؟ (1 الى 20)", style=discord.TextStyle.short, required=True)
+    async def on_submit(self, interaction: discord.Interaction):
+        val = self.top_position.value.strip()
+        if not val.isdigit():
+            await interaction.response.send_message("❌ | يرجى كتابة رقم صحيح!", ephemeral=True)
+            return
+        num = int(val)
+        if num < 1 or num > 20:
+            await interaction.response.send_message("❌ | ماكو هيج توب، التوبات محددة من 1 إلى 20 فقط!", ephemeral=True)
+            return
+        gid = str(interaction.guild_id)
+        await interaction.response.send_modal(CustomAvatarModal(gid, num))
 
 class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
     raid_number = discord.ui.TextInput(label="RAID Number", required=True)
@@ -113,26 +150,15 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media"):
         await interaction.response.defer(ephemeral=True)
         gid = str(interaction.guild_id)
         data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
         data[gid]["win_streak"] = data[gid].get("win_streak", 0) + 1
         streak = data[gid]["win_streak"]
         uids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
-        rdict = data[gid]["roblox_users"]
         blacklist = data[gid].get("blacklist", [])
         
         for uid in uids:
             if uid in blacklist: continue
             data[gid]["raider_stats"][uid] = data[gid]["raider_stats"].get(uid, 0) + 1
-            if uid not in rdict:
-                try:
-                    m = interaction.guild.get_member(int(uid)) or await interaction.client.fetch_user(int(uid))
-                    if m:
-                        v = discord.ui.View()
-                        b = discord.ui.Button(label="🎮 ربط يوزر روبلوكس", style=discord.ButtonStyle.blurple)
-                        b.callback = lambda i: i.response.send_modal(RobloxUserModal(gid))
-                        v.add_item(b)
-                        await m.send("🎉 مبروك دخولك التوبات! أرسل يوزر روبلوكس الخاص بك عبر الزر أدناه:", view=v)
-                except: pass
 
         save_raid_data(data)
         cog = interaction.client.get_cog("RaidSystemCog")
@@ -145,7 +171,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media"):
             urls = re.findall(r'https?://[^\s]+', mval)
             if urls:
                 img_url = urls[0]
-                content += f"**𝐏𝐑𝐎𝐎𝐅🇸:**\n╰➤ {mval}\n\n"
+                content += f"**𝐏𝐑𝐎𝐎🇸:**\n╰➤ {mval}\n\n"
         content += f"🔥 **Win Streak:** `{streak} in a row`\n\n╰────────────────╯"
         emb = discord.Embed(color=EMBED_COLOR, description=content)
         if img_url: emb.set_image(url=img_url)
@@ -170,6 +196,7 @@ class RaidSystemCog(commands.Cog):
         blacklist = g_data.get("blacklist", [])
         rdict = g_data.get("roblox_users", {})
         cdict = g_data.get("member_countries", {})
+        custom_avs = g_data.get("custom_avatars", {})
         
         filtered = {u: c for u, c in stats.items() if u not in blacklist}
         top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:20]
@@ -178,10 +205,20 @@ class RaidSystemCog(commands.Cog):
 
         embeds, files = [], []
         for i, (uid, cnt) in enumerate(top, 1):
-            usr = rdict.get(uid, "غير متوفر")
+            member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
+            name = member.mention if member else f"<@{uid}>"
             cou = cdict.get(uid, "—")
-            abytes = await fetch_roblox_avatar(usr) if usr != "غير متوفر" else None
-            io_card = await generate_top_card(i, usr, cou, cnt, abytes)
+            
+            abytes = None
+            if str(i) in custom_avs:
+                abytes = await download_custom_avatar(custom_avs[str(i)])
+            
+            if not abytes:
+                usr = rdict.get(uid)
+                if usr:
+                    abytes = await fetch_roblox_avatar(usr)
+
+            io_card = await generate_top_card(i, name, cou, cnt, abytes)
             fname = f"top_{i}.png"
             files.append(discord.File(io_card, filename=fname))
             emb = discord.Embed(color=EMBED_COLOR)
@@ -233,12 +270,17 @@ class RaidSystemCog(commands.Cog):
     @weekly_webhook_loop.before_loop
     async def before_weekly_webhook(self): await self.bot.wait_until_ready()
 
+    @app_commands.command(name="set-avatar", description="تحديد وضبط صورة سكن لأي توب معين (1 إلى 20)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_avatar(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(CustomAvatarRankModal())
+
     @app_commands.command(name="set-country", description="تحديد دولة العضو")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_country(self, interaction: discord.Interaction, member: discord.Member, country_value: str):
         gid = str(interaction.guild_id)
         data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
         data[gid]["member_countries"][str(member.id)] = country_value.strip()
         save_raid_data(data)
         await self.send_or_update_webhook_top(gid, interaction.guild)
@@ -264,7 +306,7 @@ class RaidSystemCog(commands.Cog):
     async def set_roblox(self, interaction: discord.Interaction, username: str):
         gid = str(interaction.guild_id)
         data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
         data[gid]["roblox_users"][str(interaction.user.id)] = username.strip()
         save_raid_data(data)
         await interaction.response.send_message(f"✅ | تم التحديث (`{username.strip()}`)", ephemeral=True)
@@ -275,7 +317,7 @@ class RaidSystemCog(commands.Cog):
     async def set_raid_webhook(self, interaction: discord.Interaction, webhook_url: str, channel: discord.TextChannel):
         gid = str(interaction.guild_id)
         data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
         data[gid]["webhook_url"] = webhook_url
         data[gid]["webhook_channel_id"] = channel.id
         data[gid].pop("webhook_message_id", None)
@@ -318,7 +360,7 @@ class RaidSystemCog(commands.Cog):
             return
         gid = str(interaction.guild_id)
         data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "blacklist": []})
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
         data[gid]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
         await self.send_or_update_webhook_top(gid, interaction.guild)
@@ -342,6 +384,7 @@ class RaidSystemCog(commands.Cog):
         else:
             data[gid]["raider_stats"] = {}
             data[gid]["win_streak"] = 0
+            data[gid]["custom_avatars"] = {}
             save_raid_data(data)
             await self.send_or_update_webhook_top(gid, interaction.guild)
             await interaction.response.send_message("✅ | تم تصفير السيرفر بالكامل.", ephemeral=True)
