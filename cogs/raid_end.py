@@ -125,8 +125,6 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media"):
             data[gid]["raider_stats"][uid] = data[gid]["raider_stats"].get(uid, 0) + 1
 
         save_raid_data(data)
-        cog = interaction.client.get_cog("RaidSystemCog")
-        if cog: await cog.update_all_tops(gid, interaction.guild)
         
         content = f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤{self.rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤{self.en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤{self.al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤{self.dur}\n\n**𝐒𝐓𝐀𝐓𝐔🇸:**\n╰➤{self.st}\n\n**𝐌𝐕𝐏🇸:**\n╰➤ {self.mvps_input.value}\n\n"
         mval = self.media_links.value.strip() if self.media_links.value else ""
@@ -141,7 +139,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media"):
         if img_url: emb.set_image(url=img_url)
         emb.set_footer(text=f"Ended by {interaction.user.name} | VLX")
         await interaction.channel.send(content="🏁 **Raid Report:**", embed=emb)
-        await interaction.followup.send("✅ | تم النشر والتحديث بنجاح!", ephemeral=True)
+        await interaction.followup.send("✅ | تم تسجيل الرايد وإضافة النقاط بنجاح (ستتحدث اللوحات تلقائياً نهاية الأسبوع)!", ephemeral=True)
 
 class RaidSystemCog(commands.Cog):
     def __init__(self, bot):
@@ -263,7 +261,6 @@ class RaidSystemCog(commands.Cog):
         data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
         data[gid]["member_countries"][str(member.id)] = country_value.strip()
         save_raid_data(data)
-        await self.update_all_tops(gid, interaction.guild)
         await interaction.response.send_message(f"✅ | تم تحديث دولة {member.mention}", ephemeral=True)
 
     @app_commands.command(name="end-raid", description="إنهاء الرايد وتسجيل النتائج")
@@ -292,7 +289,6 @@ class RaidSystemCog(commands.Cog):
         data[gid]["roblox_users"][str(interaction.user.id)] = username.strip()
         save_raid_data(data)
         await interaction.response.send_message(f"✅ | تم ربط يوزر روبلوكس الخاص بك (`{username.strip()}`)", ephemeral=True)
-        await self.update_all_tops(gid, interaction.guild)
 
     @app_commands.command(name="set-roblox-user", description="ربط يوزر روبلوكس لعضو آخر (للإدارة)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -303,7 +299,6 @@ class RaidSystemCog(commands.Cog):
         data[gid]["roblox_users"][str(member.id)] = username.strip()
         save_raid_data(data)
         await interaction.response.send_message(f"✅ | تم ربط يوزر روبلوكس `{username.strip()}` لـ {member.mention}", ephemeral=True)
-        await self.update_all_tops(gid, interaction.guild)
 
     @app_commands.command(name="sync", description="مزامنة الأوامر يدوياً")
     async def sync_commands(self, interaction: discord.Interaction):
@@ -314,9 +309,9 @@ class RaidSystemCog(commands.Cog):
         synced = await self.bot.tree.sync()
         await interaction.followup.send(f"✅ | تمت المزامنة بنجاح (`{len(synced)}` أمر)", ephemeral=True)
 
-    @app_commands.command(name="raid-mentions", description="نشر المنشنات")
-    async def raid_mentions(self, interaction: discord.Interaction, mentions_content: str):
-        emb = discord.Embed(title="👥 | Mentions", description=mentions_content, color=EMBED_COLOR)
+    @app_commands.command(name="raid-list", description="نشر قائمة المنشنات للرايد")
+    async def raid_list(self, interaction: discord.Interaction, mentions_content: str):
+        emb = discord.Embed(title="👥 | Raid Mentions", description=mentions_content, color=EMBED_COLOR)
         await interaction.response.send_message(embed=emb)
 
     @app_commands.command(name="raid-add", description="إضافة أو خصم عدد الرايدات لعضو معين")
@@ -333,7 +328,6 @@ class RaidSystemCog(commands.Cog):
         data[gid]["raider_stats"][str(member.id)] = new_total
         save_raid_data(data)
         
-        await self.update_all_tops(gid, interaction.guild)
         await interaction.response.send_message(f"✅ | تمت إضافة `{amount}` رايد لـ {member.mention} وأصبح إجمالي رصيده: `{new_total}`", ephemeral=True)
 
     @app_commands.command(name="raid-set", description="تعيين عدد الرايدات المباشر لعضو معين")
@@ -348,7 +342,6 @@ class RaidSystemCog(commands.Cog):
         data[gid]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
         
-        await self.update_all_tops(gid, interaction.guild)
         await interaction.response.send_message(f"✅ | تم تعيين رصيد {member.mention} مباشرة إلى: `{amount}` رايد", ephemeral=True)
 
     @app_commands.command(name="set-avatar-remove", description="حذف الصورة المخصصة لتوب معين وإزالتها")
@@ -360,7 +353,6 @@ class RaidSystemCog(commands.Cog):
             if str(top_number) in data[gid]["custom_avatars"]:
                 del data[gid]["custom_avatars"][str(top_number)]
                 save_raid_data(data)
-                await self.update_all_tops(gid, interaction.guild)
                 await interaction.response.send_message(f"✅ | تم إزالة الصورة المخصصة للتوب رقم `{top_number}` بنجاح وإرجاع الشريط المتحرك.", ephemeral=True)
                 return
         await interaction.response.send_message(f"❌ | لا توجد صورة مخصصة مسجلة للتوب رقم `{top_number}`.", ephemeral=True)
@@ -378,14 +370,12 @@ class RaidSystemCog(commands.Cog):
         if member:
             data[gid]["raider_stats"][str(member.id)] = 0
             save_raid_data(data)
-            await self.update_all_tops(gid, interaction.guild)
             await interaction.response.send_message(f"✅ | تم تصفير نقاط العضو", ephemeral=True)
         else:
             data[gid]["raider_stats"] = {}
             data[gid]["win_streak"] = 0
             data[gid]["custom_avatars"] = {}
             save_raid_data(data)
-            await self.update_all_tops(gid, interaction.guild)
             await interaction.response.send_message("✅ | تم تصفير السيرفر بالكامل.", ephemeral=True)
 
 async def setup(bot):
