@@ -161,6 +161,7 @@ class RaidSystemCog(commands.Cog):
         stats = g_data.get("raider_stats", {})
         blacklist = g_data.get("blacklist", [])
         cdict = g_data.get("member_countries", {})
+        rob_dict = g_data.get("roblox_users", {})
         custom_avs = g_data.get("custom_avatars", {})
         
         filtered = {u: c for u, c in stats.items() if u not in blacklist and c > 0}
@@ -172,18 +173,24 @@ class RaidSystemCog(commands.Cog):
         for i, (uid, cnt) in enumerate(top, 1):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             
-            # تحديد المنشن فقط بالشكل المطلوب
             if member:
                 member_mention = member.mention
             else:
                 member_mention = f"<@{uid}>"
                 
             cou = cdict.get(uid, "—")
+            rob_user = rob_dict.get(uid, "—")
             
-            # الشكل الدقيق المطلوب
-            text_desc = f"╔══『 TOP {i} 』══╗\n│  | {member_mention} |\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
+            # الشكل الدقيق المطلوب مع سطر يوزر روبلوكس الجديد
+            text_desc = f"╔══『 TOP {i} 』══╗\n│  | {member_mention} |\n│  <<< • {rob_user} • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
+            
+            # صورة سكن روبلوكس في الجانب (Thumbnail)
+            if rob_user != "—":
+                thumb_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={rob_user}&size=420x420&format=Png&isCircular=false" if rob_user.isdigit() else f"https://www.roblox.com/headshot-thumbnail/image?username={rob_user}&width=420&height=420&format=png"
+                emb.set_thumbnail(url=thumb_url)
+
             if str(i) in custom_avs:
                 emb.set_image(url=custom_avs[str(i)])
             else:
