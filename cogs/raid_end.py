@@ -119,14 +119,15 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media"):
 
         save_raid_data(data)
         
-        content = f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤{self.rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤{self.en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤{self.al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤{self.dur}\n\n**𝐒𝐓𝐀𝐓𝐔🇸:**\n╰➤{self.st}\n\n**𝐌𝐕𝐏🇸:**\n╰➤ {self.mvps_input.value}\n\n"
+        # تم تعديل الحروف الزائدة هنا (إزالة الـ S)
+        content = f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤{self.rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤{self.en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤{self.al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤{self.dur}\n\n**𝐒𝐓𝐀𝐓𝐔𝐒:**\n╰➤{self.st}\n\n**𝐌𝐕𝐏𝐒:**\n╰➤ {self.mvps_input.value}\n\n"
         mval = self.media_links.value.strip() if self.media_links.value else ""
         img_url = None
         if mval and mval.lower() != "skip":
             urls = re.findall(r'https?://[^\s]+', mval)
             if urls:
                 img_url = urls[0]
-                content += f"**𝐏𝐑𝐎𝐎🇸:**\n╰➤ {mval}\n\n"
+                content += f"**𝐏𝐑𝐎𝐎𝐅:**\n╰➤ {mval}\n\n"
         content += f"🔥 **Win Streak:** `{streak} in a row`\n\n╰────────────────╯"
         emb = discord.Embed(color=EMBED_COLOR, description=content)
         if img_url: emb.set_image(url=img_url)
@@ -167,23 +168,19 @@ class RaidSystemCog(commands.Cog):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             member_mention = member.mention if member else f"<@{uid}>"
                 
-            # جلب البيانات المربوطة بشكل صحيح لكل عضو
             cou = cdict.get(uid, "—")
             rob_user = rob_dict.get(uid, "—")
             
-            # تصميم اللوحة مع جلب اليوزر والدولة الفعليين
             text_desc = f"╔══『 TOP {i} 』══╗\n│  | {member_mention} |\n│  <<< • {rob_user} • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
             
-            # وضع الأفاتار المخصص أو أفاتار روبلوكس كصورة مصغرة (Thumbnail)
             if str(i) in custom_avs:
                 emb.set_thumbnail(url=custom_avs[str(i)])
             elif rob_user != "—":
                 thumb_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={rob_user}&size=420x420&format=Png&isCircular=false" if rob_user.isdigit() else f"https://www.roblox.com/headshot-thumbnail/image?username={rob_user}&width=420&height=420&format=png"
                 emb.set_thumbnail(url=thumb_url)
             
-            # تثبيت الشريط المتحرك السفلي دائماً في الصورة الكبيرة (Image)
             emb.set_image(url=GIF_BANNER_URL)
                 
             embeds.append(emb)
@@ -434,3 +431,4 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
+
