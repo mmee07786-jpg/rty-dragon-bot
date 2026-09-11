@@ -174,15 +174,15 @@ class RaidSystemCog(commands.Cog):
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
             
-            # تم التعديل هنا لتصبح الصورة المخصصة صورة مصغرة (Thumbnail)
+            # وضع الأفاتار المخصص أو أفاتار روبلوكس كصورة مصغرة (Thumbnail)
             if str(i) in custom_avs:
                 emb.set_thumbnail(url=custom_avs[str(i)])
-            else:
-                if rob_user != "—":
-                    thumb_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={rob_user}&size=420x420&format=Png&isCircular=false" if rob_user.isdigit() else f"https://www.roblox.com/headshot-thumbnail/image?username={rob_user}&width=420&height=420&format=png"
-                    emb.set_thumbnail(url=thumb_url)
-                
-                emb.set_image(url=GIF_BANNER_URL)
+            elif rob_user != "—":
+                thumb_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={rob_user}&size=420x420&format=Png&isCircular=false" if rob_user.isdigit() else f"https://www.roblox.com/headshot-thumbnail/image?username={rob_user}&width=420&height=420&format=png"
+                emb.set_thumbnail(url=thumb_url)
+            
+            # تثبيت الشريط المتحرك السفلي دائماً في الصورة الكبيرة (Image)
+            emb.set_image(url=GIF_BANNER_URL)
                 
             embeds.append(emb)
 
@@ -398,7 +398,7 @@ class RaidSystemCog(commands.Cog):
                 del data[gid]["custom_avatars"][str(top_number)]
                 save_raid_data(data)
                 await self.update_all_tops(gid, interaction.guild)
-                await interaction.response.send_message(f"✅ | تم إزالة الصورة المخصصة للتوب رقم `{top_number}` بنجاح وإرجاع الصورة التلقائية.", ephemeral=True)
+                await interaction.response.send_message(f"✅ | تم إزالة الصورة المخصصة للتوب رقم `{top_number}` بنجاح.", ephemeral=True)
                 return
         await interaction.response.send_message(f"❌ | لا توجد صورة مخصصة مسجلة للتوب رقم `{top_number}`.", ephemeral=True)
 
