@@ -5,6 +5,8 @@ import json, os, re, time
 
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
+
+# رابط الشريط المتحرك (GIF) الذي سيتم وضعه في أسفل كل إمبد
 GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa4c663&is=6aa374e3&hm=4b16c8a711658887aa9f018379775fff77ef8c176114498832a5a3dc10e5b8eb&"
 
 OWNER_ID = 1107355943408259112
@@ -29,12 +31,19 @@ def save_raid_data(d):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=4)
 
-class CustomAvatarModal(discord.ui.Modal, title="👤 | جلب وحفظ سكن روبلوكس للتوب"):
-    roblox_username = discord.ui.TextInput(label="اكتب يوزر روبلوكس أو الايدي (أو رابط مباشر)", style=discord.TextStyle.short, required=True)
+# مودال يطلب يوزر روبلوكس أو رابط الصورة المتحركة/العادية بعد تحديد رقم التوب
+class CustomAvatarModal(discord.ui.Modal, title="👤 | تعيين صورة/سكن التوب"):
+    roblox_username = discord.ui.TextInput(
+        label="اكتب يوزر روبلوكس، الإيدي، أو رابط صورة/GIF مباشر", 
+        style=discord.TextStyle.short, 
+        required=True,
+        placeholder="مثال: يوزر أو رابط ينتهي بـ .gif"
+    )
     def __init__(self, gid, top_num):
         super().__init__()
         self.gid = gid
         self.top_num = str(top_num)
+        
     async def on_submit(self, interaction: discord.Interaction):
         val = self.roblox_username.value.strip()
         
@@ -44,21 +53,27 @@ class CustomAvatarModal(discord.ui.Modal, title="👤 | جلب وحفظ سكن �
             if val.isdigit():
                 link = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
             else:
-                link = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
+                link = val if "http" in val else f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
 
         data = load_raid_data()
         data.setdefault(self.gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
         data[self.gid]["custom_avatars"][self.top_num] = link
         save_raid_data(data)
         
-        await interaction.response.send_message(f"✅ | تم ربط سكن روبلوكس بنجاح للتوب رقم `{self.top_num}` وتحديث اللوحة!", ephemeral=True)
+        await interaction.response.send_message(f"✅ | تم تحديث صورة التوب رقم `{self.top_num}` بنجاح وتحديث اللوحة!", ephemeral=True)
         g = interaction.client.get_guild(int(self.gid))
         cog = interaction.client.get_cog("RaidSystemCog")
         if g and cog:
             await cog.send_or_update_webhook_top(self.gid, g)
 
+# مودال الخطوة الأولى: يطلب رقم التوب أولاً
 class CustomAvatarRankModal(discord.ui.Modal, title="🔢 | حدد رقم التوب المطلوب"):
-    top_position = discord.ui.TextInput(label="يا توب تريد تحط السكن له؟ (من 1 إلى 20)", style=discord.TextStyle.short, required=True)
+    top_position = discord.ui.TextInput(
+        label="أدخل رقم التوب (من 1 إلى 20)", 
+        style=discord.TextStyle.short, 
+        required=True,
+        placeholder="مثال: 1"
+    )
     async def on_submit(self, interaction: discord.Interaction):
         val = self.top_position.value.strip()
         if not val.isdigit():
@@ -162,21 +177,18 @@ class RaidSystemCog(commands.Cog):
             name = member.mention if member else f"<@{uid}>"
             cou = cdict.get(uid, "—")
             
-            # التصميم النصي الدقيق مع الشريط الجانبي الأحمر للـ Embed وخلوه تماماً من يوزر روبلوكس بالنص
+            # التصميم النصي الدقيق لكل توب
             text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ {name}\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
             
-            # وضع صورة السكن كصورة رئيسية (Image) في أسفل بطاقة التوب تماماً كما في طلبك وصورتك
+            # إذا قام المشرف بتعيين صورة/سكن خاص لهذا التوب، يتم وضعه، وإلا يتم وضع الشريط المتحرك (GIF Banner) تلقائياً في كل إمبد
             if str(i) in custom_avs:
                 emb.set_image(url=custom_avs[str(i)])
+            else:
+                emb.set_image(url=GIF_BANNER_URL)
                 
             embeds.append(emb)
-
-        # إضافة الفيديو الـ GIF الجديد في رسالة منفصلة أو إيمبد مستقل في الأسفل تماماً كما طلبت بالمكان الأخضر
-        gif_emb = discord.Embed(color=EMBED_COLOR)
-        gif_emb.set_image(url=GIF_BANNER_URL)
-        embeds.append(gif_emb)
 
         msg_id = g_data.get("webhook_message_id")
         try:
@@ -219,7 +231,7 @@ class RaidSystemCog(commands.Cog):
         await interaction.response.send_message(f"✅ | تم تعيين قناة التوبات الأسبوعية في هذا السيرفر إلى {channel.mention} !", ephemeral=True)
         await self.send_or_update_webhook_top(gid, interaction.guild)
 
-    @app_commands.command(name="set-avatar", description="تحديد سكن روبلوكس لأي توب معين")
+    @app_commands.command(name="set-avatar", description="تحديد سكن أو صورة متحركة GIF لأي توب معين")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_avatar(self, interaction: discord.Interaction):
         await interaction.response.send_modal(CustomAvatarRankModal())
@@ -287,6 +299,20 @@ class RaidSystemCog(commands.Cog):
         save_raid_data(data)
         await self.send_or_update_webhook_top(gid, interaction.guild)
         await interaction.response.send_message(f"✅ | تم التحديث بنجاح", ephemeral=True)
+
+    @app_commands.command(name="set-avatar-remove", description="حذف الصورة المخصصة لتوب معين وإزالتها")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_avatar_remove(self, interaction: discord.Interaction, top_number: int):
+        gid = str(interaction.guild_id)
+        data = load_raid_data()
+        if gid in data and "custom_avatars" in data[gid]:
+            if str(top_number) in data[gid]["custom_avatars"]:
+                del data[gid]["custom_avatars"][str(top_number)]
+                save_raid_data(data)
+                await self.send_or_update_webhook_top(gid, interaction.guild)
+                await interaction.response.send_message(f"✅ | تم إزالة الصورة المخصصة للتوب رقم `{top_number}` بنجاح وإرجاع الشريط المتحرك.", ephemeral=True)
+                return
+        await interaction.response.send_message(f"❌ | لا توجد صورة مخصصة مسجلة للتوب رقم `{top_number}`.", ephemeral=True)
 
     @app_commands.command(name="raid-reset", description="تصفير النقاط")
     async def raid_reset(self, interaction: discord.Interaction, member: discord.Member = None):
