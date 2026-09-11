@@ -1,8 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import json, os, re, time, io, aiohttp
-from PIL import Image, ImageDraw, ImageFont
+import json, os, re, time
 
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
@@ -18,7 +17,7 @@ def load_raid_data():
                 d = json.load(f)
                 for g in d:
                     if isinstance(d[g], dict):
-                        d[g].setdefault("roblox_users", {})
+                        d[g].setdefault("raider_stats", {})
                         d[g].setdefault("member_countries", {})
                         d[g].setdefault("custom_avatars", {})
                         d[g].setdefault("blacklist", [])
@@ -29,59 +28,6 @@ def load_raid_data():
 def save_raid_data(d):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=4)
-
-async def fetch_roblox_avatar(username):
-    try:
-        async with aiohttp.ClientSession() as s:
-            async with s.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [username], "excludeBannedUsers": True}) as r:
-                if r.status != 200: return None
-                j = await r.json()
-                dl = j.get("data", [])
-                if not dl: return None
-                uid = dl[0]["id"]
-            async with s.get(f"https://thumbnails.roblox.com/v1/users/avatar-bust?userIds={uid}&size=420x420&format=Png&isCircular=false") as ir:
-                if ir.status != 200: return None
-                ij = await ir.json()
-                idat = ij.get("data", [])
-                if not idat: return None
-                url = idat[0]["imageUrl"]
-            async with s.get(url) as ar:
-                if ar.status != 200: return None
-                return await ar.read()
-    except: return None
-
-async def download_custom_avatar(url):
-    try:
-        async with aiohttp.ClientSession() as s:
-            async with s.get(url) as r:
-                if r.status == 200:
-                    return await r.read()
-    except: pass
-    return None
-
-async def generate_top_card(idx, name, country, count, abytes):
-    w, h = 600, 220
-    card = Image.new("RGBA", (w, h), (20, 20, 20, 255))
-    draw = ImageDraw.Draw(card)
-    draw.rectangle([5, 5, w - 5, h - 5], outline=(139, 0, 0), width=3)
-    
-    txt = f"╔══『 TOP {idx} 』══╗\n│  {name}\n│  <<< •  • >>>\n│\n│  Country: {country}\n│  —\n│  Raids Joined: {count}"
-    try: font = ImageFont.truetype("arial.ttf", 18)
-    except: font = ImageFont.load_default()
-    
-    draw.text((20, 15), txt, fill=(255, 255, 255, 255), font=font)
-    
-    if abytes:
-        try:
-            aimg = Image.open(io.BytesIO(abytes)).convert("RGBA").resize((145, 145), Image.Resampling.LANCZOS)
-            draw.rectangle([433, 36, 583, 186], outline=(0, 255, 100), width=3)
-            card.paste(aimg, (436, 39), aimg)
-        except: pass
-
-    out = io.BytesIO()
-    card.save(out, format="PNG")
-    out.seek(0)
-    return out
 
 class CustomAvatarModal(discord.ui.Modal, title="🖼️ | تعيين صورة سكن لتوب معين"):
     image_url = discord.ui.TextInput(label="حط رابط الصورة هنا", style=discord.TextStyle.short, required=True)
@@ -193,38 +139,33 @@ class RaidSystemCog(commands.Cog):
 
         stats = g_data.get("raider_stats", {})
         blacklist = g_data.get("blacklist", [])
-        rdict = g_data.get("roblox_users", {})
         cdict = g_data.get("member_countries", {})
         custom_avs = g_data.get("custom_avatars", {})
         
-        # فلترة الأعضاء وترتيبهم تنازلياً بدون تكرار (من لديه نقاط أعلى يظهر أولاً)
+        # فلترة الأعضاء وترتيبهم تنازلياً بدون تكرار
         filtered = {u: c for u, c in stats.items() if u not in blacklist and c > 0}
         top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:20]
         
         if not top: return
 
-        embeds, files = [], []
+        embeds = []
         for i, (uid, cnt) in enumerate(top, 1):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             name = member.mention if member else f"<@{uid}>"
             cou = cdict.get(uid, "—")
             
-            abytes = None
-            if str(i) in custom_avs:
-                abytes = await download_custom_avatar(custom_avs[str(i)])
+            # تصميم النص المطلوب بالشكل الدقيق
+            text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ {name}\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
-            if not abytes:
-                usr = rdict.get(uid)
-                if usr:
-                    abytes = await fetch_roblox_avatar(usr)
-
-            io_card = await generate_top_card(i, name, cou, cnt, abytes)
-            fname = f"top_{i}.png"
-            files.append(discord.File(io_card, filename=fname))
-            emb = discord.Embed(color=EMBED_COLOR)
-            emb.set_image(url=f"attachment://{fname}")
+            emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
+            
+            # إذا كان هناك صورة مخصصة لهذا التوب، يتم إضافتها كصورة مصغرة أو صورة رئيسية للبطاقة حسب الرغبة
+            if str(i) in custom_avs:
+                emb.set_thumbnail(url=custom_avs[str(i)])
+                
             embeds.append(emb)
 
+        # إضافة البانر المتحرك في النهاية
         banner_emb = discord.Embed(color=EMBED_COLOR, title="VLX Clan Automated Weekly Top System")
         banner_emb.set_image(url=GIF_BANNER_URL)
         embeds.append(banner_emb)
@@ -233,12 +174,12 @@ class RaidSystemCog(commands.Cog):
         try:
             if msg_id:
                 msg = await channel.fetch_message(int(msg_id))
-                await msg.edit(content="", embeds=embeds, files=files)
+                await msg.edit(content="", embeds=embeds)
                 return
         except:
             pass
 
-        new_msg = await channel.send(embeds=embeds, files=files)
+        new_msg = await channel.send(embeds=embeds)
         g_data["webhook_message_id"] = new_msg.id
         save_raid_data(data)
 
