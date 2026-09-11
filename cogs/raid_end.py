@@ -31,12 +31,12 @@ def save_raid_data(d):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=4)
 
-class CustomAvatarModal(discord.ui.Modal, title="👤 | تعيين صورة/سكن التوب"):
-    roblox_username = discord.ui.TextInput(
-        label="اكتب يوزر روبلوكس، الإيدي، أو رابط صورة/GIF مباشر", 
+class RobloxTopAvatarModal(discord.ui.Modal, title="🖼️ | تعيين صورة توب روبلوكس"):
+    avatar_link = discord.ui.TextInput(
+        label="أدخل رابط الصورة أو يوزر/إيدي روبلوكس", 
         style=discord.TextStyle.short, 
         required=True,
-        placeholder="مثال: يوزر أو رابط ينتهي بـ .gif"
+        placeholder="مثال: رابط مباشر للصورة أو يوزر روبلوكس"
     )
     def __init__(self, gid, top_num):
         super().__init__()
@@ -44,29 +44,29 @@ class CustomAvatarModal(discord.ui.Modal, title="👤 | تعيين صورة/سك
         self.top_num = str(top_num)
         
     async def on_submit(self, interaction: discord.Interaction):
-        val = self.roblox_username.value.strip()
+        val = self.avatar_link.value.strip()
         if val.startswith("http"):
             link = val
         else:
             if val.isdigit():
                 link = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
             else:
-                link = val if "http" in val else f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
+                link = f"https://www.roblox.com/headshot-thumbnail/image?username={val}&width=420&height=420&format=png"
 
         data = load_raid_data()
         data.setdefault(self.gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
         data[self.gid]["custom_avatars"][self.top_num] = link
         save_raid_data(data)
         
-        await interaction.response.send_message(f"✅ | تم تحديث صورة التوب رقم `{self.top_num}` بنجاح وتحديث اللوحات!", ephemeral=True)
+        await interaction.response.send_message(f"✅ | تم تعيين وتحديث صورة التوب رقم `{self.top_num}` بنجاح وتطبيقها تلقائياً على اللوحة!", ephemeral=True)
         g = interaction.client.get_guild(int(self.gid))
         cog = interaction.client.get_cog("RaidSystemCog")
         if g and cog:
             await cog.update_all_tops(self.gid, g)
 
-class CustomAvatarRankModal(discord.ui.Modal, title="🔢 | حدد رقم التوب المطلوب"):
+class RobloxTopRankModal(discord.ui.Modal, title="🔢 | تحديد رقم التوب"):
     top_position = discord.ui.TextInput(
-        label="أدخل رقم التوب (من 1 إلى 20)", 
+        label="اكتب رقم التوب المراد تغييره (1 إلى 20)", 
         style=discord.TextStyle.short, 
         required=True,
         placeholder="مثال: 1"
@@ -81,7 +81,7 @@ class CustomAvatarRankModal(discord.ui.Modal, title="🔢 | حدد رقم الت
             await interaction.response.send_message("❌ | التوبات محددة من 1 إلى 20 فقط!", ephemeral=True)
             return
         gid = str(interaction.guild_id)
-        await interaction.response.send_modal(CustomAvatarModal(gid, num))
+        await interaction.response.send_modal(RobloxTopAvatarModal(gid, num))
 
 class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
     raid_number = discord.ui.TextInput(label="RAID Number", required=True)
@@ -248,10 +248,10 @@ class RaidSystemCog(commands.Cog):
         await interaction.response.send_message(f"✅ | تم تعيين قناة توب 20 إلى {channel.mention} !", ephemeral=True)
         await self.update_single_board(gid, interaction.guild, 10, 20, "top20_channel_id", "top20_message_id")
 
-    @app_commands.command(name="set-avatar", description="تحديد سكن أو صورة متحركة GIF لأي توب معين")
+    @app_commands.command(name="avatar-roblox-top", description="تعيين صورة أو سكن أفتار لروبلوكس لتوب معين تلقائياً")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_avatar(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(CustomAvatarRankModal())
+    async def avatar_roblox_top(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(RobloxTopRankModal())
 
     @app_commands.command(name="set-country", description="تحديد دولة العضو")
     @app_commands.checks.has_permissions(administrator=True)
@@ -345,7 +345,6 @@ class RaidSystemCog(commands.Cog):
             
             lines.append(f"{medal} <@{uid}> ──> **{cnt}** Raids Won")
 
-        # تقسيم الأسطر إلى Embeds بحيث لا يتجاوز وصف الـ Embed 4000 حرف
         embeds = []
         current_desc = ""
         for line in lines:
