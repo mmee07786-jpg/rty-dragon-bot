@@ -73,7 +73,6 @@ async def generate_top_card(idx, name, country, count, abytes):
     
     if abytes:
         try:
-            # قص وصق الصورة بشكل مربع تماماً داخل الإطار المحدد
             aimg = Image.open(io.BytesIO(abytes)).convert("RGBA").resize((145, 145), Image.Resampling.LANCZOS)
             draw.rectangle([433, 36, 583, 186], outline=(0, 255, 100), width=3)
             card.paste(aimg, (436, 39), aimg)
@@ -98,8 +97,6 @@ class CustomAvatarModal(discord.ui.Modal, title="🖼️ | تعيين صورة �
         save_raid_data(data)
         
         await interaction.response.send_message(f"✅ | تم حفظ الصورة وتحديث التوب رقم `{self.top_num}` فوراً!", ephemeral=True)
-        
-        # تحديث رسالة الويب هوك بشكل مباشر وفوري عند إرسال الرابط
         g = interaction.client.get_guild(int(self.gid))
         cog = interaction.client.get_cog("RaidSystemCog")
         if g and cog:
@@ -189,8 +186,10 @@ class RaidSystemCog(commands.Cog):
         data = load_raid_data()
         if gid not in data: return
         g_data = data[gid]
-        webhook_url = g_data.get("webhook_url")
-        if not webhook_url: return
+        channel_id = g_data.get("webhook_channel_id")
+        if not channel_id: return
+        channel = guild.get_channel(int(channel_id))
+        if not channel: return
 
         stats = g_data.get("raider_stats", {})
         blacklist = g_data.get("blacklist", [])
@@ -198,7 +197,8 @@ class RaidSystemCog(commands.Cog):
         cdict = g_data.get("member_countries", {})
         custom_avs = g_data.get("custom_avatars", {})
         
-        filtered = {u: c for u, c in stats.items() if u not in blacklist}
+        # فلترة الأعضاء وترتيبهم تنازلياً بدون تكرار (من لديه نقاط أعلى يظهر أولاً)
+        filtered = {u: c for u, c in stats.items() if u not in blacklist and c > 0}
         top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:20]
         
         if not top: return
@@ -225,41 +225,28 @@ class RaidSystemCog(commands.Cog):
             emb.set_image(url=f"attachment://{fname}")
             embeds.append(emb)
 
-        banner_emb = discord.Embed(color=EMBED_COLOR)
+        banner_emb = discord.Embed(color=EMBED_COLOR, title="VLX Clan Automated Weekly Top System")
         banner_emb.set_image(url=GIF_BANNER_URL)
         embeds.append(banner_emb)
 
-        payload_embeds = []
-        for idx, emb in enumerate(embeds):
-            d = {"color": EMBED_COLOR}
-            if emb.image and emb.image.url:
-                d["image"] = {"url": emb.image.url}
-            payload_embeds.append(d)
-
-        form_data = aiohttp.FormData()
-        form_data.add_field('payload_json', json.dumps({"embeds": payload_embeds}))
-        for f in files:
-            f.fp.seek(0)
-            form_data.add_field(f'files[{files.index(f)}]', f.fp, filename=f.filename, content_type='image/png')
-
-        async with aiohttp.ClientSession() as session:
-            msg_id = g_data.get("webhook_message_id")
+        msg_id = g_data.get("webhook_message_id")
+        try:
             if msg_id:
-                edit_url = f"{webhook_url}/messages/{msg_id}"
-                async with session.patch(edit_url, data=form_data) as resp:
-                    if resp.status == 200: return
-            
-            async with session.post(f"{webhook_url}?wait=true", data=form_data) as resp:
-                if resp.status == 200:
-                    res_json = await resp.json()
-                    g_data["webhook_message_id"] = res_json.get("id")
-                    save_raid_data(data)
+                msg = await channel.fetch_message(int(msg_id))
+                await msg.edit(content="", embeds=embeds, files=files)
+                return
+        except:
+            pass
+
+        new_msg = await channel.send(embeds=embeds, files=files)
+        g_data["webhook_message_id"] = new_msg.id
+        save_raid_data(data)
 
     @tasks.loop(hours=168)
     async def weekly_webhook_loop(self):
         data = load_raid_data()
         for gid, g_data in data.items():
-            if g_data.get("webhook_url"):
+            if g_data.get("webhook_channel_id"):
                 guild = self.bot.get_guild(int(gid))
                 if guild:
                     await self.send_or_update_webhook_top(gid, guild)
@@ -269,6 +256,19 @@ class RaidSystemCog(commands.Cog):
 
     @weekly_webhook_loop.before_loop
     async def before_weekly_webhook(self): await self.bot.wait_until_ready()
+
+    @app_commands.command(name="set-top-channel", description="تعيين قناة التوبات الأسبوعية في السيرفر")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_top_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        gid = str(interaction.guild_id)
+        data = load_raid_data()
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
+        data[gid]["webhook_channel_id"] = channel.id
+        data[gid].pop("webhook_message_id", None)
+        save_raid_data(data)
+        
+        await interaction.response.send_message(f"✅ | تم تعيين قناة التوبات الأسبوعية في هذا السيرفر إلى {channel.mention} !", ephemeral=True)
+        await self.send_or_update_webhook_top(gid, interaction.guild)
 
     @app_commands.command(name="set-avatar", description="تحديد وضبط صورة سكن لأي توب معين (1 إلى 20)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -311,33 +311,6 @@ class RaidSystemCog(commands.Cog):
         save_raid_data(data)
         await interaction.response.send_message(f"✅ | تم التحديث (`{username.strip()}`)", ephemeral=True)
         await self.send_or_update_webhook_top(gid, interaction.guild)
-
-    @app_commands.command(name="set-raid-webhook", description="تعيين ويب هوك توب الرايدات")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_raid_webhook(self, interaction: discord.Interaction, webhook_url: str, channel: discord.TextChannel):
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        data[gid]["webhook_url"] = webhook_url
-        data[gid]["webhook_channel_id"] = channel.id
-        data[gid].pop("webhook_message_id", None)
-        save_raid_data(data)
-        await interaction.response.send_message("✅ | تم التفعيل بنجاح!", ephemeral=True)
-        await self.send_or_update_webhook_top(gid, interaction.guild)
-
-    @app_commands.command(name="disable-raid-webhook", description="تعطيل الويب هوك")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def disable_raid_webhook(self, interaction: discord.Interaction):
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        if gid in data and "webhook_url" in data[gid]:
-            data[gid].pop("webhook_url", None)
-            data[gid].pop("webhook_channel_id", None)
-            data[gid].pop("webhook_message_id", None)
-            save_raid_data(data)
-            await interaction.response.send_message("✅ | تم التعطيل.", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ | غير مفعلة أساساً.", ephemeral=True)
 
     @app_commands.command(name="sync", description="مزامنة الأوامر")
     async def sync_commands(self, interaction: discord.Interaction):
@@ -391,3 +364,4 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
+
