@@ -309,7 +309,12 @@ class RaidSystemCog(commands.Cog):
         synced = await self.bot.tree.sync()
         await interaction.followup.send(f"✅ | تمت المزامنة بنجاح (`{len(synced)}` أمر)", ephemeral=True)
 
-    @app_commands.command(name="raid-list", description="عرض أكثر 50 عضواً مشاركاً في الرايدات")
+    @app_commands.command(name="raid-mentions", description="نشر قائمة المنشنات للرايد")
+    async def raid_mentions(self, interaction: discord.Interaction, mentions_content: str):
+        emb = discord.Embed(title="👤 | Mentions", description=mentions_content, color=EMBED_COLOR)
+        await interaction.response.send_message(embed=emb)
+
+    @app_commands.command(name="raid-list", description="عرض أكثر 50 عضواً مشاركاً في الرايدات كـ Embed")
     async def raid_list(self, interaction: discord.Interaction):
         gid = str(interaction.guild_id)
         data = load_raid_data()
@@ -340,20 +345,24 @@ class RaidSystemCog(commands.Cog):
             
             lines.append(f"{medal} <@{uid}> ──> **{cnt}** Raids Won")
 
-        chunk = ""
-        chunks = []
+        # تقسيم الأسطر إلى Embeds بحيث لا يتجاوز وصف الـ Embed 4000 حرف
+        embeds = []
+        current_desc = ""
         for line in lines:
-            if len(chunk) + len(line) + 1 > 1900:
-                chunks.append(chunk)
-                chunk = line + "\n"
+            if len(current_desc) + len(line) + 1 > 3900:
+                emb = discord.Embed(title="🏆 | Top Raid Participants", description=current_desc, color=EMBED_COLOR)
+                embeds.append(emb)
+                current_desc = line + "\n"
             else:
-                chunk += line + "\n"
-        if chunk:
-            chunks.append(chunk)
+                current_desc += line + "\n"
+        
+        if current_desc:
+            emb = discord.Embed(title="🏆 | Top Raid Participants", description=current_desc, color=EMBED_COLOR)
+            embeds.append(emb)
 
-        await interaction.response.send_message(content=chunks[0], ephemeral=False)
-        for extra_chunk in chunks[1:]:
-            await interaction.channel.send(content=extra_chunk)
+        await interaction.response.send_message(embed=embeds[0], ephemeral=False)
+        for extra_emb in embeds[1:]:
+            await interaction.channel.send(embed=extra_emb)
 
     @app_commands.command(name="raid-add", description="إضافة أو خصم عدد الرايدات لعضو معين")
     async def raid_add(self, interaction: discord.Interaction, member: discord.Member, amount: int):
