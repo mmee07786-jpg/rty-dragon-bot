@@ -280,18 +280,33 @@ class RaidSystemCog(commands.Cog):
         emb = discord.Embed(title="👥 | Mentions", description=mentions_content, color=EMBED_COLOR)
         await interaction.response.send_message(embed=emb)
 
-    @app_commands.command(name="raid-add", description="إضافة نقاط لعضو")
+    @app_commands.command(name="raid-add", description="إضافة أو خصم عدد الرايدات لعضو معين")
+    @app_commands.checks.has_permissions(administrator=True)
     async def raid_add(self, interaction: discord.Interaction, member: discord.Member, amount: int):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("❌ | للمالك فقط!", ephemeral=True)
-            return
         gid = str(interaction.guild_id)
         data = load_raid_data()
         data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
+        
+        current = data[gid]["raider_stats"].get(str(member.id), 0)
+        new_total = current + amount
+        data[gid]["raider_stats"][str(member.id)] = new_total
+        save_raid_data(data)
+        
+        await self.send_or_update_webhook_top(gid, interaction.guild)
+        await interaction.response.send_message(f"✅ | تمت إضافة `{amount}` رايد لـ {member.mention} وأصبح إجمالي رصيده: `{new_total}`", ephemeral=True)
+
+    @app_commands.command(name="raid-set", description="تعيين عدد الرايدات المباشر لعضو معين")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def raid_set(self, interaction: discord.Interaction, member: discord.Member, amount: int):
+        gid = str(interaction.guild_id)
+        data = load_raid_data()
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
+        
         data[gid]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
+        
         await self.send_or_update_webhook_top(gid, interaction.guild)
-        await interaction.response.send_message(f"✅ | تم التحديث بنجاح", ephemeral=True)
+        await interaction.response.send_message(f"✅ | تم تعيين رصيد {member.mention} مباشرة إلى: `{amount}` رايد", ephemeral=True)
 
     @app_commands.command(name="set-avatar-remove", description="حذف الصورة المخصصة لتوب معين وإزالتها")
     @app_commands.checks.has_permissions(administrator=True)
