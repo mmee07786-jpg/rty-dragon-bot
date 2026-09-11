@@ -161,6 +161,7 @@ class RaidSystemCog(commands.Cog):
         blacklist = g_data.get("blacklist", [])
         cdict = g_data.get("member_countries", {})
         custom_avs = g_data.get("custom_avatars", {})
+        roblox_users = g_data.get("roblox_users", {})
         
         filtered = {u: c for u, c in stats.items() if u not in blacklist and c > 0}
         top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:20]
@@ -170,10 +171,16 @@ class RaidSystemCog(commands.Cog):
         embeds = []
         for i, (uid, cnt) in enumerate(top, 1):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
-            name = member.mention if member else f"<@{uid}>"
+            
+            # جلب يوزر روبلوكس إن وجد، وإلا استخدام منشن العضو أو اسمه
+            rbx_name = roblox_users.get(uid)
+            if not rbx_name:
+                rbx_name = member.name if member else f"User_{uid}"
+                
             cou = cdict.get(uid, "—")
             
-            text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ {name}\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
+            # التعديل الجديد للشكل المطلوب في رسالة التوبات
+            text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ <<< • {rbx_name} • >>>\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
             if str(i) in custom_avs:
@@ -256,14 +263,25 @@ class RaidSystemCog(commands.Cog):
         admin_cooldowns[gid] = now
         await interaction.response.send_modal(RaidEndInfoModal())
 
-    @app_commands.command(name="set-roblox", description="ربط يوزر روبلوكس العام")
+    @app_commands.command(name="set-roblox", description="ربط يوزر روبلوكس الخاص بك")
     async def set_roblox(self, interaction: discord.Interaction, username: str):
         gid = str(interaction.guild_id)
         data = load_raid_data()
         data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
         data[gid]["roblox_users"][str(interaction.user.id)] = username.strip()
         save_raid_data(data)
-        await interaction.response.send_message(f"✅ | تم التحديث (`{username.strip()}`)", ephemeral=True)
+        await interaction.response.send_message(f"✅ | تم ربط يوزر روبلوكس الخاص بك (`{username.strip()}`)", ephemeral=True)
+        await self.send_or_update_webhook_top(gid, interaction.guild)
+
+    @app_commands.command(name="set-roblox-user", description="ربط يوزر روبلوكس لعضو آخر (للإدارة)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_roblox_user(self, interaction: discord.Interaction, member: discord.Member, username: str):
+        gid = str(interaction.guild_id)
+        data = load_raid_data()
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
+        data[gid]["roblox_users"][str(member.id)] = username.strip()
+        save_raid_data(data)
+        await interaction.response.send_message(f"✅ | تم ربط يوزر روبلوكس `{username.strip()}` لـ {member.mention}", ephemeral=True)
         await self.send_or_update_webhook_top(gid, interaction.guild)
 
     @app_commands.command(name="sync", description="مزامنة الأوامر يدوياً")
