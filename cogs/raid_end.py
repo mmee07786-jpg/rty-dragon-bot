@@ -6,7 +6,6 @@ import json, os, re, time
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
 
-# رابط الشريط المتحرك (GIF) الذي سيتم وضعه في أسفل كل إمبد
 GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa4c663&is=6aa374e3&hm=4b16c8a711658887aa9f018379775fff77ef8c176114498832a5a3dc10e5b8eb&"
 
 OWNER_ID = 1107355943408259112
@@ -31,7 +30,6 @@ def save_raid_data(d):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=4)
 
-# مودال يطلب يوزر روبلوكس أو رابط الصورة المتحركة/العادية بعد تحديد رقم التوب
 class CustomAvatarModal(discord.ui.Modal, title="👤 | تعيين صورة/سكن التوب"):
     roblox_username = discord.ui.TextInput(
         label="اكتب يوزر روبلوكس، الإيدي، أو رابط صورة/GIF مباشر", 
@@ -46,7 +44,6 @@ class CustomAvatarModal(discord.ui.Modal, title="👤 | تعيين صورة/سك
         
     async def on_submit(self, interaction: discord.Interaction):
         val = self.roblox_username.value.strip()
-        
         if val.startswith("http"):
             link = val
         else:
@@ -66,7 +63,6 @@ class CustomAvatarModal(discord.ui.Modal, title="👤 | تعيين صورة/سك
         if g and cog:
             await cog.send_or_update_webhook_top(self.gid, g)
 
-# مودال الخطوة الأولى: يطلب رقم التوب أولاً
 class CustomAvatarRankModal(discord.ui.Modal, title="🔢 | حدد رقم التوب المطلوب"):
     top_position = discord.ui.TextInput(
         label="أدخل رقم التوب (من 1 إلى 20)", 
@@ -177,12 +173,9 @@ class RaidSystemCog(commands.Cog):
             name = member.mention if member else f"<@{uid}>"
             cou = cdict.get(uid, "—")
             
-            # التصميم النصي الدقيق لكل توب
             text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ {name}\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
-            
-            # إذا قام المشرف بتعيين صورة/سكن خاص لهذا التوب، يتم وضعه، وإلا يتم وضع الشريط المتحرك (GIF Banner) تلقائياً في كل إمبد
             if str(i) in custom_avs:
                 emb.set_image(url=custom_avs[str(i)])
             else:
