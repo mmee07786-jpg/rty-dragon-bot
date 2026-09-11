@@ -5,7 +5,7 @@ import json, os, re, time
 
 DATA_FILE = "raid_data.json"
 EMBED_COLOR = 0x8B0000
-GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa41da3&is=6aa2cc23&hm=d6ba53f570b7920d6f2f3fe64ae84729c07eaf4503123b6d2bb7c9f3733db944&"
+GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa4c663&is=6aa374e3&hm=4b16c8a711658887aa9f018379775fff77ef8c176114498832a5a3dc10e5b8eb&"
 
 OWNER_ID = 1107355943408259112
 admin_cooldowns = {}
@@ -38,18 +38,13 @@ class CustomAvatarModal(discord.ui.Modal, title="👤 | جلب وحفظ سكن �
     async def on_submit(self, interaction: discord.Interaction):
         val = self.roblox_username.value.strip()
         
-        # إذا أدخل رابطاً مباشراً، نستخدمه مباشرة، وإذا أدخل يوزراً أو رقماً نحوله لرابط أفتار روبلوكس
         if val.startswith("http"):
             link = val
         else:
-            # التحقق إذا كان الآيدي رقماً أو يوزراً، هنا سنعالج الرابط تلقائياً
-            # ملاحظة: إذا كان رقم ايدي الحساب مباشرة
             if val.isdigit():
                 link = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
             else:
-                # إذا كان يوزراً نصياً، سنحاول جلبه أو استخدامه عبر البحث المباشر في روبلوكس
-                # كمرحلة أولى دقيقة، إذا كان نصاً سنضع رابط البحث أو إذا وضع الايدي المباشر
-                link = f"https://www.roblox.com/headshot-thumbnail/image?userId={val}&width=420&height=420&format=png" if val.isdigit() else f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
+                link = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
 
         data = load_raid_data()
         data.setdefault(self.gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
@@ -74,7 +69,6 @@ class CustomAvatarRankModal(discord.ui.Modal, title="🔢 | حدد رقم الت
             await interaction.response.send_message("❌ | التوبات محددة من 1 إلى 20 فقط!", ephemeral=True)
             return
         gid = str(interaction.guild_id)
-        # فتح المودال الثاني الخاص بطلب يوزر روبلوكس لهذا التوب المحدد
         await interaction.response.send_modal(CustomAvatarModal(gid, num))
 
 class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
@@ -168,21 +162,21 @@ class RaidSystemCog(commands.Cog):
             name = member.mention if member else f"<@{uid}>"
             cou = cdict.get(uid, "—")
             
-            # التصميم النصي الدقيق مع الشريط الجانبي الأحمر للـ Embed وخلوه تماماً من حقل يوزر روبلوكس النصي
+            # التصميم النصي الدقيق مع الشريط الجانبي الأحمر للـ Embed وخلوه تماماً من يوزر روبلوكس بالنص
             text_desc = f"╔══『 TOP {i} 』══╗\n│  │   │ {name}\n│  <<< •  • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
             
             emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
             
-            # وضع صورة السكن كـ Thumbnail حصرياً بناءً على رقم التوب المحدد بدون حشو بالنص
+            # وضع صورة السكن كصورة رئيسية (Image) في أسفل بطاقة التوب تماماً كما في طلبك وصورتك
             if str(i) in custom_avs:
-                emb.set_thumbnail(url=custom_avs[str(i)])
+                emb.set_image(url=custom_avs[str(i)])
                 
             embeds.append(emb)
 
-        # بانر النهاية المتحرك
-        banner_emb = discord.Embed(color=EMBED_COLOR, title="VLX Clan Automated Weekly Top System")
-        banner_emb.set_image(url=GIF_BANNER_URL)
-        embeds.append(banner_emb)
+        # إضافة الفيديو الـ GIF الجديد في رسالة منفصلة أو إيمبد مستقل في الأسفل تماماً كما طلبت بالمكان الأخضر
+        gif_emb = discord.Embed(color=EMBED_COLOR)
+        gif_emb.set_image(url=GIF_BANNER_URL)
+        embeds.append(gif_emb)
 
         msg_id = g_data.get("webhook_message_id")
         try:
@@ -225,7 +219,7 @@ class RaidSystemCog(commands.Cog):
         await interaction.response.send_message(f"✅ | تم تعيين قناة التوبات الأسبوعية في هذا السيرفر إلى {channel.mention} !", ephemeral=True)
         await self.send_or_update_webhook_top(gid, interaction.guild)
 
-    @app_commands.command(name="set-avatar", description="تحديد سكن روبلوكس لأي توب معين (يسألك عن رقم التوب ثم يوزر روبلوكس)")
+    @app_commands.command(name="set-avatar", description="تحديد سكن روبلوكس لأي توب معين")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_avatar(self, interaction: discord.Interaction):
         await interaction.response.send_modal(CustomAvatarRankModal())
@@ -319,3 +313,4 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
+
