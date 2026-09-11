@@ -32,18 +32,29 @@ def save_raid_data(d):
         json.dump(d, f, ensure_ascii=False, indent=4)
 
 class RobloxTopAvatarModal(discord.ui.Modal, title="🖼️ | تعيين صورة توب روبلوكس"):
-    avatar_link = discord.ui.TextInput(
-        label="أدخل رابط الصورة أو يوزر/إيدي روبلوكس", 
+    top_position = discord.ui.TextInput(
+        label="رقم التوب المراد تغييره (من 1 إلى 20)", 
         style=discord.TextStyle.short, 
         required=True,
-        placeholder="مثال: رابط مباشر للصورة أو يوزر روبلوكس"
+        placeholder="مثال: 1"
     )
-    def __init__(self, gid, top_num):
-        super().__init__()
-        self.gid = gid
-        self.top_num = str(top_num)
-        
+    avatar_link = discord.ui.TextInput(
+        label="رابط الصورة أو يوزر/إيدي روبلوكس", 
+        style=discord.TextStyle.short, 
+        required=True,
+        placeholder="مثال: رابط مباشر أو يوزر روبلوكس"
+    )
+    
     async def on_submit(self, interaction: discord.Interaction):
+        pos_val = self.top_position.value.strip()
+        if not pos_val.isdigit():
+            await interaction.response.send_message("❌ | يرجى كتابة رقم توب صحيح بين 1 و 20!", ephemeral=True)
+            return
+        num = int(pos_val)
+        if num < 1 or num > 20:
+            await interaction.response.send_message("❌ | التوبات محددة من 1 إلى 20 فقط!", ephemeral=True)
+            return
+            
         val = self.avatar_link.value.strip()
         if val.startswith("http"):
             link = val
@@ -53,35 +64,17 @@ class RobloxTopAvatarModal(discord.ui.Modal, title="🖼️ | تعيين صور�
             else:
                 link = f"https://www.roblox.com/headshot-thumbnail/image?username={val}&width=420&height=420&format=png"
 
+        gid = str(interaction.guild_id)
         data = load_raid_data()
-        data.setdefault(self.gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        data[self.gid]["custom_avatars"][self.top_num] = link
+        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
+        data[gid]["custom_avatars"][str(num)] = link
         save_raid_data(data)
         
-        await interaction.response.send_message(f"✅ | تم تعيين وتحديث صورة التوب رقم `{self.top_num}` بنجاح وتطبيقها تلقائياً على اللوحة!", ephemeral=True)
-        g = interaction.client.get_guild(int(self.gid))
+        await interaction.response.send_message(f"✅ | تم تعيين وتحديث صورة التوب رقم `{num}` بنجاح وتطبيقها تلقائياً على اللوحة!", ephemeral=True)
+        g = interaction.client.get_guild(int(gid))
         cog = interaction.client.get_cog("RaidSystemCog")
         if g and cog:
-            await cog.update_all_tops(self.gid, g)
-
-class RobloxTopRankModal(discord.ui.Modal, title="🔢 | تحديد رقم التوب"):
-    top_position = discord.ui.TextInput(
-        label="اكتب رقم التوب المراد تغييره (1 إلى 20)", 
-        style=discord.TextStyle.short, 
-        required=True,
-        placeholder="مثال: 1"
-    )
-    async def on_submit(self, interaction: discord.Interaction):
-        val = self.top_position.value.strip()
-        if not val.isdigit():
-            await interaction.response.send_message("❌ | يرجى كتابة رقم صحيح بين 1 و 20!", ephemeral=True)
-            return
-        num = int(val)
-        if num < 1 or num > 20:
-            await interaction.response.send_message("❌ | التوبات محددة من 1 إلى 20 فقط!", ephemeral=True)
-            return
-        gid = str(interaction.guild_id)
-        await interaction.response.send_modal(RobloxTopAvatarModal(gid, num))
+            await cog.update_all_tops(gid, g)
 
 class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
     raid_number = discord.ui.TextInput(label="RAID Number", required=True)
@@ -251,7 +244,7 @@ class RaidSystemCog(commands.Cog):
     @app_commands.command(name="avatar-roblox-top", description="تعيين صورة أو سكن أفتار لروبلوكس لتوب معين تلقائياً")
     @app_commands.checks.has_permissions(administrator=True)
     async def avatar_roblox_top(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(RobloxTopRankModal())
+        await interaction.response.send_modal(RobloxTopAvatarModal())
 
     @app_commands.command(name="set-country", description="تحديد دولة العضو")
     @app_commands.checks.has_permissions(administrator=True)
