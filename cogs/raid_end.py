@@ -20,6 +20,10 @@ def load_raid_data():
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             try:
                 data = json.load(f)
+                # التأكد من وجود خانة صور التوبات
+                for g_id in data:
+                    if isinstance(data[g_id], dict):
+                        data[g_id].setdefault("top_avatars", {})
                 return data
             except json.JSONDecodeError:
                 return {}
@@ -28,14 +32,6 @@ def load_raid_data():
 def save_raid_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-
-def get_global_stats(data):
-    global_stats = {}
-    for g_id, g_data in data.items():
-        if isinstance(g_data, dict) and "raider_stats" in g_data:
-            for uid, count in g_data["raider_stats"].items():
-                global_stats[uid] = global_stats.get(uid, 0) + count
-    return global_stats
 
 class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
     raid_number = discord.ui.TextInput(label="RAID Number", placeholder="", style=discord.TextStyle.short, required=True)
@@ -106,7 +102,7 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         data = load_raid_data()
 
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "top_avatars": {}}
 
         data[guild_id]["win_streak"] = data[guild_id].get("win_streak", 0) + 1
         current_streak = data[guild_id]["win_streak"]
@@ -161,6 +157,54 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media Proofs"):
         await interaction.channel.send(content="🏁 **Raid Final Report & Results:**", embed=embed)
         await interaction.followup.send("✅ | تم نشر التقرير وتحديث نقاط الرايدات في هذا السيرفر بنجاح!", ephemeral=True)
 
+# نافذة إدخال رقم التوب ورابط الصورة
+class TopAvatarModal(discord.ui.Modal, title="🖼️ | تعيين صورة التوب"):
+    top_rank = discord.ui.TextInput(
+        label="أدخل رقم التوب (من 1 إلى 20)",
+        placeholder="مثال: 1 أو 5 أو 20...",
+        style=discord.TextStyle.short,
+        required=True
+    )
+    image_url = discord.ui.TextInput(
+        label="رابط الصورة",
+        placeholder="ضع رابط الصورة هنا...",
+        style=discord.TextStyle.short,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        # التحقق هل الرقم المدخل صالح أم لا
+        try:
+            rank = int(self.top_rank.value.strip())
+        except ValueError:
+            await interaction.followup.send("❌ | يرجى إدخال رقم صحيحي صحيح فقط!", ephemeral=True)
+            return
+
+        if rank < 1 or rank > 20:
+            await interaction.followup.send("❌ | ماكو هيك توب! (أقصى حد هو توب 20)", ephemeral=True)
+            return
+
+        guild_id = str(interaction.guild_id)
+        data = load_raid_data()
+        if guild_id not in data:
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "top_avatars": {}}
+        
+        if "top_avatars" not in data[guild_id]:
+            data[guild_id]["top_avatars"] = {}
+
+        # حفظ رابط الصورة للترتيب المحدد
+        data[guild_id]["top_avatars"][str(rank)] = self.image_url.value.strip()
+        save_raid_data(data)
+
+        # تحديث الويب هوك فوراً إذا كان مفَعلاً
+        cog = interaction.client.get_cog("RaidSystemCog")
+        if cog:
+            await cog.send_or_update_webhook_top(guild_id, interaction.guild)
+
+        await interaction.followup.send(f"✅ | تم حفظ صورة التوب رقم **{rank}** وتحديث القائمة بنجاح!", ephemeral=True)
+
 class RaidSystemCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -181,18 +225,25 @@ class RaidSystemCog(commands.Cog):
 
         stats = g_data.get("raider_stats", {})
         sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:20]
+        top_avatars = g_data.get("top_avatars", {})
 
         description = ""
         for index, (uid, count) in enumerate(sorted_raiders, start=1):
             member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
             name = member.mention if member else f"User ID: {uid}"
             
-            # التصميم المطابق للصورة تماماً
+            # جلب رابط الصورة الخاصة بهذا التوب إن وجدت
+            avatar_line = ""
+            if str(index) in top_avatars:
+                avatar_line = f"│ Image: {top_avatars[str(index)]}\n"
+
+            # التصميم المطابق لطلبك تماماً مع منشن العضو وصورة التوب
             description += (
                 f"┌─── 「 TOP {index} 」 ───┐\n"
                 f"│ │\n"
                 f"│ <<< • . >>>\n"
                 f"│ {name}\n"
+                f"{avatar_line}"
                 f"│ Raids Joined: **{count}**\n"
                 f"└─────────────────────┘\n\n"
             )
@@ -234,6 +285,7 @@ class RaidSystemCog(commands.Cog):
                     # تصفير النقاط وسلسلة الانتصارات أسبوعياً تلقائياً
                     g_data["raider_stats"] = {}
                     g_data["win_streak"] = 0
+                    g_data["top_avatars"] = {} # تصفير صور التوبات أسبوعياً أيضاً مع الجدول
                     save_raid_data(data)
 
     @weekly_webhook_loop.before_loop
@@ -270,6 +322,11 @@ class RaidSystemCog(commands.Cog):
         admin_cooldowns[guild_id] = current_time
         await interaction.response.send_modal(RaidEndInfoModal())
 
+    @app_commands.command(name="set-raider-avatar", description="إضافة أو تعديل صورة اللاعب في لوحة توب الرايدات أسبوعياً")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_raider_avatar(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(TopAvatarModal())
+
     @app_commands.command(name="set-raid-webhook", description="[ خاص بالإدارة ] تعيين رابط الويب هوك لعرض أفضل 20 رايدر بالشكل المزخرف وتحديثه أسبوعياً")
     @app_commands.describe(webhook_url="الصق رابط الويب هوك هنا", channel="القناة التي سيتم إرسال التوب فيها")
     @app_commands.checks.has_permissions(administrator=True)
@@ -277,11 +334,10 @@ class RaidSystemCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "top_avatars": {}}
 
         data[guild_id]["webhook_url"] = webhook_url
         data[guild_id]["webhook_channel_id"] = channel.id
-        # مسح الـ message_id القديم ليتم إرسال رسالة جديدة بالويب هوك فوراً
         data[guild_id].pop("webhook_message_id", None)
         save_raid_data(data)
 
@@ -315,69 +371,11 @@ class RaidSystemCog(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ | حدث خطأ أثناء المزامنة: `{e}`", ephemeral=True)
 
-    @app_commands.command(name="raid-list", description="Auto-generate and send the top 30 raiders list for this server")
-    async def raid_list(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild_id)
-        data = load_raid_data()
-        guild_data = data.get(guild_id, {})
-        stats = guild_data.get("raider_stats", {})
-
-        if not stats:
-            await interaction.response.send_message("❌ | No raid statistics recorded yet in this server!", ephemeral=True)
-            return
-
-        sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:30]
-        description = ""
-        for index, (uid, count) in enumerate(sorted_raiders, start=1):
-            user = interaction.guild.get_member(int(uid)) or self.bot.get_user(int(uid))
-            name = user.mention if user else f"User ID: {uid}"
-            medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"#{index}"
-            description += f"{medal} {name} ──> **{count}** Raids Won\n"
-
-        embed = discord.Embed(title="📋 | VLX Clan Active Raiders List (Top 30 - This Server)", description=description, color=EMBED_COLOR)
-        embed.set_footer(text=f"Requested by {interaction.user.name} | VLX Clan System")
-        await interaction.response.send_message(embed=embed)
-
     @app_commands.command(name="raid-mentions", description="نشر منشنات المشاركين")
     @app_commands.describe(mentions_content="الصق منشنات الأعضاء هنا")
     async def raid_mentions(self, interaction: discord.Interaction, mentions_content: str):
         embed = discord.Embed(title="👥 | Raid Members Mentions", description=mentions_content, color=EMBED_COLOR)
         embed.set_footer(text=f"Mentions by {interaction.user.name} | VLX Clan")
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="raid-rank", description="معرفة عدد الرايدات العالمية للعضو")
-    @app_commands.describe(member="اختر العضو (اختياري)")
-    async def raid_rank(self, interaction: discord.Interaction, member: discord.Member = None):
-        target = member or interaction.user
-        data = load_raid_data()
-        global_stats = get_global_stats(data)
-        count = global_stats.get(str(target.id), 0)
-        
-        embed = discord.Embed(title="📊 | Global Raider Rank Statistics", color=EMBED_COLOR)
-        embed.set_thumbnail(url=target.display_avatar.url)
-        embed.add_field(name="User", value=target.mention, inline=False)
-        embed.add_field(name="Total Global Raids Participated", value=f"🛡️ `{count} Raids`", inline=False)
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="raid-top", description="عرض قائمة أفضل المشاركين عالمياً")
-    async def raid_top(self, interaction: discord.Interaction):
-        data = load_raid_data()
-        global_stats = get_global_stats(data)
-        
-        if not global_stats:
-            await interaction.response.send_message("❌ | لا توجد أي إحصائيات مسجلة عالمياً حتى الآن!", ephemeral=True)
-            return
-
-        sorted_raiders = sorted(global_stats.items(), key=lambda x: x[1], reverse=True)[:10]
-        description = ""
-        for index, (uid, count) in enumerate(sorted_raiders, start=1):
-            user = interaction.guild.get_member(int(uid)) or self.bot.get_user(int(uid))
-            name = user.mention if user else f"User ID: {uid}"
-            medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"#{index}"
-            description += f"{medal} {name} ──> **{count}** Raids\n"
-
-        embed = discord.Embed(title="🏆 | VLX Clan Global Raid Leaderboard (Top 10)", description=description, color=EMBED_COLOR)
-        embed.set_footer(text="VLX Clan Global Statistics")
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="raid-add", description="[ Owner Only ] إضافة أو تعيين عدد الرايدات لعضو معين")
@@ -390,7 +388,7 @@ class RaidSystemCog(commands.Cog):
         guild_id = str(interaction.guild_id)
         data = load_raid_data()
         if guild_id not in data:
-            data[guild_id] = {"raider_stats": {}, "win_streak": 0}
+            data[guild_id] = {"raider_stats": {}, "win_streak": 0, "top_avatars": {}}
             
         data[guild_id]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
@@ -427,8 +425,10 @@ class RaidSystemCog(commands.Cog):
         else:
             data[guild_id]["raider_stats"] = {}
             data[guild_id]["win_streak"] = 0
+            data[guild_id]["top_avatars"] = {}
             save_raid_data(data)
             await interaction.response.send_message("✅ | تم تصفير جميع إحصائيات وسلسلة انتصارات هذا السيرفر بالكامل بنجاح!", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
+
