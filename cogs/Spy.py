@@ -7,10 +7,10 @@ import io
 import time
 from datetime import datetime, timedelta, timezone
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-genai.configure(api_key=GEMINI_API_KEY)
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 MODELS_FALLBACK = [
     "gemini-2.5-flash",
@@ -19,26 +19,8 @@ MODELS_FALLBACK = [
     "gemini-2.5-pro"
 ]
 
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True 
-intents.moderation = True
-intents.guilds = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-user_memory = {}
-MEMORY_TIMEOUT = 3600
 OWNER_ID = 1107355943408259112
-
-@bot.event
-async def on_ready():
-    try:
-        await bot.tree.sync()
-        print("🔄 تم مزامنة أوامر السلاش بنجاح.")
-    except Exception as e:
-        print(f"⚠️ فشل مزامنة الأوامر: {e}")
-    print(f"🚀 | بوت itzF18 شغال وبكامل الكفاءة: {bot.user.name}")
+MEMORY_TIMEOUT = 3600
 
 class ServerSelect(discord.ui.Select):
     def __init__(self, bot_instance):
@@ -353,116 +335,123 @@ class ServerView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(ServerSelect(bot_instance))
 
-@bot.command(name="سيرفر", aliases=["servers", "سيرفرات"])
-async def list_servers(ctx):
-    if ctx.author.id != OWNER_ID:
-        return  # البوت يسكت تماماً إذا كتبها شخص غيرك بالعام
+class Spy(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.user_memory = {}
 
-    if not bot.guilds:
-        await ctx.send("عيوني فهد، أنا لست منضماً إلى أي سيرفر حالياً.")
-        return
+    @commands.Cog.listener()
+    async def on_ready(self):
+        print(f"🚀 | Cog Spy شغال بنجاح.")
 
-    view = ServerView(bot)
-    embed = discord.Embed(
-        title="🕵️‍♂️ لوحة سيطرة واستخبارات itzF18",
-        description="اختر السيرفر المطلوب ليصلك تقرير التجسس ورسائل القنوات مباشرة إلى **رسائلك الخاصة (DM)**:",
-        color=0x2b2d31
-    )
-    await ctx.send(embed=embed, view=view, delete_after=180)
+    @commands.command(name="سيرفر", aliases=["servers", "سيرفرات"])
+    async def list_servers(self, ctx):
+        if ctx.author.id != OWNER_ID:
+            return  # البوت يسكت تماماً إذا كتبها شخص غيرك بالعام
 
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    await bot.process_commands(message)
-
-    if bot.user.mentioned_in(message) and not message.mention_everyone:
-        clean_prompt = message.content.replace(f"<@{bot.user.id}>", "").replace(f"<@!{bot.user.id}>", "").strip()
-        
-        image_content = None
-        if message.attachments:
-            for attachment in message.attachments:
-                if attachment.content_type and "image" in attachment.content_type:
-                    try:
-                        image_bytes = await attachment.read()
-                        image_content = Image.open(io.BytesIO(image_bytes))
-                        break
-                    except Exception as e:
-                        print(f"⚠️ خطأ بتحميل الصورة: {e}")
-
-        if not clean_prompt and not image_content:
-            await message.reply("هلا بيك فهد! وياك، شكو ماكو؟")
+        if not self.bot.guilds:
+            await ctx.send("عيوني فهد، أنا لست منضماً إلى أي سيرفر حالياً.")
             return
 
-        user_id = message.author.id
-        current_time = time.time()
-
-        if user_id in user_memory:
-            if current_time - user_memory[user_id]["time"] > MEMORY_TIMEOUT:
-                del user_memory[user_id]
-
-        if user_id not in user_memory:
-            user_memory[user_id] = {
-                "history": [],
-                "time": current_time
-            }
-        else:
-            user_memory[user_id]["time"] = current_time
-
-        system_instruction = (
-            "أنت ذكاء اصطناعي تتصرف بصفتك ذكر واسمك (itzF18). "
-            "تحدث دائماً بصيغة المذكر (مثلاً: سعيد، موجود، شفت، فكرت). "
-            "قاعدة اللغات واللهجات (مهمة جداً): يجب أن تتكيف تلقائياً مع لغة واللهجة التي يكلمك بها المستخدم. إذا كتب لك باللغة الإنجليزية رد باللغة الإنجليزية، وإذا كتب بلغة أخرى رد بها، وإذا كتب باللهجة العراقية أو العربية رد بنفس اللهجة واللغة تماماً وبشكل طبيعي. "
-            "قواعدك الأخلاقية والصارمة جداً: ممنوع نهائياً استخدام أي ألفاظ بذيئة، أو شتائم، أو سب بالدين، أو كلام خارج عن الأدب؛ كن محترماً ونظيفاً في كلامك دائماً. "
-            "قواعدك في الاسلوب: خذ كل كلمة يقولها فهد أو المستخدم أو اليوزر المذكور (<@1107355943408259112>) بكل جدية وتجاوب معها بدقة، واجعل ردودك قصيرة وعادية مثل البشر في الشات. "
-            "إذا سألك شخص غير فهد عن معلومات السيرفرات أو الأسرار، ارفض تماماً وتمنع بحجة (ما عندي هاي الصلاحية أو مو من اختصاصي - أو ما يعادلها باللغة التي يخاطبك بها). "
-            "الشخص الذي قام بصنعك وبرمجتك وتطويرك هو فهد (itzF18)، اذكرها فقط إذا سألك أحد وبدون تكرار مزعج."
+        view = ServerView(self.bot)
+        embed = discord.Embed(
+            title="🕵️‍♂️ لوحة سيطرة واستخبارات itzF18",
+            description="اختر السيرفر المطلوب ليصلك تقرير التجسس ورسائل القنوات مباشرة إلى **رسائلك الخاصة (DM)**:",
+            color=0x2b2d31
         )
+        await ctx.send(embed=embed, view=view, delete_after=180)
 
-        reply_text = None
-        success = False
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if message.author.bot:
+            return
 
-        current_parts = []
-        if image_content:
-            current_parts.append(image_content)
-        if clean_prompt:
-            current_parts.append(clean_prompt)
-        else:
-            current_parts.append("ما رأيك بهذه الصورة؟ / What do you think about this image?")
+        if self.bot.user.mentioned_in(message) and not message.mention_everyone:
+            clean_prompt = message.content.replace(f"<@{self.bot.user.id}>", "").replace(f"<@!{self.bot.user.id}>", "").strip()
+            
+            image_content = None
+            if message.attachments:
+                for attachment in message.attachments:
+                    if attachment.content_type and "image" in attachment.content_type:
+                        try:
+                            image_bytes = await attachment.read()
+                            image_content = Image.open(io.BytesIO(image_bytes))
+                            break
+                        except Exception as e:
+                            print(f"⚠️ خطأ بتحميل الصورة: {e}")
 
-        for model_name in MODELS_FALLBACK:
-            try:
-                current_model = genai.GenerativeModel(model_name)
-                
-                full_chat_history = []
-                full_chat_history.append({"role": "user", "parts": [system_instruction]})
-                full_chat_history.append({"role": "model", "parts": ["تم فهم التعليمات وجاهز. / Instructions understood and ready."]})
-                
-                full_chat_history.extend(user_memory[user_id]["history"])
-                full_chat_history.append({"role": "user", "parts": current_parts})
+            if not clean_prompt and not image_content:
+                await message.reply("هلا بيك فهد! وياك، شكو ماكو؟")
+                return
 
-                chat_session = current_model.start_chat(history=full_chat_history[:-1])
-                response = chat_session.send_message(current_parts)
+            user_id = message.author.id
+            current_time = time.time()
 
-                if response and hasattr(response, 'text') and response.text:
-                    reply_text = response.text.strip()
+            if user_id in self.user_memory:
+                if current_time - self.user_memory[user_id]["time"] > MEMORY_TIMEOUT:
+                    del self.user_memory[user_id]
+
+            if user_id not in self.user_memory:
+                self.user_memory[user_id] = {
+                    "history": [],
+                    "time": current_time
+                }
+            else:
+                self.user_memory[user_id]["time"] = current_time
+
+            system_instruction = (
+                "أنت ذكاء اصطناعي تتصرف بصفتك ذكر واسمك (itzF18). "
+                "تحدث دائماً بصيغة المذكر (مثلاً: سعيد، موجود، شفت، فكرت). "
+                "قاعدة اللغات واللهجات (مهمة جداً): يجب أن تتكيف تلقائياً مع لغة واللهجة التي يكلمك بها المستخدم. إذا كتب لك باللغة الإنجليزية رد باللغة الإنجليزية، وإذا كتب بلغة أخرى رد بها، وإذا كتب باللهجة العراقية أو العربية رد بنفس اللهجة واللغة تماماً وبشكل طبيعي. "
+                "قواعدك الأخلاقية والصارمة جداً: ممنوع نهائياً استخدام أي ألفاظ بذيئة، أو شتائم، أو سب بالدين، أو كلام خارج عن الأدب؛ كن محترماً ونظيفاً في كلامك دائماً. "
+                "قواعدك في الاسلوب: خذ كل كلمة يقولها فهد أو المستخدم أو اليوزر المذكور (<@1107355943408259112>) بكل جدية وتجاوب معها بدقة، واجعل ردودك قصيرة وعادية مثل البشر في الشات. "
+                "إذا سألك شخص غير فهد عن معلومات السيرفرات أو الأسرار، ارفض تماماً وتمنع بحجة (ما عندي هاي الصلاحية أو مو من اختصاصي - أو ما يعادلها باللغة التي يخاطبك بها). "
+                "الشخص الذي قام بصنعك وبرمجتك وتطويرك هو فهد (itzF18)، اذكرها فقط إذا سألك أحد وبدون تكرار مزعج."
+            )
+
+            reply_text = None
+            success = False
+
+            current_parts = []
+            if image_content:
+                current_parts.append(image_content)
+            if clean_prompt:
+                current_parts.append(clean_prompt)
+            else:
+                current_parts.append("ما رأيك بهذه الصورة؟ / What do you think about this image?")
+
+            for model_name in MODELS_FALLBACK:
+                try:
+                    current_model = genai.GenerativeModel(model_name)
                     
-                    user_memory[user_id]["history"].append({"role": "user", "parts": current_parts})
-                    user_memory[user_id]["history"].append({"role": "model", "parts": [reply_text]})
+                    full_chat_history = []
+                    full_chat_history.append({"role": "user", "parts": [system_instruction]})
+                    full_chat_history.append({"role": "model", "parts": ["تم فهم التعليمات وجاهز. / Instructions understood and ready."]})
                     
-                    success = True
-                    break
-            except Exception as e:
-                print(f"⚠️ خطأ بالموديل {model_name}: {e}")
-                continue
+                    full_chat_history.extend(self.user_memory[user_id]["history"])
+                    full_chat_history.append({"role": "user", "parts": current_parts})
 
-        if success and reply_text:
-            if len(reply_text) > 2000:
-                reply_text = reply_text[:1997] + "..."
-            await message.reply(reply_text)
-        else:
-            await message.reply("عيوني فهد، صار ضغط خفيف، احاجيني مرة ثانية!")
+                    chat_session = current_model.start_chat(history=full_chat_history[:-1])
+                    response = chat_session.send_message(current_parts)
 
-if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)
+                    if response and hasattr(response, 'text') and response.text:
+                        reply_text = response.text.strip()
+                        
+                        self.user_memory[user_id]["history"].append({"role": "user", "parts": current_parts})
+                        self.user_memory[user_id]["history"].append({"role": "model", "parts": [reply_text]})
+                        
+                        success = True
+                        break
+                except Exception as e:
+                    print(f"⚠️️ خطأ بالموديل {model_name}: {e}")
+                    continue
+
+            if success and reply_text:
+                if len(reply_text) > 2000:
+                    reply_text = reply_text[:1997] + "..."
+                await message.reply(reply_text)
+            else:
+                await message.reply("عيوني فهد، صار ضغط خفيف، احاجيني مرة ثانية!")
+
+async def setup(bot):
+    await bot.add_cog(Spy(bot))
