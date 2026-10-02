@@ -23,7 +23,8 @@ async def on_ready():
         "cogs.automod",
         "cogs.autoroles",
         "cogs.join_message",
-        "cogs.roblox"
+        "cogs.roblox",
+        "cogs.Spy"   # <--- نظام التجسس انضاف هنا بنجاح!
     ]
     
     for cog in cogs_list:
