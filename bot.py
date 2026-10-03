@@ -25,7 +25,8 @@ async def on_ready():
         "cogs.join_message",
         "cogs.roblox",
         "cogs.Spy",
-        "cogs.BackupBot"   # <--- نظام النسخ الاحتياطي الجديد انضاف هنا بنجاح!
+        "cogs.BackupBot",
+        "cogs.MemberStats"   # <--- نظام الإحصائيات ورتب التوبات والرايدات انضاف هنا بنجاح!
     ]
     
     for cog in cogs_list:
