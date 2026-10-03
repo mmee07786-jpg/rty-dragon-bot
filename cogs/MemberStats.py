@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import app_commands
 import json
 import os
@@ -62,20 +62,25 @@ class MemberStats(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print(f"📊 | نظام إحصائيات ورتب الرايدات والتوبات (مطابق للصور) جاهز للعمل بنجاح.")
+        print(f"📊 | نظام إحصائيات ورتب الرايدات والتوبات جاهز للعمل بنجاح.")
 
-    # 1. نظام رتب الرايدات التراكمية (حسب الصورة الأولى)
+    @commands.command(name="sync")
+    async def sync_commands(self, ctx):
+        if ctx.author.id != OWNER_ID:
+            return
+        try:
+            synced = await self.bot.tree.sync()
+            await ctx.send(f"✅ تم مزامنة {len(synced)} أمر سلاش بنجاح في السيرفر!")
+        except Exception as e:
+            await ctx.send(f"❌ حدث خطأ أثناء المزامنة: {e}")
+
     async def check_and_apply_raid_roles(self, guild: discord.Guild, member: discord.Member, total_raids: int):
         config = self.get_config_data()
         gid_str = str(guild.id)
         server_raid_roles = config["raid_roles"].get(gid_str, {})
-        if not server_raid_roles:
-            return
+        if not server_raid_roles: return
 
-        # ترتيب العتبات تصاعدياً
         sorted_thresholds = sorted([int(k) for k in server_raid_roles.keys()])
-        
-        # منح الرتب المناسبة حسب عدد الرايدات
         for req_raids in sorted_thresholds:
             role_id = int(server_raid_roles[str(req_raids)])
             role = guild.get_role(role_id)
@@ -86,14 +91,12 @@ class MemberStats(commands.Cog):
                     try: await member.add_roles(role, reason=f"الوصول إلى {total_raids} رايد")
                     except Exception as e: print(f"⚠️ خطأ منح رتبة رايد: {e}")
 
-    # 2. نظام رتب التوبات الديناميكي (Top 1, Top 2-5, Top 6-10 - حسب الصورة الثانية)
     async def update_top_roles_for_guild(self, guild: discord.Guild):
         config = self.get_config_data()
         gid_str = str(guild.id)
         top_roles_config = config["top_roles"]
         guild_top_configs = [r for r in top_roles_config if r.get("guild_id") == guild.id]
-        if not guild_top_configs:
-            return
+        if not guild_top_configs: return
 
         stats_data = self.get_stats_data()
         raid_data = self.get_raid_data()
@@ -109,28 +112,22 @@ class MemberStats(commands.Cog):
             file_raids = server_raid_store.get(uid_str, 0)
             u_stats = stats_data.get(uid_str, {})
             alltime_r = max(u_stats.get("alltime_raids", 0), file_raids)
-            if alltime_r > 0:
-                member_raids_map[uid] = alltime_r
+            if alltime_r > 0: member_raids_map[uid] = alltime_r
 
-        # ترتيب الأعضاء تنازلياً حسب عدد الرايدات (أعلى واحد هو المركز الأول #1)
         sorted_members = sorted(member_raids_map.items(), key=lambda x: x[1], reverse=True)
-
         all_managed_role_ids = set(r["role_id"] for r in guild_top_configs)
 
         for index, (uid, raids) in enumerate(sorted_members):
-            rank = index + 1  # المركز يبدأ من 1
+            rank = index + 1
             member = guild.get_member(uid)
-            if not member:
-                continue
+            if not member: continue
 
-            # البحث عن الرتبة المستحقة لهذا المركز
             deserved_role_id = None
             for cfg in guild_top_configs:
                 if cfg["min_rank"] <= rank <= cfg["max_rank"]:
                     deserved_role_id = cfg["role_id"]
                     break
 
-            # إعطاء الرتبة لمن يستحقها، وسحبها فوراً ممن يتراجع أو يخرج من النطاق
             for r_id in all_managed_role_ids:
                 role_obj = guild.get_role(r_id)
                 if not role_obj: continue
@@ -141,35 +138,14 @@ class MemberStats(commands.Cog):
                         except: pass
                 else:
                     if role_obj in member.roles:
-                        try: await member.remove_roles(role_obj, reason=f"خروج من نطاق التوب (مركزه الحالي #{rank})")
+                        try: await member.remove_roles(role_obj, reason=f"خروج من نطاق التوب")
                         except: pass
 
-    @tasks.loop(hours=24)
-    async def check_inactive_streaks(self):
-        try:
-            stats_data = self.get_stats_data()
-            now = datetime.now(timezone.utc)
-            updated = False
-            for user_id, u_data in stats_data.items():
-                last_raid_str = u_data.get("last_raid_time")
-                if last_raid_str and u_data.get("win_streak_current", 0) > 0:
-                    last_time = datetime.fromisoformat(last_raid_str)
-                    if now - last_time > timedelta(hours=24):
-                        u_data["win_streak_current"] = 0
-                        updated = True
-            if updated:
-                self.save_stats_data(stats_data)
+    @app_commands.command(name="id", description="عرض بطاقة إحصائيات العضو الشخصية.")
+    async def slash_id(self, interaction: discord.Interaction, member: discord.Member = None):
+        if member is None: member = interaction.user
+        await self.send_id_card(interaction, member, interaction.guild)
 
-            for guild in self.bot.guilds:
-                await self.update_top_roles_for_guild(guild)
-        except Exception as e:
-            print(f"⚠️ خطأ في مهمة الخلفية: {e}")
-
-    @check_inactive_streaks.before_loop
-    async def before_check(self):
-        await self.bot.wait_until_ready()
-
-    # عرض بطاقة الـ ID
     async def send_id_card(self, destination, member: discord.Member, guild: discord.Guild):
         stats_data = self.get_stats_data()
         raid_data = self.get_raid_data()
@@ -188,7 +164,6 @@ class MemberStats(commands.Cog):
 
         total_raids = max(user_stats.get("alltime_raids", 0), raids_from_raidfile)
         monthly_raids = max(user_stats.get("monthly_raids", 0), raids_from_raidfile)
-
         guild_name = guild.name if guild else "Server"
         total_matches = user_stats["wins"] + user_stats["losses"]
         win_rate = int((user_stats["wins"] / total_matches * 100)) if total_matches > 0 else 0
@@ -199,82 +174,14 @@ class MemberStats(commands.Cog):
         embed.add_field(name="📅 Monthly MVP", value=f"Raids: `{monthly_raids}`\nPoints: `{user_stats['monthly_points']}`\nRank: `{user_stats['monthly_rank']}`", inline=False)
         embed.add_field(name="👑 All-Time Legends", value=f"Raids: `{total_raids}`\nRank: `{user_stats['alltime_rank']}`", inline=False)
         embed.add_field(name="⭐ All-Time Points", value=f"Points: `{user_stats['alltime_points']}`\nRank: `{user_stats['alltime_points_rank']}`", inline=False)
-        embed.add_field(name="🎯 Tryout Rating", value=`{user_stats['tryout_rating']}`, inline=False)
+        embed.add_field(name="🎯 Tryout Rating", value=f"{user_stats['tryout_rating']}", inline=False)
         embed.add_field(name="🔥 Server Win Streak", value=f"Current: `{user_stats['win_streak_current']}`\nBest: `{user_stats['win_streak_best']}`", inline=False)
         embed.add_field(name="🌍 Global Win Rate", value=f"{guild_name}\n— {user_stats['wins']}W/{user_stats['losses']}L ({win_rate}%)", inline=False)
-        embed.set_footer(text=f"{guild_name} | بطاقة إحصائيات العضو", icon_url=guild.icon.url if guild.icon else None)
 
         if isinstance(destination, discord.Interaction):
             await destination.response.send_message(embed=embed, ephemeral=False)
         else: await destination.send(embed=embed)
 
-    @commands.command(name="id", description="عرض بطاقة الإحصائيات عبر !id")
-    async def prefix_id(self, ctx, member: discord.Member = None):
-        if member is None: member = ctx.author
-        await self.send_id_card(ctx, member, ctx.guild)
-
-    @app_commands.command(name="id", description="عرض بطاقة إحصائيات العضو الشخصية.")
-    async def slash_id(self, interaction: discord.Interaction, member: discord.Member = None):
-        if member is None: member = interaction.user
-        await self.send_id_card(interaction, member, interaction.guild)
-
-    # معالجة إضافة الإحصائيات وتحديث الرتب والتوبات فوراً
-    async def process_add_stats(
-        self, ctx_or_interaction, member: discord.Member, 
-        monthly_raids: int = None, monthly_points: int = None, 
-        wins: int = None, losses: int = None, win_streak: int = None
-    ):
-        user_obj = ctx_or_interaction.user if isinstance(ctx_or_interaction, discord.Interaction) else ctx_or_interaction.author
-        if user_obj.id != OWNER_ID and not user_obj.guild_permissions.administrator:
-            msg = "عذراً، هذا الأمر مخصص للإدارة حصراً!"
-            if isinstance(ctx_or_interaction, discord.Interaction): await ctx_or_interaction.response.send_message(msg, ephemeral=True)
-            else: await ctx_or_interaction.send(msg)
-            return
-
-        data = self.get_stats_data()
-        user_id_str = str(member.id)
-        if user_id_str not in data:
-            data[user_id_str] = {
-                "monthly_raids": 0, "monthly_points": 0, "monthly_rank": "#1",
-                "alltime_raids": 0, "alltime_rank": "#1", "alltime_points": 0,
-                "alltime_points_rank": "#1", "tryout_rating": "Pro",
-                "win_streak_current": 0, "win_streak_best": 0, "wins": 0, "losses": 0,
-                "last_raid_time": datetime.now(timezone.utc).isoformat()
-            }
-
-        if monthly_raids is not None:
-            data[user_id_str]["monthly_raids"] += monthly_raids
-            data[user_id_str]["alltime_raids"] += monthly_raids
-        if monthly_points is not None:
-            data[user_id_str]["monthly_points"] += monthly_points
-            data[user_id_str]["alltime_points"] += monthly_points
-        if wins is not None: data[user_id_str]["wins"] += wins
-        if losses is not None: data[user_id_str]["losses"] += losses
-        if win_streak is not None:
-            data[user_id_str]["win_streak_current"] = win_streak
-            if win_streak > data[user_id_str]["win_streak_best"]: data[user_id_str]["win_streak_best"] = win_streak
-
-        self.save_stats_data(data)
-
-        guild = ctx_or_interaction.guild
-        if guild:
-            final_raids = data[user_id_str]["alltime_raids"]
-            await self.check_and_apply_raid_roles(guild, member, final_raids)
-            await self.update_top_roles_for_guild(guild)
-
-        success_msg = f"✅ **تم تحديث إحصائيات اللاعب {member.mention} ومزامنة رتبه التلقائية والتوبات بنجاح!**"
-        if isinstance(ctx_or_interaction, discord.Interaction): await ctx_or_interaction.response.send_message(success_msg, ephemeral=True)
-        else: await ctx_or_interaction.send(success_msg)
-
-    @commands.command(name="add_stats", description="تعديل الإحصائيات عبر !add_stats")
-    async def prefix_add_stats(self, ctx, member: discord.Member, monthly_raids: int = None, monthly_points: int = None, wins: int = None, losses: int = None, win_streak: int = None):
-        await self.process_add_stats(ctx, member, monthly_raids, monthly_points, wins, losses, win_streak)
-
-    @app_commands.command(name="add_stats", description="تحديث أو إضافة إحصائيات ورايدات لعضو معين.")
-    async def slash_add_stats(self, interaction: discord.Interaction, member: discord.Member, monthly_raids: int = None, monthly_points: int = None, wins: int = None, losses: int = None, win_streak: int = None):
-        await self.process_add_stats(interaction, member, monthly_raids, monthly_points, wins, losses, win_streak)
-
-    # --- إدارة رتب الرايدات التراكمية ---
     @app_commands.command(name="set-raid-role", description="ربط عدد رايدات برتبة تلقائية")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_raid_role(self, interaction: discord.Interaction, raids_count: int, role: discord.Role):
@@ -311,10 +218,9 @@ class MemberStats(commands.Cog):
             desc += f"• `{r_count} Raids` ──> {r_obj.mention if r_obj else f'<@&{r_id}>'}\n"
         await interaction.response.send_message(embed=discord.Embed(title="🎖️ Raid Ranks", description=desc, color=discord.Color.blue()), ephemeral=False)
 
-    # --- إدارة رتب التوبات الديناميكية (Top Ranks) ---
     @app_commands.command(name="set-top-role", description="تحديد رتبة لنطاق توبات معين")
     @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(min_rank="المركز البدائي (مثلاً: 6)", max_rank="المركز النهائي (مثلاً: 10)", role="الرتبة الخاصة بهذا النطاق")
+    @app_commands.describe(min_rank="المركز البدائي", max_rank="المركز النهائي", role="الرتبة الخاصة بهذا النطاق")
     async def set_top_role(self, interaction: discord.Interaction, min_rank: int, max_rank: int, role: discord.Role):
         config = self.get_config_data()
         config["top_roles"] = [r for r in config["top_roles"] if not (r["guild_id"] == interaction.guild_id and (r["min_rank"] == min_rank and r["max_rank"] == max_rank))]
@@ -361,11 +267,11 @@ class MemberStats(commands.Cog):
         await interaction.response.send_message(embed=discord.Embed(title="🏆 Dynamic Top Roles", description=desc, color=discord.Color.gold()), ephemeral=False)
 
     @app_commands.command(name="update-top-roles", description="إعادة تحديث وتوزيع رتب التوبات يدوياً الآن")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=Thread := True)
     async def update_top_roles_manual(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self.update_top_roles_for_guild(interaction.guild)
-        await interaction.followup.send("✅ | تم إعادة فحص وتحديث جميع رتب التوبات في السيرفر بناءً على الإحصائيات الحالية بنجاح!", ephemeral=True)
+        await interaction.followup.send("✅ | تم إعادة فحص وتحديث جميع رتب التوبات في السيرفر بنجاح!", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(MemberStats(bot))
