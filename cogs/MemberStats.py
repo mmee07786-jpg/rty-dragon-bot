@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import json
 import os
@@ -63,12 +63,6 @@ class MemberStats(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         print(f"📊 | نظام إحصائيات ورتب الرايدات والتوبات جاهز للعمل بنجاح.")
-        # مزامنة الأوامر تلقائياً فور تشغيل البوت بالسيرفرات
-        try:
-            synced = await self.bot.tree.sync()
-            print(f"✅ تمت مزامنة {len(synced)} أمر سلاش تلقائياً بنجاح!")
-        except Exception as e:
-            print(f"❌ خطأ في المزامنة التلقائية: {e}")
 
     async def check_and_apply_raid_roles(self, guild: discord.Guild, member: discord.Member, total_raids: int):
         config = self.get_config_data()
@@ -137,10 +131,29 @@ class MemberStats(commands.Cog):
                         try: await member.remove_roles(role_obj, reason=f"خروج من نطاق التوب")
                         except: pass
 
-    @app_commands.command(name="id", description="عرض بطاقة إحصائيات العضو الشخصية.")
-    async def slash_id(self, interaction: discord.Interaction, member: discord.Member = None):
-        if member is None: member = interaction.user
-        await self.send_id_card(interaction, member, interaction.guild)
+    @tasks.loop(hours=24)
+    async def check_inactive_streaks(self):
+        try:
+            stats_data = self.get_stats_data()
+            now = datetime.now(timezone.utc)
+            updated = False
+            for user_id, u_data in stats_data.items():
+                last_raid_str = u_data.get("last_raid_time")
+                if last_raid_str and u_data.get("win_streak_current", 0) > 0:
+                    last_time = datetime.fromisoformat(last_raid_str)
+                    if now - last_time > timedelta(hours=24):
+                        u_data["win_streak_current"] = 0
+                        updated = True
+            if updated: self.save_stats_data(stats_data)
+
+            for guild in self.bot.guilds:
+                await self.update_top_roles_for_guild(guild)
+        except Exception as e:
+            print(f"⚠️ خطأ في مهمة الخلفية: {e}")
+
+    @check_inactive_streaks.before_loop
+    async def before_check(self):
+        await self.bot.wait_until_ready()
 
     async def send_id_card(self, destination, member: discord.Member, guild: discord.Guild):
         stats_data = self.get_stats_data()
@@ -177,6 +190,11 @@ class MemberStats(commands.Cog):
         if isinstance(destination, discord.Interaction):
             await destination.response.send_message(embed=embed, ephemeral=False)
         else: await destination.send(embed=embed)
+
+    @app_commands.command(name="id", description="عرض بطاقة إحصائيات العضو الشخصية.")
+    async def slash_id(self, interaction: discord.Interaction, member: discord.Member = None):
+        if member is None: member = interaction.user
+        await self.send_id_card(interaction, member, interaction.guild)
 
     @app_commands.command(name="set-raid-role", description="ربط عدد رايدات برتبة تلقائية")
     @app_commands.checks.has_permissions(administrator=True)
@@ -237,7 +255,7 @@ class MemberStats(commands.Cog):
     async def remove_top_role(self, interaction: discord.Interaction, min_rank: int):
         config = self.get_config_data()
         initial_len = len(config["top_roles"])
-        config["top_roles"] = [r for r in config["top_roles"] if not (r["guild_id"] == interaction.guild_id and r["min_rank"] == min_rank)]
+        config["top_roles"] = [r for r in config["top_roles"] if not (r["guild_id"] == interaction.guild_id and r="min_rank" == min_rank)]
         
         if len(config["top_roles"]) < initial_len:
             self.save_config_data(config)
