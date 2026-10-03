@@ -5,134 +5,283 @@ import asyncio
 import json
 import os
 
-CONFIG_FILE = "activity_config.json"
+OWNER_ID = 1107355943408259112  # آونر البوت الأساسي
+BACKUP_FILE = "server_backup.json"
 
-class ActivityCheck(commands.Cog):
+class BackupBot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    def load_config(self):
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except:
-                pass
-        return {}
+    @commands.Cog.listener()
+    async def on_ready(self):
+        print(f"🛡 | نظام النسخ الاحتياطي الشامل جداً (رتب + صلاحيات عامة + رومات + صلاحيات رومات) جاهز.")
 
-    def save_config(self, data):
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+    # دالة لتحويل صلاحيات الروم (Overwrites) إلى صيغة قابلة للحفظ
+    def serialize_overwrites(self, guild, channel):
+        overwrites_data = {}
+        for target, overwrite in channel.overwrites.items():
+            target_id = str(target.id)
+            if isinstance(target, discord.Role):
+                target_type = "role"
+            elif isinstance(target, discord.Member):
+                target_type = "member"
+            else:
+                continue
+            
+            allow_val, deny_val = overwrite.pair()
+            overwrites_data[target_id] = {
+                "name": target.name, # نحفظ الاسم حتى لو اختلف الآيدي نطابق بالاسم احتياطاً
+                "type": target_type,
+                "allow": allow_val.value,
+                "deny": deny_val.value
+            }
+        return overwrites_data
 
-    # أمر منفصل لتحديد وحفظ الرتبة التلقائية
-    @app_commands.command(
-        name="set_activity_role",
-        description="تحديد وحفظ الرتبة التلقائية التي سيتم منحها في فعاليات فحص التفاعل."
-    )
-    @app_commands.describe(role="اختر الرتبة التي تريد حفظها للفعاليات")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_activity_role(self, interaction: discord.Interaction, role: discord.Role):
-        guild_id = str(interaction.guild.id)
-        config = self.load_config()
+    # تطبيق صلاحيات الروم واسترجاعها بدقة
+    def apply_overwrites(self, guild, channel_data):
+        overwrites = {}
+        role_map = {role.name: role for role in guild.roles}
         
-        config[guild_id] = role.id
-        self.save_config(config)
+        for target_id_str, ow_data in channel_data.get("overwrites", {}).items():
+            try:
+                target = None
+                target_type = ow_data.get("type")
+                target_name = ow_data.get("name")
 
-        await interaction.response.send_message(
-            f"✅ **تم حفظ رتبة الفعالية بنجاح!**\nالرتبة المعتمدة حالياً: {role.mention}",
-            ephemeral=True
-        )
+                if target_type == "role":
+                    # محاولة البحث بالآيدي أو بالاسم لتجنب أي خطأ
+                    try:
+                        target = guild.get_role(int(target_id_str))
+                    except:
+                        pass
+                    if not target and target_name in role_map:
+                        target = role_map[target_name]
+                
+                elif target_type == "member":
+                    try:
+                        target = guild.get_member(int(target_id_str))
+                    except:
+                        pass
 
-    # أمر فحص التفاعل (يستخدم الرتبة المحفوظة تلقائياً)
+                if target:
+                    overwrite = discord.PermissionOverwrite.from_pair(
+                        discord.Permissions(ow_data["allow"]),
+                        discord.Permissions(ow_data["deny"])
+                    )
+                    overwrites[target] = overwrite
+            except Exception as e:
+                print(f"⚠️ خطأ في تطبيق صلاحيات الروم: {e}")
+        return overwrites
+
+    # 1. أمر أخذ النسخة الاحتياطية الشاملة
     @app_commands.command(
-        name="activity_check",
-        description="فحص التفاعل وتحديد النشطين خلال 5 ثواني مع منحهم الرتبة المحفوظة تلقائياً."
+        name="backup",
+        description="أخذ نسخة احتياطية مطابقة 100% (رتب، صلاحيات رتب، أقسام، رومات، وصلاحيات كل روم)."
     )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def activity_check(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild.id)
-        config = self.load_config()
-        role_id = config.get(guild_id)
+    async def backup_server(self, interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("عذراً فهد، هذا الأمر مخصص لك حصراً!", ephemeral=True)
+            return
 
-        if not role_id:
-            await interaction.response.send_message(
-                "❌ عذراً، لم تقم بتحديد رتبة الفعالية بعد!\nيرجى استخدام الأمر `/set_activity_role` أولاً لاختيار الرتبة.",
-                ephemeral=True
+        await interaction.response.send_message("⏳ جاري إنشاء النسخة الاحتياطية الشاملة لكافة تفاصيل السيرفر...", ephemeral=False)
+        guild = interaction.guild
+
+        try:
+            if os.path.exists(BACKUP_FILE):
+                os.remove(BACKUP_FILE)
+
+            # 1. حفظ الرتب مع صلاحياتها الكاملة والـ Color والـ Position
+            roles_data = []
+            for role in reversed(guild.roles):
+                if role.is_default() or role.managed:
+                    continue
+                roles_data.append({
+                    "id": role.id,
+                    "name": role.name,
+                    "permissions": role.permissions.value,
+                    "color": role.color.value,
+                    "hoist": role.hoist,
+                    "mentionable": role.mentionable,
+                    "position": role.position
+                })
+
+            categories_data = []
+            no_category_channels = []
+
+            # 2. رومات بدون قسم (نصية وصوتية مع الصلاحيات)
+            for channel in guild.text_channels:
+                if channel.category is None:
+                    no_category_channels.append({
+                        "name": channel.name,
+                        "type": "text",
+                        "topic": channel.topic,
+                        "slowmode": channel.slowmode_delay,
+                        "nsfw": channel.nsfw,
+                        "overwrites": self.serialize_overwrites(guild, channel)
+                    })
+            
+            for channel in guild.voice_channels:
+                if channel.category is None:
+                    no_category_channels.append({
+                        "name": channel.name,
+                        "type": "voice",
+                        "bitrate": channel.bitrate,
+                        "user_limit": channel.user_limit,
+                        "overwrites": self.serialize_overwrites(guild, channel)
+                    })
+
+            if no_category_channels:
+                categories_data.append({"name": "بدون قسم", "channels": no_category_channels})
+
+            # 3. الأقسام والرومات المرتبطة بها مع صلاحيات الأقسام والرومات تفصيلياً
+            for category in guild.categories:
+                cat_channels = []
+                for channel in category.channels:
+                    if isinstance(channel, discord.TextChannel):
+                        cat_channels.append({
+                            "name": channel.name,
+                            "type": "text",
+                            "topic": channel.topic,
+                            "slowmode": channel.slowmode_delay,
+                            "nsfw": channel.nsfw,
+                            "overwrites": self.serialize_overwrites(guild, channel)
+                        })
+                    elif isinstance(channel, discord.VoiceChannel):
+                        cat_channels.append({
+                            "name": channel.name,
+                            "type": "voice",
+                            "bitrate": channel.bitrate,
+                            "user_limit": channel.user_limit,
+                            "overwrites": self.serialize_overwrites(guild, channel)
+                        })
+                
+                categories_data.append({
+                    "name": category.name,
+                    "overwrites": self.serialize_overwrites(guild, category),
+                    "channels": cat_channels
+                })
+
+            backup_dict = {
+                "guild_name": guild.name,
+                "roles": roles_data,
+                "categories": categories_data
+            }
+
+            with open(BACKUP_FILE, "w", encoding="utf-8") as f:
+                json.dump(backup_dict, f, ensure_ascii=False, indent=4)
+
+            total_channels = sum(len(cat["channels"]) for cat in categories_data)
+            server_owner = guild.owner
+            owner_mention = server_owner.mention if server_owner else "الأونر"
+
+            await interaction.edit_original_response(
+                content=(
+                    f"✅ **تمت عملية النسخ الاحتياطي الشامل (لكل الرتب والصلاحيات) بنجاح!** {owner_mention}\n"
+                    f"- عدد الرتب المحفوظة: **{len(roles_data)}**\n"
+                    f"- عدد الرومات والأقسام المحفوظة: **{total_channels}** (مع صلاحياتها بالكامل).\n\n"
+                    f"**تم كملت**"
+                )
             )
+
+        except Exception as e:
+            await interaction.edit_original_response(content=f"❌ حدث خطأ أثناء إنشاء النسخة: {e}")
+
+    # 2. أمر الاستعادة الشاملة
+    @app_commands.command(
+        name="restore",
+        description="استعادة السيرفر بالكامل مع الرتب، الصلاحيات، الرومات، وتجنب التكرار بدقة."
+    )
+    async def restore_server(self, interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("عذراً فهد، هذا الأمر مخصص لك حصراً!", ephemeral=True)
             return
 
-        role = interaction.guild.get_role(role_id)
-        if not role:
-            await interaction.response.send_message(
-                "❌ عذراً، الرتبة المحفوظة سابقاً لم تعد موجودة في السيرفر! يرجى إعادة تحديدها بـ `/set_activity_role`.",
-                ephemeral=True
-            )
-            return
-
-        # التحقق من صلاحيات البوت
-        if not interaction.guild.me.guild_permissions.manage_roles:
-            await interaction.response.send_message("❌ عذراً، لا أملك صلاحية (Manage Roles) لإعطاء الرتب للأعضاء!", ephemeral=True)
-            return
-
-        if role >= interaction.guild.me.top_role:
-            await interaction.response.send_message(f"❌ عذراً، رتبة ({role.name}) أعلى من رتبتي أو تساويها، لا يمكنني إعطاؤها للأعضاء!", ephemeral=True)
+        if not os.path.exists(BACKUP_FILE):
+            await interaction.response.send_message("❌ عذراً، لا توجد أي نسخة احتياطية محفوظة حالياً! يرجى عمل `/backup` أولاً.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
-        
-        embed = discord.Embed(
-            title="✅ ACTIVITY CHECK",
-            description=f"اضغط على التفاعل أدناه لتأكيد تفاعلك والحصول على رتبة ({role.mention})!\n*(متاح لمدة 5 ثواني فقط)*",
-            color=discord.Color.green()
-        )
-        
-        message = await interaction.channel.send(content="@everyone", embed=embed)
-        check_emoji = "✅"
-        await message.add_reaction(check_emoji)
-
-        active_users = []
-
-        def check(reaction, user):
-            return (
-                reaction.message.id == message.id
-                and str(reaction.emoji) == check_emoji
-                and not user.bot
-                and user not in active_users
-            )
+        guild = interaction.guild
 
         try:
-            while True:
-                reaction, user = await self.bot.wait_for('reaction_add', timeout=5.0, check=check)
-                if user not in active_users:
-                    active_users.append(user)
-                    
+            with open(BACKUP_FILE, "r", encoding="utf-8") as f:
+                backup_data = json.load(f)
+
+            existing_role_names = {role.name for role in guild.roles}
+
+            # استعادة الرتب وصلاحياتها العامة
+            for r_data in backup_data["roles"]:
+                if r_data["name"] in existing_role_names:
+                    continue
+                try:
+                    await guild.create_role(
+                        name=r_data["name"],
+                        permissions=discord.Permissions(r_data["permissions"]),
+                        color=discord.Color(r_data["color"]),
+                        hoist=r_data["hoist"],
+                        mentionable=r_data["mentionable"],
+                        reason="استعادة النسخة الاحتياطية للشاملة"
+                    )
+                    await asyncio.sleep(1.2)
+                except Exception as e:
+                    print(f"⚠️ خطأ بإنشاء رتبة {r_data['name']}: {e}")
+
+            existing_categories = {cat.name: cat for cat in guild.categories}
+            existing_channels = {ch.name for ch in guild.channels}
+
+            # استعادة الأقسام والرومات مع صلاحياتها (Overwrites)
+            for cat_data in backup_data["categories"]:
+                category_obj = None
+                cat_name = cat_data["name"]
+
+                if cat_name != "بدون قسم":
+                    if cat_name in existing_categories:
+                        category_obj = existing_categories[cat_name]
+                    else:
+                        try:
+                            cat_overwrites = self.apply_overwrites(guild, cat_data)
+                            category_obj = await guild.create_category(cat_name, overwrites=cat_overwrites)
+                            await asyncio.sleep(1.5)
+                        except Exception as e:
+                            print(f"⚠️ خطأ بإنشاء القسم {cat_name}: {e}")
+                            continue
+
+                for ch_data in cat_data["channels"]:
+                    ch_name = ch_data["name"]
+                    if ch_name in existing_channels:
+                        continue
+
                     try:
-                        member = interaction.guild.get_member(user.id) or await interaction.guild.fetch_member(user.id)
-                        if member and role not in member.roles:
-                            await member.add_roles(role, reason="التفاعل السريع في فعالية Activity Check")
+                        ch_overwrites = self.apply_overwrites(guild, ch_data)
+                        if ch_data["type"] == "text":
+                            await guild.create_text_channel(
+                                name=ch_name,
+                                category=category_obj,
+                                topic=ch_data.get("topic"),
+                                slowmode_delay=ch_data.get("slowmode", 0),
+                                nsfw=ch_data.get("nsfw", False),
+                                overwrites=ch_overwrites
+                            )
+                        elif ch_data["type"] == "voice":
+                            await guild.create_voice_channel(
+                                name=ch_name,
+                                category=category_obj,
+                                bitrate=ch_data.get("bitrate", 64000),
+                                user_limit=ch_data.get("user_limit", 0),
+                                overwrites=ch_overwrites
+                            )
+                        await asyncio.sleep(1.2)
                     except Exception as e:
-                        print(f"⚠️ لم أستطع إعطاء الرتبة لـ {user.name}: {e}")
+                        print(f"⚠️ خطأ بإنشاء الروم {ch_name}: {e}")
 
-        except asyncio.TimeoutError:
-            pass
+            await interaction.followup.send(
+                f"✅ **تمت استعادة كل الرتب، الصلاحيات، والرومات الجديدة بدقة تامة وبدون أي تكرار!**\n\n"
+                f"**تم كملت**",
+                ephemeral=True
+            )
 
-        complete_embed = discord.Embed(
-            title="✅ ACTIVITY CHECK COMPLETE!",
-            color=discord.Color.blue()
-        )
-
-        if active_users:
-            leaderboard_text = f"🏆 **تم منح رتبة ({role.name}) لكل من:**\n\n"
-            medals = ["🥇", "🥈", "🥉", "🏅", "🏅", "🏅", "🏅", "🏅", "🏅", "🏅"]
-            for index, user in enumerate(active_users[:10]):
-                medal = medals[index] if index < len(medals) else "🔹"
-                leaderboard_text += f"{medal} {index + 1}. {user.mention}\n"
-            
-            complete_embed.description = leaderboard_text
-        else:
-            complete_embed.description = "لم يتفاعل أي عضو خلال الـ 5 ثواني!"
-
-        await message.edit(content=None, embed=complete_embed)
+        except Exception as e:
+            await interaction.followup.send(f"❌ حدث خطأ غير متوقع أثناء الاستعادة: {e}", ephemeral=True)
 
 async def setup(bot):
-    await bot.add_cog(ActivityCheck(bot))
+    await bot.add_cog(BackupBot(bot))
