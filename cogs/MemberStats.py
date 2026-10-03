@@ -1,23 +1,29 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import json
 import os
+from datetime import datetime, timezone, timedelta
 
 OWNER_ID = 1107355943408259112  # أونر البوت الأساسي
 STATS_FILE = "stats.json"
+RAID_DATA_FILE = "raid_data.json"
 
 class MemberStats(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.load_data()
+        self.load_files()
+        self.check_inactive_streaks.start()  # بدء فحص انقطاع الستريك يومياً
 
-    def load_data(self):
+    def cog_unload(self):
+        self.check_inactive_streaks.cancel()
+
+    def load_files(self):
         if not os.path.exists(STATS_FILE):
             with open(STATS_FILE, "w", encoding="utf-8") as f:
                 json.dump({}, f, ensure_ascii=False, indent=4)
 
-    def get_data(self):
+    def get_stats_data(self):
         if not os.path.exists(STATS_FILE):
             return {}
         with open(STATS_FILE, "r", encoding="utf-8") as f:
@@ -26,24 +32,65 @@ class MemberStats(commands.Cog):
             except json.JSONDecodeError:
                 return {}
 
-    def save_data(self, data):
+    def save_stats_data(self, data):
         with open(STATS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
-    @commands.Cog.listener()
-    async def on_ready(self, *args, **kwargs):
-        print(f"📊 | نظام إحصائيات الأعضاء والتعديل (!id, !add_stats) جاهز للعمل.")
+    def get_raid_data(self):
+        if not os.path.exists(RAID_DATA_FILE):
+            return {}
+        with open(RAID_DATA_FILE, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return {}
 
-    # دالة موحدة لإنشاء وعرض بطاقة الـ ID
+    @commands.Cog.listener()
+    async def on_ready(self):
+        print(f"📊 | نظام إحصائيات الأعضاء المرتبط بملف الريدات جاهز للعمل.")
+
+    # مهمة خلفية تفحص يومياً ما إذا مر أكثر من 24 ساعة بدون رايد لتصفير الستريك
+    @tasks.loop(hours=24)
+    async def check_inactive_streaks(self):
+        try:
+            stats_data = self.get_stats_data()
+            now = datetime.now(timezone.utc)
+            updated = False
+
+            for user_id, u_data in stats_data.items():
+                last_raid_str = u_data.get("last_raid_time")
+                if last_raid_str and u_data.get("win_streak_current", 0) > 0:
+                    last_time = datetime.fromisoformat(last_raid_str)
+                    # إذا مر أكثر من 24 ساعة منذ آخر رايد شارك فيه
+                    if now - last_time > timedelta(hours=24):
+                        u_data["win_streak_current"] = 0
+                        updated = True
+
+            if updated:
+                self.save_stats_data(stats_data)
+        except Exception as e:
+            print(f"⚠️ خطأ في فحص ستريك الريدات: {e}")
+
+    @check_inactive_streaks.before_loop
+    async def before_check(self):
+        await self.bot.wait_until_ready()
+
+    # دالة موحدة لإنشاء وعرض بطاقة الـ ID (مع جلب بيانات الريدات تلقائياً)
     async def send_id_card(self, destination, member: discord.Member, guild: discord.Guild):
-        data = self.get_data()
+        stats_data = self.get_stats_data()
+        raid_data = self.get_raid_data()
         user_id_str = str(member.id)
-        
-        user_stats = data.get(user_id_str, {
-            "monthly_raids": 0,
+        gid_str = str(guild.id) if guild else None
+
+        # جلب إحصائيات الـ Raids التلقائية من ملف الريدات إن وجدت
+        raids_from_raidfile = 0
+        if gid_str and gid_str in raid_data:
+            raids_from_raidfile = raid_data[gid_str].get("raider_stats", {}).get(user_id_str, 0)
+
+        # جلب البيانات المخزنة محلياً
+        user_stats = stats_data.get(user_id_str, {
             "monthly_points": 0,
             "monthly_rank": "#--",
-            "alltime_raids": 0,
             "alltime_rank": "#--",
             "alltime_points": 0,
             "alltime_points_rank": "#--",
@@ -54,9 +101,13 @@ class MemberStats(commands.Cog):
             "losses": 0
         })
 
+        # دمج عدد الرايدات الفعلي من ملف الريدات مع البيانات
+        total_raids = max(user_stats.get("alltime_raids", 0), raids_from_raidfile)
+        monthly_raids = max(user_stats.get("monthly_raids", 0), raids_from_raidfile)
+
         guild_name = guild.name if guild else "Server"
 
-        total_matches = user_stats["wins"] + user_stats["losses"]
+        total_matches = user_stats["wins"] + total_matches_offset if 'total_matches_offset' in locals() else (user_stats["wins"] + user_stats["losses"])
         win_rate = int((user_stats["wins"] / total_matches * 100)) if total_matches > 0 else 0
 
         embed = discord.Embed(
@@ -69,13 +120,13 @@ class MemberStats(commands.Cog):
 
         embed.add_field(
             name="📅 Monthly MVP",
-            value=f"Raids: `{user_stats['monthly_raids']}`\nPoints: `{user_stats['monthly_points']}`\nRank: `{user_stats['monthly_rank']}`",
+            value=f"Raids: `{monthly_raids}`\nPoints: `{user_stats['monthly_points']}`\nRank: `{user_stats['monthly_rank']}`",
             inline=False
         )
 
         embed.add_field(
             name="👑 All-Time Legends",
-            value=f"Raids: `{user_stats['alltime_raids']}`\nRank: `{user_stats['alltime_rank']}`",
+            value=f"Raids: `{total_raids}`\nRank: `{user_stats['alltime_rank']}`",
             inline=False
         )
 
@@ -125,7 +176,7 @@ class MemberStats(commands.Cog):
             member = interaction.user
         await self.send_id_card(interaction, member, interaction.guild)
 
-    # دالة تنفيذ وتحديث الإحصائيات (مشتركة للسلاش والـ Prefix)
+    # دالة تنفيذ وتحديث الإحصائيات يدوياً
     async def process_add_stats(
         self, 
         ctx_or_interaction, 
@@ -136,7 +187,6 @@ class MemberStats(commands.Cog):
         losses: int = None, 
         win_streak: int = None
     ):
-        # التحقق من الصلاحيات (أونر البوت أو أدمن بالسيرفر)
         user_obj = ctx_or_interaction.user if isinstance(ctx_or_interaction, discord.Interaction) else ctx_or_interaction.author
         if user_obj.id != OWNER_ID and not user_obj.guild_permissions.administrator:
             msg = "عذراً، هذا الأمر مخصص للإدارة والأونر حصراً!"
@@ -146,7 +196,7 @@ class MemberStats(commands.Cog):
                 await ctx_or_interaction.send(msg)
             return
 
-        data = self.get_data()
+        data = self.get_stats_data()
         user_id_str = str(member.id)
 
         if user_id_str not in data:
@@ -154,7 +204,8 @@ class MemberStats(commands.Cog):
                 "monthly_raids": 0, "monthly_points": 0, "monthly_rank": "#1",
                 "alltime_raids": 0, "alltime_rank": "#1", "alltime_points": 0,
                 "alltime_points_rank": "#1", "tryout_rating": "Pro",
-                "win_streak_current": 0, "win_streak_best": 0, "wins": 0, "losses": 0
+                "win_streak_current": 0, "win_streak_best": 0, "wins": 0, "losses": 0,
+                "last_raid_time": datetime.now(timezone.utc).isoformat()
             }
 
         if monthly_raids is not None:
@@ -172,15 +223,15 @@ class MemberStats(commands.Cog):
             if win_streak > data[user_id_str]["win_streak_best"]:
                 data[user_id_str]["win_streak_best"] = win_streak
 
-        self.save_data(data)
+        self.save_stats_data(data)
 
-        success_msg = f"✅ **تم تحديث إحصائيات اللاعب {member.mention} بنجاح!**\n**تم كملت**"
+        success_msg = f"✅ **تم تحديث إحصائيات اللاعب {member.mention} بنجاح ومزامنتها!**\n**تم كملت**"
         if isinstance(ctx_or_interaction, discord.Interaction):
             await ctx_or_interaction.response.send_message(success_msg, ephemeral=True)
         else:
             await ctx_or_interaction.send(success_msg)
 
-    # 3. أمر الـ Prefix لتحديث الإحصائيات (!add_stats @user raids points wins losses streak)
+    # 3. أمر الـ Prefix لتحديث الإحصائيات (!add_stats)
     @commands.command(name="add_stats", description="تعديل إحصائيات العضو عبر !add_stats")
     async def prefix_add_stats(
         self, 
