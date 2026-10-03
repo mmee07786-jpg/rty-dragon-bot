@@ -113,13 +113,22 @@ class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media"):
         uids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
         blacklist = data[gid].get("blacklist", [])
         
+        # جلب cog الخاصة بالإحصائيات للربط التلقائي للرتب
+        stats_cog = interaction.client.get_cog("MemberStats")
+
         for uid in uids:
             if uid in blacklist: continue
-            data[gid]["raider_stats"][uid] = data[gid]["raider_stats"].get(uid, 0) + 1
+            current_raids = data[gid]["raider_stats"].get(uid, 0) + 1
+            data[gid]["raider_stats"][uid] = current_raids
+            
+            # ربط إعطاء الرتب التلقائي فور انتهاء الرايد
+            if stats_cog:
+                member_obj = interaction.guild.get_member(int(uid))
+                if member_obj:
+                    await stats_cog.process_member_raid_update(interaction.guild, member_obj, current_raids)
 
         save_raid_data(data)
         
-        # تم تعديل الحروف الزائدة هنا (إزالة الـ S)
         content = f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤{self.rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤{self.en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤{self.al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤{self.dur}\n\n**𝐒𝐓𝐀𝐓𝐔𝐒:**\n╰➤{self.st}\n\n**𝐌𝐕𝐏𝐒:**\n╰➤ {self.mvps_input.value}\n\n"
         mval = self.media_links.value.strip() if self.media_links.value else ""
         img_url = None
@@ -374,6 +383,11 @@ class RaidSystemCog(commands.Cog):
         data[gid]["raider_stats"][str(member.id)] = new_total
         save_raid_data(data)
         
+        # ربط التحديث التلقائي للرتب عند استخدام أمر raid-add
+        stats_cog = interaction.client.get_cog("MemberStats")
+        if stats_cog:
+            await stats_cog.process_member_raid_update(interaction.guild, member, new_total)
+
         await interaction.response.send_message(f"✅ | تمت إضافة `{amount}` رايد لـ {member.mention} وأصبح إجمالي رصيده: `{new_total}`", ephemeral=True)
         await self.update_all_tops(gid, interaction.guild)
 
@@ -389,6 +403,11 @@ class RaidSystemCog(commands.Cog):
         data[gid]["raider_stats"][str(member.id)] = amount
         save_raid_data(data)
         
+        # ربط التحديث التلقائي للرتب عند استخدام أمر raid-set
+        stats_cog = interaction.client.get_cog("MemberStats")
+        if stats_cog:
+            await stats_cog.process_member_raid_update(interaction.guild, member, amount)
+
         await interaction.response.send_message(f"✅ | تم تعيين رصيد {member.mention} مباشرة إلى: `{amount}` رايد", ephemeral=True)
         await self.update_all_tops(gid, interaction.guild)
 
@@ -431,4 +450,3 @@ class RaidSystemCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(RaidSystemCog(bot))
-
