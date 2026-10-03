@@ -5,7 +5,7 @@ import asyncio
 import json
 import os
 
-OWNER_ID = 1107355943408259112  # أونر البوت (فهد)
+OWNER_ID = 1107355943408259112  # آونر البوت الأساسي
 BACKUP_FILE = "server_backup.json"
 
 class BackupBot(commands.Cog):
@@ -14,28 +14,85 @@ class BackupBot(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print(f"🛡️️ | نظام النسخ الاحتياطي (Slash Commands) جاهز للعمل.")
+        print(f"🛡 | نظام النسخ الاحتياطي (مع الحماية القصوى ضد التكرار) جاهز للعمل.")
 
-    # 1. أمر سلاش لإنشاء النسخة الاحتياطية مع وصف دقيق وتأكيد الاكتمال
+    def serialize_overwrites(self, guild, channel):
+        overwrites_data = {}
+        for target, overwrite in channel.overwrites.items():
+            target_id = str(target.id)
+            if isinstance(target, discord.Role):
+                target_type = "role"
+            elif isinstance(target, discord.Member):
+                target_type = "member"
+            else:
+                continue
+            
+            allow_val, deny_val = overwrite.pair()
+            overwrites_data[target_id] = {
+                "name": target.name,
+                "type": target_type,
+                "allow": allow_val.value,
+                "deny": deny_val.value
+            }
+        return overwrites_data
+
+    def apply_overwrites(self, guild, channel_data):
+        overwrites = {}
+        role_map = {role.name.strip().lower(): role for role in guild.roles}
+        
+        for target_id_str, ow_data in channel_data.get("overwrites", {}).items():
+            try:
+                target = None
+                target_type = ow_data.get("type")
+                target_name = ow_data.get("name", "").strip().lower()
+
+                if target_type == "role":
+                    try:
+                        target = guild.get_role(int(target_id_str))
+                    except:
+                        pass
+                    if not target and target_name in role_map:
+                        target = role_map[target_name]
+                
+                elif target_type == "member":
+                    try:
+                        target = guild.get_member(int(target_id_str))
+                    except:
+                        pass
+
+                if target:
+                    overwrite = discord.PermissionOverwrite.from_pair(
+                        discord.Permissions(ow_data["allow"]),
+                        discord.Permissions(ow_data["deny"])
+                    )
+                    overwrites[target] = overwrite
+            except Exception as e:
+                print(f"⚠️ خطأ في تطبيق صلاحيات الروم: {e}")
+        return overwrites
+
+    # 1. أمر أخذ النسخة الاحتياطية الشاملة
     @app_commands.command(
         name="backup",
-        description="أخذ نسخة احتياطية شاملة للسيرفر (الرتب، الأقسام، الرومات، والصلاحيات) وحفظها بأمان."
+        description="أخذ نسخة احتياطية مطابقة 100% وتحديثها مع إرسال إشعار للأونر."
     )
     async def backup_server(self, interaction: discord.Interaction):
         if interaction.user.id != OWNER_ID:
             await interaction.response.send_message("عذراً فهد، هذا الأمر مخصص لك حصراً!", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.send_message("⏳ جاري إنشاء النسخة الاحتياطية الشاملة لكافة تفاصيل السيرفر...", ephemeral=False)
         guild = interaction.guild
 
         try:
-            # حفظ الرتب (تخطي الرتب الافتراضية والمدارة من البوتات)
+            if os.path.exists(BACKUP_FILE):
+                os.remove(BACKUP_FILE)
+
             roles_data = []
             for role in reversed(guild.roles):
                 if role.is_default() or role.managed:
                     continue
                 roles_data.append({
+                    "id": role.id,
                     "name": role.name,
                     "permissions": role.permissions.value,
                     "color": role.color.value,
@@ -44,17 +101,29 @@ class BackupBot(commands.Cog):
                     "position": role.position
                 })
 
-            # حفظ الأقسام وروماتها (تتحمل أكثر من 200 روم وأكثر)
             categories_data = []
             no_category_channels = []
 
             for channel in guild.text_channels:
                 if channel.category is None:
-                    no_category_channels.append({"name": channel.name, "type": "text", "topic": channel.topic, "slowmode": channel.slowmode_delay, "nsfw": channel.nsfw})
+                    no_category_channels.append({
+                        "name": channel.name,
+                        "type": "text",
+                        "topic": channel.topic,
+                        "slowmode": channel.slowmode_delay,
+                        "nsfw": channel.nsfw,
+                        "overwrites": self.serialize_overwrites(guild, channel)
+                    })
             
             for channel in guild.voice_channels:
                 if channel.category is None:
-                    no_category_channels.append({"name": channel.name, "type": "voice", "bitrate": channel.bitrate, "user_limit": channel.user_limit})
+                    no_category_channels.append({
+                        "name": channel.name,
+                        "type": "voice",
+                        "bitrate": channel.bitrate,
+                        "user_limit": channel.user_limit,
+                        "overwrites": self.serialize_overwrites(guild, channel)
+                    })
 
             if no_category_channels:
                 categories_data.append({"name": "بدون قسم", "channels": no_category_channels})
@@ -68,16 +137,23 @@ class BackupBot(commands.Cog):
                             "type": "text",
                             "topic": channel.topic,
                             "slowmode": channel.slowmode_delay,
-                            "nsfw": channel.nsfw
+                            "nsfw": channel.nsfw,
+                            "overwrites": self.serialize_overwrites(guild, channel)
                         })
                     elif isinstance(channel, discord.VoiceChannel):
                         cat_channels.append({
                             "name": channel.name,
                             "type": "voice",
                             "bitrate": channel.bitrate,
-                            "user_limit": channel.user_limit
+                            "user_limit": channel.user_limit,
+                            "overwrites": self.serialize_overwrites(guild, channel)
                         })
-                categories_data.append({"name": category.name, "channels": cat_channels})
+                
+                categories_data.append({
+                    "name": category.name,
+                    "overwrites": self.serialize_overwrites(guild, category),
+                    "channels": cat_channels
+                })
 
             backup_dict = {
                 "guild_name": guild.name,
@@ -89,21 +165,25 @@ class BackupBot(commands.Cog):
                 json.dump(backup_dict, f, ensure_ascii=False, indent=4)
 
             total_channels = sum(len(cat["channels"]) for cat in categories_data)
-            await interaction.followup.send(
-                f"✅ **تم إنشاء النسخة الاحتياطية بنجاح!**\n"
-                f"- عدد الرتب المحفوظة: **{len(roles_data)}**\n"
-                f"- عدد الرومات المحفوظة: **{total_channels}** (أكثر من 200 روم وأكثر مطابقة تماماً).\n\n"
-                f"**تم كملت**",
-                ephemeral=True
+            server_owner = guild.owner
+            owner_mention = server_owner.mention if server_owner else "الأونر"
+
+            await interaction.edit_original_response(
+                content=(
+                    f"✅ **تمت عملية النسخ الاحتياطي وتحديث الملف بنجاح!** {owner_mention}\n"
+                    f"- عدد الرتب المحفوظة: **{len(roles_data)}**\n"
+                    f"- عدد الرومات والأقسام المحفوظة: **{total_channels}** (مع صلاحياتها بالكامل).\n\n"
+                    f"**تم كملت**"
+                )
             )
 
         except Exception as e:
-            await interaction.followup.send(f"❌ حدث خطأ أثناء إنشاء النسخة: {e}", ephemeral=True)
+            await interaction.edit_original_response(content=f"❌ حدث خطأ أثناء إنشاء النسخة: {e}")
 
-    # 2. أمر سلاش لاستعادة النسخة الاحتياطية مع وصف دقيق وتأكيد الاكتمال
+    # 2. أمر الاستعادة مع فحص دقيق جداً لمنع التكرار (للرتب والأقسام والرومات)
     @app_commands.command(
         name="restore",
-        description="استعادة كافة الرتب والرومات والأقسام المحفوظة في النسخة الاحتياطية بنظام آمن."
+        description="استعادة السيرفر مع منع تكرار الرتب والرومات والأقسام نهائياً."
     )
     async def restore_server(self, interaction: discord.Interaction):
         if interaction.user.id != OWNER_ID:
@@ -121,54 +201,79 @@ class BackupBot(commands.Cog):
             with open(BACKUP_FILE, "r", encoding="utf-8") as f:
                 backup_data = json.load(f)
 
-            # استعادة الرتب أولاً
+            # فحص الرتب الموجودة بدقة (بالحروف الصغيرة لتجنب تكرار مثل Hmm و hmm)
+            existing_role_names = {role.name.strip().lower() for role in guild.roles}
+
             for r_data in backup_data["roles"]:
+                r_name = r_data["name"].strip()
+                if r_name.lower() in existing_role_names:
+                    continue # تخطي إذا كانت الرتبة موجودة
                 try:
                     await guild.create_role(
-                        name=r_data["name"],
+                        name=r_name,
                         permissions=discord.Permissions(r_data["permissions"]),
                         color=discord.Color(r_data["color"]),
                         hoist=r_data["hoist"],
-                        mentionable=r_data["mentionable"]
+                        mentionable=r_data["mentionable"],
+                        reason="استعادة النسخة الاحتياطية بدون تكرار"
                     )
-                    await asyncio.sleep(1.2) # فاصل زمني لتفادي حظر الديسكورد (Rate Limit)
+                    existing_role_names.add(r_name.lower()) # إضافتها للقائمة حتى لا تتكرر ضمن نفس العملية
+                    await asyncio.sleep(1.2)
                 except Exception as e:
-                    print(f"⚠️ خطأ بإنشاء رتبة {r_data['name']}: {e}")
+                    print(f"⚠️ خطأ بإنشاء رتبة {r_name}: {e}")
 
-            # استعادة الأقسام والرومات
+            # فحص الأقسام والرومات الموجودة حالياً بالسيرفر لمنع تكرارها
+            existing_categories = {cat.name.strip().lower(): cat for cat in guild.categories}
+            existing_channels = {ch.name.strip().lower() for ch in guild.channels}
+
             for cat_data in backup_data["categories"]:
                 category_obj = None
-                if cat_data["name"] != "بدون قسم":
-                    try:
-                        category_obj = await guild.create_category(cat_data["name"])
-                        await asyncio.sleep(1.5)
-                    except Exception as e:
-                        print(f"⚠️ خطأ بإنشاء القسم {cat_data['name']}: {e}")
-                        continue
+                cat_name = cat_data["name"].strip()
+
+                if cat_name != "بدون قسم":
+                    if cat_name.lower() in existing_categories:
+                        category_obj = existing_categories[cat_name.lower()]
+                    else:
+                        try:
+                            cat_overwrites = self.apply_overwrites(guild, cat_data)
+                            category_obj = await guild.create_category(cat_name, overwrites=cat_overwrites)
+                            existing_categories[cat_name.lower()] = category_obj
+                            await asyncio.sleep(1.5)
+                        except Exception as e:
+                            print(f"⚠️ خطأ بإنشاء القسم {cat_name}: {e}")
+                            continue
 
                 for ch_data in cat_data["channels"]:
+                    ch_name = ch_data["name"].strip()
+                    if ch_name.lower() in existing_channels:
+                        continue # تخطي الروم إذا كان موجوداً مسبقاً بأي مكان بالسيرفر
+
                     try:
+                        ch_overwrites = self.apply_overwrites(guild, ch_data)
                         if ch_data["type"] == "text":
-                            await guild.create_text_channel(
-                                name=ch_data["name"],
+                            new_ch = await guild.create_text_channel(
+                                name=ch_name,
                                 category=category_obj,
                                 topic=ch_data.get("topic"),
                                 slowmode_delay=ch_data.get("slowmode", 0),
-                                nsfw=ch_data.get("nsfw", False)
+                                nsfw=ch_data.get("nsfw", False),
+                                overwrites=ch_overwrites
                             )
                         elif ch_data["type"] == "voice":
-                            await guild.create_voice_channel(
-                                name=ch_data["name"],
+                            new_ch = await guild.create_voice_channel(
+                                name=ch_name,
                                 category=category_obj,
                                 bitrate=ch_data.get("bitrate", 64000),
-                                user_limit=ch_data.get("user_limit", 0)
+                                user_limit=ch_data.get("user_limit", 0),
+                                overwrites=ch_overwrites
                             )
+                        existing_channels.add(ch_name.lower()) # إضافته للقائمة لمنع تكراره لاحقاً
                         await asyncio.sleep(1.2)
                     except Exception as e:
-                        print(f"⚠️️ خطأ بإنشاء الروم {ch_data['name']}: {e}")
+                        print(f"⚠️ خطأ بإنشاء الروم {ch_name}: {e}")
 
             await interaction.followup.send(
-                f"✅ **تمت استعادة كافة الرتب والرومات بنجاح تام وبدون أي مشاكل!**\n\n"
+                f"✅ **تمت استعادة العناصر الجديدة فقط دون أي تكرار للرتب أو الرومات أو الأقسام!**\n\n"
                 f"**تم كملت**",
                 ephemeral=True
             )
