@@ -63,16 +63,12 @@ class MemberStats(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         print(f"📊 | نظام إحصائيات ورتب الرايدات والتوبات جاهز للعمل بنجاح.")
-
-    @commands.command(name="sync")
-    async def sync_commands(self, ctx):
-        if ctx.author.id != OWNER_ID:
-            return
+        # مزامنة الأوامر تلقائياً فور تشغيل البوت بالسيرفرات
         try:
             synced = await self.bot.tree.sync()
-            await ctx.send(f"✅ تم مزامنة {len(synced)} أمر سلاش بنجاح في السيرفر!")
+            print(f"✅ تمت مزامنة {len(synced)} أمر سلاش تلقائياً بنجاح!")
         except Exception as e:
-            await ctx.send(f"❌ حدث خطأ أثناء المزامنة: {e}")
+            print(f"❌ خطأ في المزامنة التلقائية: {e}")
 
     async def check_and_apply_raid_roles(self, guild: discord.Guild, member: discord.Member, total_raids: int):
         config = self.get_config_data()
@@ -267,7 +263,7 @@ class MemberStats(commands.Cog):
         await interaction.response.send_message(embed=discord.Embed(title="🏆 Dynamic Top Roles", description=desc, color=discord.Color.gold()), ephemeral=False)
 
     @app_commands.command(name="update-top-roles", description="إعادة تحديث وتوزيع رتب التوبات يدوياً الآن")
-    @app_commands.checks.has_permissions(administrator=Thread := True)
+    @app_commands.checks.has_permissions(administrator=True)
     async def update_top_roles_manual(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self.update_top_roles_for_guild(interaction.guild)
