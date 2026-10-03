@@ -64,7 +64,7 @@ class MemberStats(commands.Cog):
     async def on_ready(self):
         print(f"📊 | نظام إحصائيات ورتب الرايدات والتوبات جاهز للعمل بنجاح.")
 
-    # دوال خارجية عامة يمكن استدعاؤها من ملفات الرايد الأخرى أو ملفات الإضافة لتحديث الرتب تلقائياً
+    # الدالة المركزية التي تنفذ التحديث التلقائي للرتب فوراً عند استدعائها
     async def process_member_raid_update(self, guild: discord.Guild, member: discord.Member, total_raids: int):
         await self.check_and_apply_raid_roles(guild, member, total_raids)
         await self.update_top_roles_for_guild(guild)
@@ -220,7 +220,6 @@ class MemberStats(commands.Cog):
         self.save_config_data(config)
         await interaction.response.send_message(f"✅ | تم ربط `{raids_count} Raids` بالرتبة {role.mention}", ephemeral=True)
         
-        # تحديث فوري لجميع الأعضاء عند ضبط الإعداد
         for member in interaction.guild.members:
             if not member.bot:
                 raid_data = self.get_raid_data()
