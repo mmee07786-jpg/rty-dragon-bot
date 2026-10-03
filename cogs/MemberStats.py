@@ -64,7 +64,7 @@ class MemberStats(commands.Cog):
     async def on_ready(self):
         print(f"📊 | نظام إحصائيات ورتب الرايدات والتوبات جاهز للعمل بنجاح.")
 
-    # دوال خارجية عامة يمكن استدعاؤها من ملفات الرايد الأخرى لتحديث الرتب تلقائياً
+    # دوال خارجية عامة يمكن استدعاؤها من ملفات الرايد الأخرى أو ملفات الإضافة لتحديث الرتب تلقائياً
     async def process_member_raid_update(self, guild: discord.Guild, member: discord.Member, total_raids: int):
         await self.check_and_apply_raid_roles(guild, member, total_raids)
         await self.update_top_roles_for_guild(guild)
@@ -219,10 +219,10 @@ class MemberStats(commands.Cog):
         config["raid_roles"][gid_str][str(raids_count)] = role.id
         self.save_config_data(config)
         await interaction.response.send_message(f"✅ | تم ربط `{raids_count} Raids` بالرتبة {role.mention}", ephemeral=True)
-        # تحديث فوري للرتب عند ضبط الإعداد
+        
+        # تحديث فوري لجميع الأعضاء عند ضبط الإعداد
         for member in interaction.guild.members:
             if not member.bot:
-                # حساب رايدات العضو وتحديثه
                 raid_data = self.get_raid_data()
                 r_count = raid_data.get(gid_str, {}).get("raider_stats", {}).get(str(member.id), 0)
                 if r_count > 0:
@@ -269,7 +269,6 @@ class MemberStats(commands.Cog):
         })
         self.save_config_data(config)
         await interaction.response.send_message(f"✅ | تم تعيين رتبة {role.mention} لنطاق التوب من المركز **#{min_rank}** إلى **#{max_rank}** بنجاح!", ephemeral=True)
-        # توزيع التوبات وتحديثها فوراً عند الضبط
         await self.update_top_roles_for_guild(interaction.guild)
 
     @app_commands.command(name="remove-top-role", description="إزالة رتبة توب مخصصة")
