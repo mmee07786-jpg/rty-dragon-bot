@@ -255,7 +255,7 @@ class MemberStats(commands.Cog):
     async def remove_top_role(self, interaction: discord.Interaction, min_rank: int):
         config = self.get_config_data()
         initial_len = len(config["top_roles"])
-        config["top_roles"] = [r for r in config["top_roles"] if not (r["guild_id"] == interaction.guild_id and r="min_rank" == min_rank)]
+        config["top_roles"] = [r for r in config["top_roles"] if not (r["guild_id"] == interaction.guild_id and r["min_rank"] == min_rank)]
         
         if len(config["top_roles"]) < initial_len:
             self.save_config_data(config)
