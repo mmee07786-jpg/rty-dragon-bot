@@ -24,7 +24,8 @@ async def on_ready():
         "cogs.autoroles",
         "cogs.join_message",
         "cogs.roblox",
-        "cogs.Spy"   # <--- نظام التجسس انضاف هنا بنجاح!
+        "cogs.Spy",
+        "cogs.BackupBot"   # <--- نظام النسخ الاحتياطي الجديد انضاف هنا بنجاح!
     ]
     
     for cog in cogs_list:
