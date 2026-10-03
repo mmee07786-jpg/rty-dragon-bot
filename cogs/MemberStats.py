@@ -64,6 +64,11 @@ class MemberStats(commands.Cog):
     async def on_ready(self):
         print(f"📊 | نظام إحصائيات ورتب الرايدات والتوبات جاهز للعمل بنجاح.")
 
+    # دوال خارجية عامة يمكن استدعاؤها من ملفات الرايد الأخرى لتحديث الرتب تلقائياً
+    async def process_member_raid_update(self, guild: discord.Guild, member: discord.Member, total_raids: int):
+        await self.check_and_apply_raid_roles(guild, member, total_raids)
+        await self.update_top_roles_for_guild(guild)
+
     async def check_and_apply_raid_roles(self, guild: discord.Guild, member: discord.Member, total_raids: int):
         config = self.get_config_data()
         gid_str = str(guild.id)
@@ -78,8 +83,10 @@ class MemberStats(commands.Cog):
 
             if total_raids >= req_raids:
                 if role not in member.roles:
-                    try: await member.add_roles(role, reason=f"الوصول إلى {total_raids} رايد")
-                    except Exception as e: print(f"⚠️ خطأ منح رتبة رايد: {e}")
+                    try: 
+                        await member.add_roles(role, reason=f"الوصول إلى {total_raids} رايد")
+                    except Exception as e: 
+                        print(f"⚠️ خطأ منح رتبة رايد: {e}")
 
     async def update_top_roles_for_guild(self, guild: discord.Guild):
         config = self.get_config_data()
@@ -191,10 +198,17 @@ class MemberStats(commands.Cog):
             await destination.response.send_message(embed=embed, ephemeral=False)
         else: await destination.send(embed=embed)
 
+    # 1. أمر السلاش /id
     @app_commands.command(name="id", description="عرض بطاقة إحصائيات العضو الشخصية.")
     async def slash_id(self, interaction: discord.Interaction, member: discord.Member = None):
         if member is None: member = interaction.user
         await self.send_id_card(interaction, member, interaction.guild)
+
+    # 2. أمر البرفكس -id
+    @commands.command(name="id", help="عرض بطاقة إحصائيات العضو الشخصية.")
+    async def prefix_id(self, ctx: commands.Context, member: discord.Member = None):
+        if member is None: member = ctx.author
+        await self.send_id_card(ctx, member, ctx.guild)
 
     @app_commands.command(name="set-raid-role", description="ربط عدد رايدات برتبة تلقائية")
     @app_commands.checks.has_permissions(administrator=True)
@@ -205,6 +219,14 @@ class MemberStats(commands.Cog):
         config["raid_roles"][gid_str][str(raids_count)] = role.id
         self.save_config_data(config)
         await interaction.response.send_message(f"✅ | تم ربط `{raids_count} Raids` بالرتبة {role.mention}", ephemeral=True)
+        # تحديث فوري للرتب عند ضبط الإعداد
+        for member in interaction.guild.members:
+            if not member.bot:
+                # حساب رايدات العضو وتحديثه
+                raid_data = self.get_raid_data()
+                r_count = raid_data.get(gid_str, {}).get("raider_stats", {}).get(str(member.id), 0)
+                if r_count > 0:
+                    await self.check_and_apply_raid_roles(interaction.guild, member, r_count)
 
     @app_commands.command(name="remove-raid-role", description="إزالة رتبة رايد تلقائية")
     @app_commands.checks.has_permissions(administrator=True)
@@ -247,6 +269,7 @@ class MemberStats(commands.Cog):
         })
         self.save_config_data(config)
         await interaction.response.send_message(f"✅ | تم تعيين رتبة {role.mention} لنطاق التوب من المركز **#{min_rank}** إلى **#{max_rank}** بنجاح!", ephemeral=True)
+        # توزيع التوبات وتحديثها فوراً عند الضبط
         await self.update_top_roles_for_guild(interaction.guild)
 
     @app_commands.command(name="remove-top-role", description="إزالة رتبة توب مخصصة")
