@@ -64,9 +64,13 @@ class MemberStats(commands.Cog):
     async def on_ready(self):
         print(f"📊 | نظام إحصائيات ورتب الرايدات والتوبات جاهز للعمل بنجاح.")
 
-    # الدالة المركزية التي تنفذ التحديث التلقائي للرتب فوراً عند استدعائها
+    # الدالة المركزية لتحديث رتب الفرد عند زيادة الرايدات
     async def process_member_raid_update(self, guild: discord.Guild, member: discord.Member, total_raids: int):
         await self.check_and_apply_raid_roles(guild, member, total_raids)
+        await self.update_top_roles_for_guild(guild)
+
+    # الدالة المطلوبة للتحقق وتحديث التوبات وسحب ورقتة الرتبة ممن تراجع مستواه
+    async def process_top_ranks_update(self, guild: discord.Guild, gid_str: str):
         await self.update_top_roles_for_guild(guild)
 
     async def check_and_apply_raid_roles(self, guild: discord.Guild, member: discord.Member, total_raids: int):
@@ -135,7 +139,7 @@ class MemberStats(commands.Cog):
                         except: pass
                 else:
                     if role_obj in member.roles:
-                        try: await member.remove_roles(role_obj, reason=f"خروج من نطاق التوب")
+                        try: await member.remove_roles(role_obj, reason=f"خروج من نطاق التوب أو تراجع المستوى")
                         except: pass
 
     @tasks.loop(hours=24)
@@ -198,13 +202,11 @@ class MemberStats(commands.Cog):
             await destination.response.send_message(embed=embed, ephemeral=False)
         else: await destination.send(embed=embed)
 
-    # 1. أمر السلاش /id
     @app_commands.command(name="id", description="عرض بطاقة إحصائيات العضو الشخصية.")
     async def slash_id(self, interaction: discord.Interaction, member: discord.Member = None):
         if member is None: member = interaction.user
         await self.send_id_card(interaction, member, interaction.guild)
 
-    # 2. أمر البرفكس -id
     @commands.command(name="id", help="عرض بطاقة إحصائيات العضو الشخصية.")
     async def prefix_id(self, ctx: commands.Context, member: discord.Member = None):
         if member is None: member = ctx.author
