@@ -26,7 +26,8 @@ async def on_ready():
         "cogs.roblox",
         "cogs.Spy",
         "cogs.BackupBot",
-        "cogs.MemberStats"   # <--- نظام الإحصائيات ورتب التوبات والرايدات انضاف هنا بنجاح!
+        "cogs.MemberStats",
+        "cogs.translator"   # <--- نظام الترجمة بالأعلام انضاف هنا بنجاح!
     ]
     
     for cog in cogs_list:
