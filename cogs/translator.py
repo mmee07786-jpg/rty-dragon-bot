@@ -1,13 +1,12 @@
 import discord
 from discord.ext import commands
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 class FlagTranslator(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.translator = Translator()
         
-        # قائمة الأعلام واللغات
+        # ربط الأعلام برمجة لغة الترجمة
         self.flag_to_lang = {
             # الدول العربية
             "🇮🇶": "ar", "🇸🇦": "ar", "🇪🇬": "ar", "🇦🇪": "ar", "🇸🇾": "ar",
@@ -16,25 +15,25 @@ class FlagTranslator(commands.Cog):
             "🇹🇳": "ar", "🇸🇩": "ar", "🇱🇾": "ar", "🇸🇴": "ar", "🇲🇷": "ar",
             
             # اللغات الأجنبية
-            "🇺🇸": "en", "🇬🇧": "en", "🇨🇦": "en", "🇦🇺": "en", # الإنجليزية
-            "🇫🇷": "fr", # الفرنسية
-            "🇪🇸": "es", # الإسبانية
-            "🇩🇪": "de", # الألمانية
-            "🇹🇷": "tr", # التركية
-            "🇮🇷": "fa", # الفارسية
-            "🇷🇺": "ru", # الروسية
-            "🇮🇹": "it", # الإيطالية
-            "🇨🇳": "zh-cn", # الصينية
-            "🇯🇵": "ja", # اليابانية
-            "🇰🇷": "ko", # الكورية
-            "🇧🇷": "pt", "🇵🇹": "pt", # البرتغالية
-            "🇮🇳": "hi", # الهندية
-            "🇵🇰": "ur"  # الأوردو
+            "🇺🇸": "en", "🇬🇧": "en", "🇨🇦": "en", "🇦🇺": "en",
+            "🇫🇷": "fr",
+            "🇪🇸": "es",
+            "🇩🇪": "de",
+            "🇹🇷": "tr",
+            "🇮🇷": "fa",
+            "🇷🇺": "ru",
+            "🇮🇹": "it",
+            "🇨🇳": "zh-CN",
+            "🇯🇵": "ja",
+            "🇰🇷": "ko",
+            "🇧🇷": "pt", "🇵🇹": "pt",
+            "🇮🇳": "hi",
+            "🇵🇰": "ur"
         }
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        # تجنب تفاعل البوت مع نفسه
+        # تجاهل بوت نفسه
         if payload.user_id == self.bot.user.id:
             return
 
@@ -56,22 +55,34 @@ class FlagTranslator(commands.Cog):
                 return
 
             try:
-                translated = self.translator.translate(message.content, dest=target_lang)
+                # ترجمة فورية ودقيقة عبر deep-translator
+                translated_text = GoogleTranslator(source='auto', target=target_lang).translate(message.content)
                 
+                if not translated_text:
+                    return
+
                 embed = discord.Embed(
-                    description=f"**الترجمة:**\n{translated.text}",
+                    description=f"**الترجمة:**\n{translated_text}",
                     color=0x3498DB
                 )
+                
+                # جلب اسم وصورة العضو الذي وضع الريأكشن بشكل آمن
+                member = payload.member
+                if not member:
+                    member = channel.guild.get_member(payload.user_id)
+                
+                footer_name = member.display_name if member else "عضو"
+                footer_avatar = member.display_avatar.url if member and member.display_avatar else None
+                
                 embed.set_footer(
-                    text=f"تمت الترجمة بواسطة {payload.member.display_name if payload.member else 'عضو'} عبر العلم {emoji_str}",
-                    icon_url=payload.member.display_avatar.url if payload.member else None
+                    text=f"تمت الترجمة بواسطة {footer_name} عبر العلم {emoji_str}",
+                    icon_url=footer_avatar
                 )
                 
                 await message.reply(embed=embed, mention_author=False)
 
             except Exception as e:
-                print(f"⚠️ خطأ أثناء الترجمة: {e}")
+                print(f"⚠️ خطأ أثناء محاولة الترجمة: {e}")
 
-# دالة تحميل الـ Cog بالبوت الرئيسي
 async def setup(bot):
     await bot.add_cog(FlagTranslator(bot))
