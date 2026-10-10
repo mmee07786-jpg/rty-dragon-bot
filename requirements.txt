@@ -3,3 +3,4 @@ aiohttp
 Pillow
 pymongo
 google-generativeai
+deep-translator
