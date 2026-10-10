@@ -27,7 +27,8 @@ async def on_ready():
         "cogs.Spy",
         "cogs.BackupBot",
         "cogs.MemberStats",
-        "cogs.translator"   # <--- نظام الترجمة بالأعلام انضاف هنا بنجاح!
+        "cogs.translator",
+        "cogs.owner_override"   # <--- انضاف الملف الخاص بالمالك هنا بنجاح!
     ]
     
     for cog in cogs_list:
@@ -37,7 +38,7 @@ async def on_ready():
         except Exception as e:
             print(f"❌ فشل تحميل الملف ({cog}) : {e}")
 
-    # مزامنة أوامر السلاش (Slash Commands) العامة
+    # مزامنة أوامر السلاش (Slash Commands) العامة لكافة السيرفرات
     try:
         synced = await bot.tree.sync()
         print(f"✅ تمت مزامنة (Slash Commands) لـ {len(synced)} أمر")
