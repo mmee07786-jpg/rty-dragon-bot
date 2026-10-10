@@ -41,33 +41,40 @@ class Boost(commands.Cog):
     @app_commands.command(name="boost_setup", description="تعيين روم إعلانات بوست السيرفر لهذا السيرفر")
     @app_commands.default_permissions(administrator=True)
     async def boost_setup(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        await interaction.response.defer(ephemeral=True)
         guild_id = str(interaction.guild_id)
         g_data = get_guild_boost(guild_id)
         g_data["channel_id"] = channel.id
         update_guild_boost(guild_id, g_data)
-        await interaction.response.send_message(f"✅ تم ضبط روم إعلانات البوست في هذا السيرفر: {channel.mention}", ephemeral=True)
+        await interaction.followup.send(f"✅ تم ضبط روم إعلانات البوست في هذا السيرفر: {channel.mention}", ephemeral=True)
 
     @app_commands.command(name="boost_message", description="تعديل رسالة البوست (استخدم {member} للمنشن)")
     @app_commands.default_permissions(administrator=True)
     async def boost_message_cmd(self, interaction: discord.Interaction, message: str):
+        await interaction.response.defer(ephemeral=True)
         guild_id = str(interaction.guild_id)
         g_data = get_guild_boost(guild_id)
         g_data["message"] = message
         update_guild_boost(guild_id, g_data)
-        await interaction.response.send_message(f"✅ تم تحديث رسالة البوست في هذا السيرفر بنجاح!", ephemeral=True)
+        await interaction.followup.send(f"✅ تم تحديث رسالة البوست في هذا السيرفر بنجاح!", ephemeral=True)
 
     @app_commands.command(name="boost_image", description="تعديل صورة البوست")
     @app_commands.default_permissions(administrator=True)
     async def boost_image_cmd(self, interaction: discord.Interaction, image_url: str):
+        # استجابة فورية لمنع خطأ مهلة الـ 3 ثواني من ديسكورد
+        await interaction.response.defer(ephemeral=True)
+        
         guild_id = str(interaction.guild_id)
         g_data = get_guild_boost(guild_id)
         g_data["image_url"] = image_url
         update_guild_boost(guild_id, g_data)
-        await interaction.response.send_message(f"✅ تم تحديث صورة البوست في هذا السيرفر بنجاح!", ephemeral=True)
+        
+        await interaction.followup.send(f"✅ تم تحديث صورة البوست في هذا السيرفر بنجاح!", ephemeral=True)
 
     @app_commands.command(name="test_boost", description="تجربة رسالة البوست لنفسك")
     @app_commands.default_permissions(administrator=True)
     async def test_boost(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         guild_id = str(interaction.guild_id)
         g_data = get_guild_boost(guild_id)
         
@@ -75,7 +82,7 @@ class Boost(commands.Cog):
         embed = discord.Embed(description=formatted_msg, color=discord.Color.purple())
         if g_data["image_url"]:
             embed.set_image(url=g_data["image_url"])
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
