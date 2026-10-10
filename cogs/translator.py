@@ -6,7 +6,7 @@ class FlagTranslator(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         
-        # ربط الأعلام برمجة لغة الترجمة
+        # ربط الأعلام برمجة لغة الترجمة الشاملة
         self.flag_to_lang = {
             # الدول العربية
             "🇮🇶": "ar", "🇸🇦": "ar", "🇪🇬": "ar", "🇦🇪": "ar", "🇸🇾": "ar",
@@ -14,7 +14,7 @@ class FlagTranslator(commands.Cog):
             "🇴🇲": "ar", "🇾🇪": "ar", "🇵🇸": "ar", "🇩🇿": "ar", "🇲🇦": "ar",
             "🇹🇳": "ar", "🇸🇩": "ar", "🇱🇾": "ar", "🇸🇴": "ar", "🇲🇷": "ar",
             
-            # اللغات الأجنبية
+            # اللغات الأجنبية العالمية
             "🇺🇸": "en", "🇬🇧": "en", "🇨🇦": "en", "🇦🇺": "en",
             "🇫🇷": "fr",
             "🇪🇸": "es",
@@ -51,38 +51,44 @@ class FlagTranslator(commands.Cog):
             except Exception:
                 return
 
-            if not message.content:
+            # التأكد من وجود نص بالرسالة
+            if not message.content or message.content.strip() == "":
                 return
 
             try:
-                # ترجمة فورية ودقيقة عبر deep-translator
-                translated_text = GoogleTranslator(source='auto', target=target_lang).translate(message.content)
+                # ترجمة كاملة للنص الأصلي
+                translator = GoogleTranslator(source='auto', target=target_lang)
+                translated_text = translator.translate(message.content)
                 
                 if not translated_text:
                     return
 
-                embed = discord.Embed(
-                    description=f"**الترجمة:**\n{translated_text}",
-                    color=0x3498DB
-                )
-                
-                # جلب اسم وصورة العضو الذي وضع الريأكشن بشكل آمن
+                # جلب معلومات العضو الذي وضع الريأكشن بشكل آمن لعمل المنشن
                 member = payload.member
                 if not member:
                     member = channel.guild.get_member(payload.user_id)
                 
+                member_mention = member.mention if member else f"<@{payload.user_id}>"
                 footer_name = member.display_name if member else "عضو"
                 footer_avatar = member.display_avatar.url if member and member.display_avatar else None
+
+                # تصميم الـ Embed مع تضمين منشن الشخص
+                embed = discord.Embed(
+                    title=f"🌐 | الترجمة إلى اللغة المطلوبة",
+                    description=f"{translated_text}",
+                    color=0x3498DB
+                )
                 
                 embed.set_footer(
                     text=f"تمت الترجمة بواسطة {footer_name} عبر العلم {emoji_str}",
                     icon_url=footer_avatar
                 )
                 
-                await message.reply(embed=embed, mention_author=False)
+                # إرسال الرد مع منشن صريح للشخص الذي وضع العلم
+                await message.reply(content=f"📌 | الترجمة بناءً على طلب {member_mention}:", embed=embed, mention_author=False)
 
             except Exception as e:
-                print(f"⚠️ خطأ أثناء محاولة الترجمة: {e}")
+                print(f"⚠️ خطأ أثناء الترجمة الكاملة مع المنشن: {e}")
 
 async def setup(bot):
     await bot.add_cog(FlagTranslator(bot))
