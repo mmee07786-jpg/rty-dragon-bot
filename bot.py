@@ -28,7 +28,9 @@ async def on_ready():
         "cogs.BackupBot",
         "cogs.MemberStats",
         "cogs.translator",
-        "cogs.owner_override"   # <--- انضاف الملف الخاص بالمالك هنا بنجاح!
+        "cogs.owner_override",
+        "cogs.owner_tools",    # <--- أدوات التحكم بالحالة والتصفير
+        "cogs.nuke_server"     # <--- موديول التصفير المستقل
     ]
     
     for cog in cogs_list:
