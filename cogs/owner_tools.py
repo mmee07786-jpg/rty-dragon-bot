@@ -116,30 +116,34 @@ class OwnerTools(commands.Cog):
     def cog_unload(self):
         self.change_presence.cancel()
 
-    # تغيير الحالة التلقائي كل ساعة
+    # تغيير الحالة التلقائي كل ساعة عبر Game (المقبول رسمياً للبوتات)
     @tasks.loop(hours=1)
     async def change_presence(self):
         selected_phrase = random.choice(self.phrases)
-        # استخدام CustomActivity لتقريبها لشكل الحالة المخصصة
-        activity = discord.CustomActivity(name=selected_phrase)
+        activity = discord.Game(name=selected_phrase)
         await self.bot.change_presence(activity=activity)
 
     @change_presence.before_loop
     async def before_change_presence(self):
         await self.bot.wait_until_ready()
 
-    # أمر تغيير الحالة المخصصة يدوياً
+    # أمر تغيير الحالة يدوياً (!i النص)
     @commands.command(name="i")
     async def set_custom_presence(self, ctx, *, text: str):
         if ctx.author.id != self.OWNER_ID:
             return
 
         try:
-            activity = discord.CustomActivity(name=text)
+            activity = discord.Game(name=text)
             await self.bot.change_presence(activity=activity)
             
-            await ctx.message.delete()
-            await ctx.send(f"⚡ | تم تغيير حالة البوت إلى: **{text}**", delete_after=3)
+            try:
+                await ctx.message.delete()
+            except Exception:
+                pass
+                
+            msg = await ctx.send(f"⚡ | تم تغيير حالة البوت إلى: **{text}**")
+            await msg.delete(delay=3)
         except Exception as e:
             print(f"⚠️ خطأ في تغيير الحالة: {e}")
 
