@@ -1,153 +1,193 @@
-import discord
-from discord.ext import commands
-import json
-import os
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-DATA_FILE = "data.json"
+const DATA_FILE = path.join(__dirname, '../data.json');
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+function loadData() {
+    if (fs.existsSync(DATA_FILE)) {
+        try {
+            const data = fs.readFileSync(DATA_FILE, 'utf8');
+            return JSON.parse(data);
+        } catch (error) {
+            return {};
+        }
+    }
+    return {};
+}
 
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+function saveData(data) {
+    try {
+        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 4), 'utf8');
+    } catch (error) {
+        console.error("خطأ في حفظ البيانات:", error);
+    }
+}
 
-class AutoRoles(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+module.exports = {
+    autoroleAddCommand: new SlashCommandBuilder()
+        .setName('autorole_add')
+        .setDescription('[خاص بالإدارة] إضافة رتبة لتُعطى تلقائياً لكل عضو جديد يدخل السيرفر')
+        .addRoleOption(option =>
+            option.setName('role')
+                .setDescription('الرتبة المراد إضافتها')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    @discord.app_commands.command(name="autorole_add", description="[خاص بالإدارة] إضافة رتبة لتُعطى تلقائياً لكل عضو جديد يدخل السيرفر")
-    @discord.app_commands.checks.has_permissions(administrator=True)
-    async def autorole_add(self, interaction: discord.Interaction, role: discord.Role):
-        await interaction.response.defer()
-        guild_id = str(interaction.guild.id)
-        data = load_data()
+    autoroleRemoveCommand: new SlashCommandBuilder()
+        .setName('autorole_remove')
+        .setDescription('[خاص بالإدارة] إزالة رتبة من قائمة الرتب التلقائية')
+        .addRoleOption(option =>
+            option.setName('role')
+                .setDescription('الرتبة المراد إزالتها')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        if "autoroles" not in data:
-            data["autoroles"] = {}
-        if guild_id not in data["autoroles"]:
-            data["autoroles"][guild_id] = {"roles": [], "enabled": True}
+    autoroleToggleCommand: new SlashCommandBuilder()
+        .setName('autorole_toggle')
+        .setDescription('[خاص بالإدارة] تفعيل أو إلغاء تفعيل نظام الرتب التلقائية بالكامل')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        # التأكد إذا كان الهيكل قديماً وتم تحويله
-        if isinstance(data["autoroles"][guild_id], list):
-            old_list = data["autoroles"][guild_id]
-            data["autoroles"][guild_id] = {"roles": old_list, "enabled": True}
+    autoroleListCommand: new SlashCommandBuilder()
+        .setName('autorole_list')
+        .setDescription('[خاص بالإدارة] عرض جميع الرتب التلقائية المعينة حالياً بالسيرفر')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        if role.id in data["autoroles"][guild_id]["roles"]:
-            await interaction.followup.send(f"⚠️ | الرتبة {role.mention} موجودة مسبقاً في قائمة الرتب التلقائية!", ephemeral=True)
-            return
+    async handleAutoroleAdd(interaction) {
+        await interaction.deferReply();
+        const guildId = interaction.guild.id;
+        const role = interaction.options.getRole('role');
+        const data = loadData();
 
-        if role >= interaction.guild.me.top_role:
-            await interaction.followup.send("❌ | عذراً، رتبة البوت أدنى من هذه الرتبة أو تساواها، يجب أن تكون رتبة البوت أعلى!", ephemeral=True)
-            return
+        if (!data.autoroles) data.autoroles = {};
+        if (!data.autoroles[guildId]) {
+            data.autoroles[guildId] = { roles: [], enabled: true };
+        }
 
-        data["autoroles"][guild_id]["roles"].append(role.id)
-        save_data(data)
+        if (Array.isArray(data.autoroles[guildId])) {
+            const oldList = data.autoroles[guildId];
+            data.autoroles[guildId] = { roles: oldList, enabled: true };
+        }
 
-        await interaction.followup.send(f"✅ | تم بنجاح إضافة الرتبة {role.mention} إلى قائمة الرتب التلقائية للأعضاء الجدد.")
+        if (data.autoroles[guildId].roles.includes(role.id)) {
+            await interaction.followup.send({ content: `⚠️ | الرتبة ${role} موجودة مسبقاً في قائمة الرتب التلقائية!`, ephemeral: true });
+            return;
+        }
 
-    @discord.app_commands.command(name="autorole_remove", description="[خاص بالإدارة] إزالة رتبة من قائمة الرتب التلقائية")
-    @discord.app_commands.checks.has_permissions(administrator=True)
-    async def autorole_remove(self, interaction: discord.Interaction, role: discord.Role):
-        await interaction.response.defer()
-        guild_id = str(interaction.guild.id)
-        data = load_data()
+        if (role.position >= interaction.guild.members.me.roles.highest.position) {
+            await interaction.followup.send({ content: "❌ | عذراً، رتبة البوت أدنى من هذه الرتبة أو تساواها، يجب أن تكون رتبة البوت أعلى!", ephemeral: true });
+            return;
+        }
 
-        if "autoroles" not in data or guild_id not in data["autoroles"]:
-            await interaction.followup.send("❌ | لا توجد أي رتب تلقائية مسجلة في هذا السيرفر أساساً!", ephemeral=True)
-            return
+        data.autoroles[guildId].roles.push(role.id);
+        saveData(data);
 
-        guild_data = data["autoroles"][guild_id]
-        role_list = guild_data["roles"] if isinstance(guild_data, dict) else guild_data
+        await interaction.followup.send(`✅ | تم بنجاح إضافة الرتبة ${role} إلى قائمة الرتب التلقائية للأعضاء الجدد.`);
+    },
 
-        if role.id in role_list:
-            role_list.remove(role.id)
-            save_data(data)
-            await interaction.followup.send(f"🗑️ | تم إزالة الرتبة {role.mention} من قائمة الرتب التلقائية بنجاح.")
-        else:
-            await interaction.followup.send(f"❌ | هذه الرتبة غير موجودة في قائمة الرتب التلقائية.", ephemeral=True)
+    async handleAutoroleRemove(interaction) {
+        await interaction.deferReply();
+        const guildId = interaction.guild.id;
+        const role = interaction.options.getRole('role');
+        const data = loadData();
 
-    @discord.app_commands.command(name="autorole_toggle", description="[خاص بالإدارة] تفعيل أو إلغاء تفعيل نظام الرتب التلقائية بالكامل")
-    @discord.app_commands.checks.has_permissions(administrator=True)
-    async def autorole_toggle(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        guild_id = str(interaction.guild.id)
-        data = load_data()
+        if (!data.autoroles || !data.autoroles[guildId]) {
+            await interaction.followup.send({ content: "❌ | لا توجد أي رتب تلقائية مسجلة في هذا السيرفر أساساً!", ephemeral: true });
+            return;
+        }
 
-        if "autoroles" not in data or guild_id not in data["autoroles"]:
-            await interaction.followup.send("❌ | لم تقم بإضافة أي رتب تلقائية بعد لتفعيل/إلغاء النظام.", ephemeral=True)
-            return
+        const guildData = data.autoroles[guildId];
+        const roleList = Array.isArray(guildData) ? guildData : guildData.roles;
 
-        guild_data = data["autoroles"][guild_id]
-        if isinstance(guild_data, list):
-            data["autoroles"][guild_id] = {"roles": guild_data, "enabled": True}
-            guild_data = data["autoroles"][guild_id]
+        const index = roleList.indexOf(role.id);
+        if (index > -1) {
+            roleList.splice(index, 1);
+            saveData(data);
+            await interaction.followup.send(`🗑️ | تم إزالة الرتبة ${role} من قائمة الرتب التلقائية بنجاح.`);
+        } else {
+            await interaction.followup.send({ content: `❌ | هذه الرتبة غير موجودة في قائمة الرتب التلقائية.`, ephemeral: true });
+        }
+    },
 
-        current_state = guild_data.get("enabled", True)
-        new_state = not current_state
-        guild_data["enabled"] = new_state
-        save_data(data)
+    async handleAutoroleToggle(interaction) {
+        await interaction.deferReply();
+        const guildId = interaction.guild.id;
+        const data = loadData();
 
-        status_text = "مفعل ✅" if new_state else "معطل (ملغي) ❌"
-        await interaction.followup.send(f"🛡️ | حالة نظام الرتب التلقائية أصبحت الآن: **{status_text}**")
+        if (!data.autoroles || !data.autoroles[guildId]) {
+            await interaction.followup.send({ content: "❌ | لم تقم بإضافة أي رتب تلقائية بعد لتفعيل/إلغاء النظام.", ephemeral: true });
+            return;
+        }
 
-    @discord.app_commands.command(name="autorole_list", description="[خاص بالإدارة] عرض جميع الرتب التلقائية المعينة حالياً بالسيرفر")
-    @discord.app_commands.checks.has_permissions(administrator=True)
-    async def autorole_list(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        guild_id = str(interaction.guild.id)
-        data = load_data()
+        let guildData = data.autoroles[guildId];
+        if (Array.isArray(guildData)) {
+            data.autoroles[guildId] = { roles: guildData, enabled: true };
+            guildData = data.autoroles[guildId];
+        }
 
-        guild_data = data.get("autoroles", {}).get(guild_id)
-        if not guild_data:
-            await interaction.followup.send("📋 | لا توجد أي رتب تلقائية مفعلة في هذا السيرفر حالياً.")
-            return
+        const currentState = guildData.enabled ?? true;
+        const newState = !currentState;
+        guildData.enabled = newState;
+        saveData(data);
 
-        role_ids = guild_data["roles"] if isinstance(guild_data, dict) else guild_data
-        is_enabled = guild_data.get("enabled", True) if isinstance(guild_data, dict) else True
+        const statusText = newState ? "مفعل ✅" : "معطل (ملغي) ❌";
+        await interaction.followup.send(`🛡️ | حالة نظام الرتب التلقائية أصبحت الآن: **${statusText}**`);
+    },
 
-        if not role_ids:
-            await interaction.followup.send("📋 | لا توجد رتب مسجلة في القائمة حالياً.")
-            return
+    async handleAutoroleList(interaction) {
+        await interaction.deferReply();
+        const guildId = interaction.guild.id;
+        const data = loadData();
 
-        roles_mention = [interaction.guild.get_role(r_id).mention for r_id in role_ids if interaction.guild.get_role(r_id)]
+        const guildData = data.autoroles?.[guildId];
+        if (!guildData) {
+            await interaction.followup.send("📋 | لا توجد أي رتب تلقائية مفعلة في هذا السيرفر حالياً.");
+            return;
+        }
 
-        embed = discord.Embed(
-            title="🛡️ | قائمة الرتب التلقائية",
-            description=f"**حالة النظام:** `{'مفعل ✅' if is_enabled else 'معطل ❌'}`\n\n**الرتب الممنوحة عند الدخول:**\n" + "\n".join([f"• {rm}" for rm in roles_mention]),
-            color=discord.Color.blurple()
-        )
-        await interaction.followup.send(embed=embed)
+        const roleIds = Array.isArray(guildData) ? guildData : guildData.roles;
+        const isEnabled = Array.isArray(guildData) ? true : (guildData.enabled ?? true);
 
-    @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member):
-        guild_id = str(member.guild.id)
-        data = load_data()
+        if (!roleIds || roleIds.length === 0) {
+            await interaction.followup.send("📋 | لا توجد رتب مسجلة في القائمة حالياً.");
+            return;
+        }
 
-        guild_data = data.get("autoroles", {}).get(guild_id)
-        if not guild_data:
-            return
+        const rolesMention = roleIds
+            .map(rId => interaction.guild.roles.cache.get(rId))
+            .filter(role => role !== undefined)
+            .map(role => role.toString());
 
-        is_enabled = guild_data.get("enabled", True) if isinstance(guild_data, dict) else True
-        if not is_enabled:
-            return
+        const embed = new EmbedBuilder()
+            .setTitle("🛡️ | قائمة الرتب التلقائية")
+            .setDescription(`**حالة النظام:** \`${isEnabled ? 'مفعل ✅' : 'معطل ❌'}\`\n\n**الرتب الممنوحة عند الدخول:**\n` + rolesMention.map(rm => `• ${rm}`).join('\n'))
+            .setColor(0x5865F2);
 
-        role_ids = guild_data["roles"] if isinstance(guild_data, dict) else guild_data
+        await interaction.followup.send({ embeds: [embed] });
+    },
 
-        for r_id in role_ids:
-            role = member.guild.get_role(r_id)
-            if role:
-                try:
-                    await member.add_roles(role, reason="توزيع الرتب التلقائية للأعضاء الجدد")
-                except Exception as e:
-                    print(f"Failed to assign role {r_id}: {e}")
+    async handleMemberJoin(member) {
+        const guildId = member.guild.id;
+        const data = loadData();
 
-async def setup(bot):
-    await bot.add_cog(AutoRoles(bot))
+        const guildData = data.autoroles?.[guildId];
+        if (!guildData) return;
 
+        const isEnabled = Array.isArray(guildData) ? true : (guildData.enabled ?? true);
+        if (!isEnabled) return;
+
+        const roleIds = Array.isArray(guildData) ? guildData : guildData.roles;
+        if (!roleIds) return;
+
+        for (const rId of roleIds) {
+            const role = member.guild.roles.cache.get(rId);
+            if (role) {
+                try {
+                    await member.roles.add(role, "توزيع الرتب التلقائية للأعضاء الجدد");
+                } catch (e) {
+                    console.error(`Failed to assign role ${rId}:`, e.message);
+                }
+            }
+        }
+    }
+};
