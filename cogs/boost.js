@@ -1,104 +1,153 @@
-import discord
-from discord import app_commands
-from discord.ext import commands
-import json
-import os
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-BOOST_DATA_FILE = "boost_data.json"
+const BOOST_DATA_FILE = path.join(__dirname, '../boost_data.json');
 
-def load_boost_data():
-    if os.path.exists(BOOST_DATA_FILE):
-        with open(BOOST_DATA_FILE, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return {}
-    return {}
-
-def save_boost_data(data):
-    with open(BOOST_DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-def get_guild_boost(guild_id: str):
-    data = load_boost_data()
-    if guild_id not in data:
-        data[guild_id] = {
-            "channel_id": None,
-            "message": "عاشت ايدك {member} على دعمك للسيرفر وعمل Boost!",
-            "image_url": None
+function loadBoostData() {
+    if (fs.existsSync(BOOST_DATA_FILE)) {
+        try {
+            const data = fs.readFileSync(BOOST_DATA_FILE, 'utf8');
+            return JSON.parse(data);
+        } catch (error) {
+            return {};
         }
-    return data[guild_id]
+    }
+    return {};
+}
 
-def update_guild_boost(guild_id: str, guild_data):
-    data = load_boost_data()
-    data[guild_id] = guild_data
-    save_boost_data(data)
+function saveBoostData(data) {
+    try {
+        fs.writeFileSync(BOOST_DATA_FILE, JSON.stringify(data, null, 4), 'utf8');
+    } catch (error) {
+        console.error("خطأ في حفظ بيانات البوست:", error);
+    }
+}
 
-class Boost(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+function getGuildBoost(guildId) {
+    const data = loadBoostData();
+    if (!data[guildId]) {
+        data[guildId] = {
+            channel_id: null,
+            message: "عاشت ايدك {member} على دعمك للسيرفر وعمل Boost!",
+            image_url: null
+        };
+    }
+    return data[guildId];
+}
 
-    @app_commands.command(name="boost_setup", description="تعيين روم إعلانات بوست السيرفر لهذا السيرفر")
-    @app_commands.default_permissions(administrator=True)
-    async def boost_setup(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        await interaction.response.defer(ephemeral=True)
-        guild_id = str(interaction.guild_id)
-        g_data = get_guild_boost(guild_id)
-        g_data["channel_id"] = channel.id
-        update_guild_boost(guild_id, g_data)
-        await interaction.followup.send(f"✅ تم ضبط روم إعلانات البوست في هذا السيرفر: {channel.mention}", ephemeral=True)
+function updateGuildBoost(guildId, guildData) {
+    const data = loadBoostData();
+    data[guildId] = guildData;
+    saveBoostData(data);
+}
 
-    @app_commands.command(name="boost_message", description="تعديل رسالة البوست (استخدم {member} للمنشن)")
-    @app_commands.default_permissions(administrator=True)
-    async def boost_message_cmd(self, interaction: discord.Interaction, message: str):
-        await interaction.response.defer(ephemeral=True)
-        guild_id = str(interaction.guild_id)
-        g_data = get_guild_boost(guild_id)
-        g_data["message"] = message
-        update_guild_boost(guild_id, g_data)
-        await interaction.followup.send(f"✅ تم تحديث رسالة البوست في هذا السيرفر بنجاح!", ephemeral=True)
+module.exports = {
+    boostSetupCommand: new SlashCommandBuilder()
+        .setName('boost_setup')
+        .setDescription('تعيين روم إعلانات بوست السيرفر لهذا السيرفر')
+        .addChannelOption(option =>
+            option.setName('channel')
+                .setDescription('روم الإعلانات')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    @app_commands.command(name="boost_image", description="تعديل صورة البوست")
-    @app_commands.default_permissions(administrator=True)
-    async def boost_image_cmd(self, interaction: discord.Interaction, image_url: str):
-        # استجابة فورية لمنع خطأ مهلة الـ 3 ثواني من ديسكورد
-        await interaction.response.defer(ephemeral=True)
+    boostMessageCommand: new SlashCommandBuilder()
+        .setName('boost_message')
+        .setDescription('تعديل رسالة البوست (استخدم {member} للمنشن)')
+        .addStringOption(option =>
+            option.setName('message')
+                .setDescription('الرسالة الجديدة')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    boostImageCommand: new SlashCommandBuilder()
+        .setName('boost_image')
+        .setDescription('تعديل صورة البوست')
+        .addStringOption(option =>
+            option.setName('image_url')
+                .setDescription('رابط الصورة')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    testBoostCommand: new SlashCommandBuilder()
+        .setName('test_boost')
+        .setDescription('تجربة رسالة البوست لنفسك')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    async handleBoostSetup(interaction) {
+        await interaction.deferReply({ ephemeral: true });
+        const guildId = interaction.guildId;
+        const channel = interaction.options.getChannel('channel');
         
-        guild_id = str(interaction.guild_id)
-        g_data = get_guild_boost(guild_id)
-        g_data["image_url"] = image_url
-        update_guild_boost(guild_id, g_data)
-        
-        await interaction.followup.send(f"✅ تم تحديث صورة البوست في هذا السيرفر بنجاح!", ephemeral=True)
+        const gData = getGuildBoost(guildId);
+        gData.channel_id = channel.id;
+        updateGuildBoost(guildId, gData);
 
-    @app_commands.command(name="test_boost", description="تجربة رسالة البوست لنفسك")
-    @app_commands.default_permissions(administrator=True)
-    async def test_boost(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        guild_id = str(interaction.guild_id)
-        g_data = get_guild_boost(guild_id)
-        
-        formatted_msg = g_data["message"].replace("{member}", interaction.user.mention)
-        embed = discord.Embed(description=formatted_msg, color=discord.Color.purple())
-        if g_data["image_url"]:
-            embed.set_image(url=g_data["image_url"])
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send({ content: `✅ تم ضبط روم إعلانات البوست في هذا السيرفر: ${channel}`, ephemeral: true });
+    },
 
-    @commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member):
-        guild_id = str(after.guild.id)
-        g_data = get_guild_boost(guild_id)
-        
-        if g_data["channel_id"] is None:
-            return
-        if before.premium_since is None and after.premium_since is not None:
-            channel = self.bot.get_channel(g_data["channel_id"])
-            if channel:
-                formatted_msg = g_data["message"].replace("{member}", after.mention)
-                embed = discord.Embed(description=formatted_msg, color=discord.Color.purple())
-                if g_data["image_url"]:
-                    embed.set_image(url=g_data["image_url"])
-                await channel.send(content=f"{after.mention}", embed=embed)
+    async handleBoostMessage(interaction) {
+        await interaction.deferReply({ ephemeral: true });
+        const guildId = interaction.guildId;
+        const messageText = interaction.options.getString('message');
 
-async def setup(bot):
-    await bot.add_cog(Boost(bot))
+        const gData = getGuildBoost(guildId);
+        gData.message = messageText;
+        updateGuildBoost(guildId, gData);
+
+        await interaction.followup.send({ content: "✅ تم تحديث رسالة البوست في هذا السيرفر بنجاح!", ephemeral: true });
+    },
+
+    async handleBoostImage(interaction) {
+        await interaction.deferReply({ ephemeral: true });
+        const guildId = interaction.guildId;
+        const imageUrl = interaction.options.getString('image_url');
+
+        const gData = getGuildBoost(guildId);
+        gData.image_url = imageUrl;
+        updateGuildBoost(guildId, gData);
+
+        await interaction.followup.send({ content: "✅ تم تحديث صورة البوست في هذا السيرفر بنجاح!", ephemeral: true });
+    },
+
+    async handleTestBoost(interaction) {
+        await interaction.deferReply({ ephemeral: true });
+        const guildId = interaction.guildId;
+        const gData = getGuildBoost(guildId);
+
+        const formattedMsg = gData.message.replace(/\{member\}/g, interaction.user.toString());
+        const embed = new EmbedBuilder()
+            .setDescription(formattedMsg)
+            .setColor(0x800080);
+
+        if (gData.image_url) {
+            embed.setImage(gData.image_url);
+        }
+
+        await interaction.followup.send({ embeds: [embed], ephemeral: true });
+    },
+
+    async handleMemberUpdate(before, after) {
+        const guildId = after.guild.id;
+        const gData = getGuildBoost(guildId);
+
+        if (!gData.channel_id) return;
+
+        if (before.premiumSince === null && after.premiumSince !== null) {
+            const channel = after.guild.channels.cache.get(gData.channel_id);
+            if (channel) {
+                const formattedMsg = gData.message.replace(/\{member\}/g, after.toString());
+                const embed = new EmbedBuilder()
+                    .setDescription(formattedMsg)
+                    .setColor(0x800080);
+
+                if (gData.image_url) {
+                    embed.setImage(gData.image_url);
+                }
+
+                await channel.send({ content: `${after}`, embeds: [embed] }).catch(() => {});
+            }
+        }
+    }
+};
