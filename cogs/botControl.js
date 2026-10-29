@@ -79,10 +79,13 @@ module.exports = {
                 return;
             }
 
+            // منع انتهاء مهلة ديسكورد عبر استخدام deferReply فوراً
+            await interaction.deferReply({ ephemeral: true });
+
             const guildId = interaction.values[0];
             const guild = client.guilds.cache.get(guildId);
             if (!guild) {
-                await interaction.reply({ content: "❌ | السيرفر غير موجود.", ephemeral: true });
+                await interaction.followup({ content: "❌ | السيرفر غير موجود.", ephemeral: true });
                 return;
             }
 
@@ -99,7 +102,7 @@ module.exports = {
                     .setStyle(isDisabled ? ButtonStyle.Success : ButtonStyle.Danger)
             );
 
-            await interaction.reply({
+            await interaction.followup({
                 content: `🏰 **السيرفر:** ${guild.name}\n📊 **الحالة الحالية:** ${statusText}\n\n${actionText}`,
                 components: [row],
                 ephemeral: true
@@ -112,6 +115,8 @@ module.exports = {
                 return;
             }
 
+            await interaction.deferUpdate(); // تحديث فوري للأزرار بدون أخطاء
+
             const guildId = interaction.customId.split("_")[2];
             const data = loadControlData();
             let isDisabled = data.disabled_guilds.includes(guildId);
@@ -119,11 +124,11 @@ module.exports = {
             if (isDisabled) {
                 data.disabled_guilds = data.disabled_guilds.filter(id => id !== guildId);
                 saveControlData(data);
-                await interaction.update({ content: "✅ | تم إعادة تفعيل البوت بنجاح في هذا السيرفر وعاد للعمل!", components: [] });
+                await interaction.editReply({ content: "✅ | تم إعادة تفعيل البوت بنجاح في هذا السيرفر وعاد للعمل!", components: [] });
             } else {
                 data.disabled_guilds.push(guildId);
                 saveControlData(data);
-                await interaction.update({ content: "🛑 | تم إيقاف البوت تماماً في هذا السيرفر ولن يستجيب لأي أمر أو رسالة بعد الآن!", components: [] });
+                await interaction.editReply({ content: "🛑 | تم إيقاف البوت تماماً في هذا السيرفر ولن يستجيب لأي أمر أو رسالة بعد الآن!", components: [] });
             }
         }
     }
