@@ -7,21 +7,21 @@ const {
     ButtonBuilder, 
     ButtonStyle 
 } = require('discord.js');
-const { GoogleGenAI } = require('@google/genai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const OWNER_ID = "1107355943408259112";
 const MEMORY_TIMEOUT = 3600 * 1000; // بالمللي ثانية
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-let ai = null;
+let genAI = null;
 if (GEMINI_API_KEY) {
-    ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 }
 
 const MODELS_FALLBACK = [
-    "gemini-2.5-flash",
     "gemini-1.5-flash",
-    "gemini-2.5-pro"
+    "gemini-1.5-pro",
+    "gemini-pro"
 ];
 
 // ذاكرة المستخدمين المؤقتة
@@ -341,7 +341,6 @@ module.exports = {
     async handleMessage(message, client) {
         if (message.author.bot) return;
 
-        // التحقق: إذا كان في الخاص يرد مباشرة، وإذا كان في سيرفر يتطلب المنشن
         const isDM = !message.guild;
         const isMentioned = message.mentions.has(client.user) && !message.mentions.everyone;
 
@@ -350,14 +349,19 @@ module.exports = {
                 .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), "")
                 .trim();
 
-            let imageBuffer = null;
+            let imagePart = null;
             if (message.attachments.size > 0) {
                 for (const att of message.attachments.values()) {
                     if (att.contentType && att.contentType.includes("image")) {
                         try {
                             const response = await fetch(att.url);
                             const arrayBuf = await response.arrayBuffer();
-                            imageBuffer = Buffer.from(arrayBuf);
+                            imagePart = {
+                                inlineData: {
+                                    data: Buffer.from(arrayBuf).toString("base64"),
+                                    mimeType: att.contentType
+                                }
+                            };
                             break;
                         } catch (e) {
                             console.log(`⚠️ خطأ بتحميل الصورة: ${e.message}`);
@@ -366,7 +370,7 @@ module.exports = {
                 }
             }
 
-            if (!cleanPrompt && !imageBuffer) {
+            if (!cleanPrompt && !imagePart) {
                 await message.reply("هلا بيك فهد! وياك، شكو ماكو؟");
                 return;
             }
@@ -388,53 +392,41 @@ module.exports = {
 
             const systemInstruction = (
                 "أنت ذكاء اصطناعي تتصرف بصفتك ذكر واسمك (itzF18). " +
-                "تحدث دائماً بصيغة المذكر (مثلاً: سعيد، موجود، شفت، فكرت). " +
-                "قاعدة اللغات واللهجات (مهمة جداً): يجب أن تتكيف تلقائياً مع لغة واللهجة التي يكلمك بها المستخدم. إذا كتب لك باللغة الإنجليزية رد باللغة الإنجليزية، وإذا كتب بلغة أخرى رد بها، وإذا كتب باللهجة العراقية أو العربية رد بنفس اللهجة واللغة تماماً وبشكل طبيعي. " +
-                "قواعدك الأخلاقية والصارمة جداً: ممنوع نهائياً استخدام أي ألفاظ بذيئة، أو شتائم، أو سب بالدين، أو كلام خارج عن الأدب؛ كن محترماً ونظيفاً في كلامك دائماً. " +
-                "قواعدك في الاسلوب: خذ كل كلمة يقولها فهد أو المستخدم أو اليوزر المذكور (<@1107355943408259112>) بكل جدية وتجاوب معها بدقة، واجعل ردودك قصيرة وعادية مثل البشر في الشات. " +
-                "إذا سألك شخص غير فهد عن معلومات السيرفرات أو الأسرار، ارفض تماماً وتمنع بحجة (ما عندي هاي الصلاحية أو مو من اختصاصي - أو ما يعادلها باللغة التي يخاطبك بها). " +
-                "الشخص الذي قام بصنعك وبرمجتك وتطويرك هو فهد (itzF18), اذكرها فقط إذا سألك أحد وبدون تكرار مزعج."
+                "تحدث دائماً بصيغة المذكر. " +
+                "تفاعل باللهجة العراقية أو العربية أو الإنجليزية حسب لغة المستخدم. " +
+                "ممنوع استخدام أي ألفاظ بذيئة أو شتائم. " +
+                "الشخص الذي برمجك وصنعك هو فهد (itzF18)."
             );
 
             let replyText = null;
             let success = false;
-
-            const userContentParts = [];
-            if (imageBuffer) {
-                userContentParts.push({
-                    inlineData: {
-                        data: imageBuffer.toString("base64"),
-                        mimeType: "image/png"
-                    }
-                });
-            }
-            if (cleanPrompt) {
-                userContentParts.push(cleanPrompt);
-            } else {
-                userContentParts.push("ما رأيك بهذه الصورة؟ / What do you think about this image?");
-            }
-
             const memoryObj = userMemory.get(userId);
 
             for (const modelName of MODELS_FALLBACK) {
                 try {
-                    if (!ai) break;
-                    
-                    const chat = ai.chats.create({
+                    if (!genAI) break;
+
+                    const model = genAI.getGenerativeModel({
                         model: modelName,
-                        config: {
-                            systemInstruction: systemInstruction
-                        },
+                        systemInstruction: systemInstruction
+                    });
+
+                    const chat = model.startChat({
                         history: memoryObj.history
                     });
 
-                    const result = await chat.sendMessage({ message: userContentParts });
-                    if (result && result.text) {
-                        replyText = result.text.trim();
-                        
-                        memoryObj.history.push({ role: 'user', parts: [{ text: cleanPrompt || "Image attachment" }] });
-                        memoryObj.history.push({ role: 'model', parts: [{ text: replyText }] });
+                    let inputContent = cleanPrompt || "ما رأيك بهذه الصورة؟";
+                    if (imagePart) {
+                        inputContent = [inputContent, imagePart];
+                    }
 
+                    const result = await chat.sendMessage(inputContent);
+                    const response = await result.response;
+                    replyText = response.text().trim();
+
+                    if (replyText) {
+                        memoryObj.history.push({ role: 'user', parts: [{ text: cleanPrompt || "Image" }] });
+                        memoryObj.history.push({ role: 'model', parts: [{ text: replyText }] });
                         success = true;
                         break;
                     }
