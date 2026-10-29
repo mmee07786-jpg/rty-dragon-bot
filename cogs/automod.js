@@ -1,216 +1,295 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import json
-import os
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-DATA_FILE = "data.json"
+const DATA_FILE = path.join(__dirname, '../data.json');
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+function loadData() {
+    if (fs.existsSync(DATA_FILE)) {
+        try {
+            const data = fs.readFileSync(DATA_FILE, 'utf8');
+            return JSON.parse(data);
+        } catch (error) {
+            return {};
+        }
+    }
+    return {};
+}
 
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+function saveData(data) {
+    try {
+        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 4), 'utf8');
+    } catch (error) {
+        console.error("خطأ في حفظ البيانات:", error);
+    }
+}
 
-class ModActionView(discord.ui.View):
-    def __init__(self, member: discord.Member, offending_text: str):
-        super().__init__(timeout=None)
-        self.member = member
-        self.offending_text = offending_text
+class ModActionView extends ActionRowBuilder {
+    constructor(member, offendingText) {
+        super();
+        this.member = member;
+        this.offendingText = offendingText;
 
-    @discord.ui.button(label="⚠️ تحذير", style=discord.ButtonStyle.secondary)
-    async def warn_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(f"✅ | تم إعطاء تحذير رسمي للعضو {self.member.mention} بواسطة {interaction.user.mention}.", ephemeral=False)
-        self.disable_buttons()
-        await interaction.message.edit(view=self)
+        const warnBtn = new ButtonBuilder()
+            .setCustomId('automod_warn')
+            .setLabel('⚠️ تحذير')
+            .setStyle(ButtonStyle.Secondary);
 
-    @discord.ui.button(label="👢 طرد", style=discord.ButtonStyle.danger)
-    async def kick_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            await self.member.kick(reason=f"استخدام كلمات ممنوعة متكررة: {self.offending_text}")
-            await interaction.response.send_message(f"👢 | تم طرد العضو {self.member.mention} بنجاح بواسطة {interaction.user.mention}.", ephemeral=False)
-        except:
-            await interaction.response.send_message("❌ | لا أملك صلاحية طرد هذا العضو!", ephemeral=True)
-        self.disable_buttons()
-        await interaction.message.edit(view=self)
+        const kickBtn = new ButtonBuilder()
+            .setCustomId('automod_kick')
+            .setLabel('👢 طرد')
+            .setStyle(ButtonStyle.Danger);
 
-    @discord.ui.button(label="⏳ ميوت 30 دقيقة", style=discord.ButtonStyle.primary)
-    async def mute_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        import datetime
-        try:
-            duration = discord.utils.utcnow() + datetime.timedelta(minutes=30)
-            await self.member.timeout(duration, reason=f"استخدام كلمات ممنوعة متكررة: {self.offending_text}")
-            await interaction.response.send_message(f"⏳ | تم إعطاء ميوت (Timeout) لمدة 30 دقيقة للعضو {self.member.mention} بواسطة {interaction.user.mention}.", ephemeral=False)
-        except:
-            await interaction.response.send_message("❌ | لا أملك صلاحية عمل ميوت لهذا العضو!", ephemeral=True)
-        self.disable_buttons()
-        await interaction.message.edit(view=self)
+        const muteBtn = new ButtonBuilder()
+            .setCustomId('automod_mute')
+            .setLabel('⏳ ميوت 30 دقيقة')
+            .setStyle(ButtonStyle.Primary);
 
-    def disable_buttons(self):
-        for child in self.children:
-            child.disabled = True
+        this.addComponents(warnBtn, kickBtn, muteBtn);
+    }
 
-class AutoMod(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        # لتخزين عدد المخالفات المؤقتة للجلسة الحالية لكل عضو (User ID -> Count)
-        self.warnings_count = {}
+    disableButtons() {
+        this.components.forEach(component => component.setDisabled(true));
+    }
+}
 
-    @app_commands.command(name="set_mod_channel", description="[خاص بالإدارة] تعيين روم تنبيهات المخالفات والكلمات الممنوعة")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_mod_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        await interaction.response.defer()
-        guild_id = str(interaction.guild.id)
-        data = load_data()
+// تخزين عدد المخالفات المؤقتة للجلسة الحالية لكل عضو (User ID -> Count)
+const warningsCount = {};
 
-        if "automod" not in data:
-            data["automod"] = {}
-        if guild_id not in data["automod"]:
-            data["automod"][guild_id] = {"words": [], "channel_id": None, "enabled": True}
+module.exports = {
+    setModChannelCommand: new SlashCommandBuilder()
+        .setName('set_mod_channel')
+        .setDescription('[خاص بالإدارة] تعيين روم تنبيهات المخالفات والكلمات الممنوعة')
+        .addChannelOption(option =>
+            option.setName('channel')
+                .setDescription('روم الإدارة للتنبيهات')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        data["automod"][guild_id]["channel_id"] = channel.id
-        save_data(data)
+    automodToggleCommand: new SlashCommandBuilder()
+        .setName('automod_toggle')
+        .setDescription('[خاص بالإدارة] تفعيل أو إلغاء تفعيل حماية الكلمات الممنوعة بالسيرفر')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        await interaction.followup.send(f"✅ | تم بنجاح تعيين روم الإدارة للتنبيهات إلى: {channel.mention}")
+    addBadwordCommand: new SlashCommandBuilder()
+        .setName('add_badword')
+        .setDescription('[خاص بالإدارة] إضافة كلمة ممنوعة لقائمة الحظر بالسيرفر')
+        .addStringOption(option =>
+            option.setName('word')
+                .setDescription('الكلمة الممنوعة المراد إضافتها')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    @app_commands.command(name="automod_toggle", description="[خاص بالإدارة] تفعيل أو إلغاء تفعيل حماية الكلمات الممنوعة بالسيرفر")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def automod_toggle(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        guild_id = str(interaction.guild.id)
-        data = load_data()
+    removeBadwordCommand: new SlashCommandBuilder()
+        .setName('remove_badword')
+        .setDescription('[خاص بالإدارة] إزالة كلمة من قائمة الكلمات الممنوعة')
+        .addStringOption(option =>
+            option.setName('word')
+                .setDescription('الكلمة المراد إزالتها')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        if "automod" not in data or guild_id not in data["automod"]:
-            await interaction.followup.send("❌ | نظام الحماية غير معدّ بعد في هذا السيرفر. استخدم أوامر الكلمات أولاً.", ephemeral=True)
-            return
+    async handleSetModChannel(interaction) {
+        await interaction.deferReply();
+        const guildId = interaction.guild.id;
+        const channel = interaction.options.getChannel('channel');
+        const data = loadData();
 
-        current_state = data["automod"][guild_id].get("enabled", True)
-        new_state = not current_state
-        data["automod"][guild_id]["enabled"] = new_state
-        save_data(data)
+        if (!data.automod) data.automod = {};
+        if (!data.automod[guildId]) data.automod[guildId] = { words: [], channel_id: null, enabled: true };
 
-        status_text = "مفعل ✅" if new_state else "معطل (ملغي) ❌"
-        await interaction.followup.send(f"🛡️ | حالة نظام الحماية التلقائية الآن أصبحت: **{status_text}**")
+        data.automod[guildId].channel_id = channel.id;
+        saveData(data);
 
-    @app_commands.command(name="add_badword", description="[خاص بالإدارة] إضافة كلمة ممنوعة لقائمة الحظر بالسيرفر")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def add_badword(self, interaction: discord.Interaction, word: str):
-        await interaction.response.defer()
-        guild_id = str(interaction.guild.id)
-        data = load_data()
+        await interaction.followup.send(`✅ | تم بنجاح تعيين روم الإدارة للتنبيهات إلى: ${channel}`);
+    },
 
-        if "automod" not in data:
-            data["automod"] = {}
-        if guild_id not in data["automod"]:
-            data["automod"][guild_id] = {"words": [], "channel_id": None, "enabled": True}
+    async handleAutomodToggle(interaction) {
+        await interaction.deferReply();
+        const guildId = interaction.guild.id;
+        const data = loadData();
 
-        clean_word = word.lower()
-        if clean_word in data["automod"][guild_id]["words"]:
-            await interaction.followup.send(f"⚠️ | الكلمة **`{word}`** موجودة مسبقاً في قائمة الكلمات الممنوعة!", ephemeral=True)
-            return
+        if (!data.automod || !data.automod[guildId]) {
+            await interaction.followup.send({ content: "❌ | نظام الحماية غير معدّ بعد في هذا السيرفر. استخدم أوامر الكلمات أولاً.", ephemeral: true });
+            return;
+        }
 
-        data["automod"][guild_id]["words"].append(clean_word)
-        save_data(data)
+        const currentState = data.automod[guildId].enabled ?? true;
+        const newState = !currentState;
+        data.automod[guildId].enabled = newState;
+        saveData(data);
 
-        await interaction.followup.send(f"✅ | تمت إضافة الكلمة **`{word}`** إلى قائمة الحظر بنجاح.")
+        const statusText = newState ? "مفعل ✅" : "معطل (ملغي) ❌";
+        await interaction.followup.send(`🛡️ | حالة نظام الحماية التلقائية الآن أصبحت: **{statusText}**`.replace('{statusText}', statusText));
+    },
 
-    @app_commands.command(name="remove_badword", description="[خاص بالإدارة] إزالة كلمة من قائمة الكلمات الممنوعة")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def remove_badword(self, interaction: discord.Interaction, word: str):
-        await interaction.response.defer()
-        guild_id = str(interaction.guild.id)
-        data = load_data()
+    async handleAddBadword(interaction) {
+        await interaction.deferReply();
+        const guildId = interaction.guild.id;
+        const word = interaction.options.getString('word');
+        const data = loadData();
 
-        if "automod" not in data or guild_id not in data["automod"] or not data["automod"][guild_id]["words"]:
-            await interaction.followup.send("❌ | لا توجد كلمات ممنوعة مسجلة في هذا السيرفر أساساً!", ephemeral=True)
-            return
+        if (!data.automod) data.automod = {};
+        if (!data.automod[guildId]) data.automod[guildId] = { words: [], channel_id: null, enabled: true };
 
-        clean_word = word.lower()
-        if clean_word in data["automod"][guild_id]["words"]:
-            data["automod"][guild_id]["words"].remove(clean_word)
-            save_data(data)
-            await interaction.followup.send(f"🗑️ | تم إزالة الكلمة **`{word}`** من قائمة الحظر بنجاح.")
-        else:
-            await interaction.followup.send(f"❌ | الكلمة **`{word}`** غير موجودة في قائمة الحظر.", ephemeral=True)
+        const cleanWord = word.toLowerCase();
+        if (data.automod[guildId].words.includes(cleanWord)) {
+            await interaction.followup.send({ content: `⚠️ | الكلمة **\`{word}\`** موجودة مسبقاً في قائمة الكلمات الممنوعة!`.replace('{word}', word), ephemeral: true });
+            return;
+        }
 
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        if message.author.bot or not message.guild:
-            return
+        data.automod[guildId].words.push(cleanWord);
+        saveData(data);
 
-        if message.author.guild_permissions.administrator:
-            return
+        await interaction.followup.send(`✅ | تمت إضافة الكلمة **\`{word}\`** إلى قائمة الحظر بنجاح.`.replace('{word}', word));
+    },
 
-        guild_id = str(message.guild.id)
-        data = load_data()
-        
-        automod_data = data.get("automod", {}).get(guild_id, {})
-        
-        # التحقق هل النظام مفعل أصلاً؟
-        if not automod_data.get("enabled", True):
-            return
+    async handleRemoveBadword(interaction) {
+        await interaction.deferReply();
+        const guildId = interaction.guild.id;
+        const word = interaction.options.getString('word');
+        const data = loadData();
 
-        bad_words = automod_data.get("words", [])
-        mod_channel_id = automod_data.get("channel_id")
+        if (!data.automod || !data.automod[guildId] || !data.automod[guildId].words || data.automod[guildId].words.length === 0) {
+            await interaction.followup.send({ content: "❌ | لا توجد كلمات ممنوعة مسجلة في هذا السيرفر أساساً!", ephemeral: true });
+            return;
+        }
 
-        if not bad_words:
-            return
+        const cleanWord = word.toLowerCase();
+        const index = data.automod[guildId].words.indexOf(cleanWord);
+        if (index > -1) {
+            data.automod[guildId].words.splice(index, 1);
+            saveData(data);
+            await interaction.followup.send(`🗑️ | تم إزالة الكلمة **\`{word}\`** من قائمة الحظر بنجاح.`.replace('{word}', word));
+        } else {
+            await interaction.followup.send({ content: `❌ | الكلمة **\`{word}\`** غير موجودة في قائمة الحظر.`.replace('{word}', word), ephemeral: true });
+        }
+    },
 
-        content_lower = message.content.lower()
-        triggered_word = next((w for w in bad_words if w in content_lower), None)
+    async handleMessage(message) {
+        if (message.author.bot || !message.guild) return;
+        if (message.member && message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
 
-        if triggered_word:
-            try:
-                await message.delete()
-            except:
-                pass
+        const guildId = message.guild.id;
+        const data = loadData();
+        const automodData = data.automod?.[guildId] || {};
 
-            user_key = f"{guild_id}-{message.author.id}"
-            self.warnings_count[user_key] = self.warnings_count.get(user_key, 0) + 1
-            current_strikes = self.warnings_count[user_key]
+        if (automodData.enabled === false) return;
 
-            # أول مرتين: منش مباشر وتنبيه شخصي بالروم نفسه
-            if current_strikes < 3:
-                warning_msg = await message.channel.send(
-                    f"⚠️ | {message.author.mention} احذر! لقد استخدمت كلمة ممنوعة (تنبيه رقم {current_strikes}/2)."
-                )
-                # حذف تنبيه البوت بعد 5 ثواني حتى لا يملي الروم
-                import asyncio
-                await asyncio.sleep(5)
-                try:
-                    await warning_msg.delete()
-                except:
-                    pass
-                return
+        const badWords = automodData.words || [];
+        const modChannelId = automodData.channel_id;
 
-            # المرة الثالثة: إعادة تعيين العداد وإرسال التقرير الكامل لروم الإدارة مع الأزرار
-            self.warnings_count[user_key] = 0
+        if (badWords.length === 0) return;
 
-            if mod_channel_id:
-                mod_channel = message.guild.get_channel(mod_channel_id)
-                if mod_channel:
-                    embed = discord.Embed(
-                        title="🚨 تنبيه تكرار مخالفة الكلمات الممنوعة (المرة الثالثة)!",
-                        description=(
-                            f"• **العضو المخالف:** {message.author.mention} (`{message.author.id}`)\n"
-                            f"• **الروم:** {message.channel.mention}\n"
-                            f"• **الكلمة الممنوعة المستخدمة:** `{triggered_word}`\n\n"
-                            f"💬 **آخر رسالة نصية تسببت بالمخالفة:**\n> {message.content}"
-                        ),
-                        color=discord.Color.red()
-                    )
-                    embed.set_footer(text="تجاوز الحد المسموح للتنبيهات! اختر العقوبة المناسبة أدناه 👇")
+        const contentLower = message.content.toLowerCase();
+        const triggeredWord = badWords.find(w => contentLower.includes(w));
 
-                    view = ModActionView(message.author, message.content)
-                    await mod_channel.send(embed=embed, view=view)
+        if (triggeredWord) {
+            try {
+                await message.delete();
+            } catch (e) {}
 
-async def setup(bot):
-    await bot.add_cog(AutoMod(bot))
+            const userKey = `${guildId}-${message.author.id}`;
+            warningsCount[userKey] = (warningsCount[userKey] || 0) + 1;
+            const currentStrikes = warningsCount[userKey];
 
+            if (currentStrikes < 3) {
+                try {
+                    const warningMsg = await message.channel.send(`⚠️ | ${message.author} احذر! لقد استخدمت كلمة ممنوعة (تنبيه رقم ${currentStrikes}/2).`);
+                    setTimeout(async () => {
+                        try { await warningMsg.delete(); } catch (e) {}
+                    }, 5000);
+                } catch (e) {}
+                return;
+            }
+
+            warningsCount[userKey] = 0;
+
+            if (modChannelId) {
+                const modChannel = message.guild.channels.cache.get(modChannelId);
+                if (modChannel) {
+                    const embed = new EmbedBuilder()
+                        .setTitle("🚨 تنبيه تكرار مخالفة الكلمات الممنوعة (المرة الثالثة)!")
+                        .setDescription(
+                            `• **العضو المخالف:** ${message.author} (\`${message.author.id}\`)\n` +
+                            `• **الروم:** ${message.channel}\n` +
+                            `• **الكلمة الممنوعة المستخدمة:** \`${triggeredWord}\`\n\n` +
+                            `💬 **آخر رسالة نصية تسببت بالمخالفة:**\n> ${message.content}`
+                        )
+                        .setColor(0xFF0000)
+                        .setFooter({ text: "تجاوز الحد المسموح للتنبيهات! اختر العقوبة المناسبة أدناه 👇" });
+
+                    const view = new ModActionView(message.author, message.content);
+                    await modChannel.send({ embeds: [embed], components: [view] });
+                }
+            }
+        }
+    },
+
+    async handleButtonInteraction(interaction) {
+        if (!interaction.isButton()) return;
+        if (!['automod_warn', 'automod_kick', 'automod_mute'].includes(interaction.customId)) return;
+
+        // استخراج العضو من الـ Embed أو افتراضياً
+        const embed = interaction.message.embeds[0];
+        if (!embed) return;
+
+        // محاولة جلب العضو من محتوى الـ description عبر الـ mention
+        const description = embed.description || "";
+        const match = description.match(/<@!?(\d+)>/);
+        if (!match) {
+            await interaction.reply({ content: "❌ | لم يتم العثور على العضو المستهدف.", ephemeral: true });
+            return;
+        }
+
+        const memberId = match[1];
+        let member;
+        try {
+            member = await interaction.guild.members.fetch(memberId);
+        } catch (e) {
+            await interaction.reply({ content: "❌ | العضو غير موجود في السيرفر حالياً.", ephemeral: true });
+            return;
+        }
+
+        // استخراج النص المخالف
+        let offendingText = "استخدام كلمات ممنوعة متكررة";
+        const textMatch = description.match(/>\s([\s\S]*)$/);
+        if (textMatch) offendingText = textMatch[1].trim();
+
+        if (interaction.customId === 'automod_warn') {
+            await interaction.reply({ content: `✅ | تم إعطاء تحذير رسمي للعضو ${member} بواسطة ${interaction.user}.`, ephemeral: false });
+        } else if (interaction.customId === 'automod_kick') {
+            try {
+                await member.kick(`استخدام كلمات ممنوعة متكررة: ${offendingText}`);
+                await interaction.reply({ content: `👢 | تم طرد العضو ${member} بنجاح بواسطة ${interaction.user}.`, ephemeral: false });
+            } catch (e) {
+                await interaction.reply({ content: "❌ | لا أملك صلاحية طرد هذا العضو!", ephemeral: true });
+                return;
+            }
+        } else if (interaction.customId === 'automod_mute') {
+            try {
+                const duration = 30 * 60 * 1000;
+                await member.timeout(duration, `استخدام كلمات ممنوعة متكررة: ${offendingText}`);
+                await interaction.reply({ content: `⏳ | تم إعطاء ميوت (Timeout) لمدة 30 دقيقة للعضو ${member} بواسطة ${interaction.user}.`, ephemeral: false });
+            } catch (e) {
+                await interaction.reply({ content: "❌ | لا أملك صلاحية عمل ميوت لهذا العضو!", ephemeral: true });
+                return;
+            }
+        }
+
+        // تعطيل الأزرار بعد الضغط
+        const actionRow = new ActionRowBuilder();
+        embed.components?.forEach(row => {
+            row.components?.forEach(component => {
+                const newButton = ButtonBuilder.from(component).setDisabled(true);
+                actionRow.addComponents(newButton);
+            });
+        });
+
+        // بدلاً من ذلك، ننشئ أزرار جديدة معطلة
+        const disabledView = new ModActionView(member, offendingText);
+        disabledView.disableButtons();
+
+        await interaction.message.edit({ components: [disabledView] }).catch(() => {});
+    }
+};
