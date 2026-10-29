@@ -1,67 +1,64 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import os
-import traceback
+const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-intents.guilds = True
+class MyBot extends Client {
+    constructor() {
+        super({
+            intents: [
+                GatewayIntentBits.Guilds,
+                GatewayIntentBits.GuildMembers,
+                GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.MessageContent
+            ]
+        });
 
-class MyBot(commands.Bot):
-    def __init__(self):
-        super().__init__(command_prefix="!", intents=intents)
+        this.commands = new Collection();
+    }
 
-    async def setup_hook(self):
-        # تحميل جميع ملفات الـ Cogs من مجلد cogs تلقائياً مع معالجة الأخطاء
-        if os.path.exists("./cogs"):
-            for filename in os.listdir("./cogs"):
-                if filename.endswith(".py"):
-                    cog_name = filename[:-3]
-                    try:
-                        await self.load_extension(f"cogs.{cog_name}")
-                        print(f"تم تحميل الملف بنجاح: {cog_name}")
-                    except Exception as e:
-                        print(f"فشل تحميل الملف {cog_name}: {e}")
+    async init() {
+        // تحميل جميع ملفات JavaScript من مجلد cogs تلقائياً مع معالجة الأخطاء
+        const cogsPath = path.join(__dirname, 'cogs');
+        if (fs.existsSync(cogsPath)) {
+            const commandFiles = fs.readdirSync(cogsPath).filter(file => file.endsWith('.js'));
+            for (const file of commandFiles) {
+                const cogName = file.replace('.js', '');
+                try {
+                    // استدعاء الملف للتأكد من عمله
+                    require(`./cogs/${file}`);
+                    console.log(`تم تحميل الملف بنجاح: ${cogName}`);
+                } catch (error) {
+                    console.log(`فشل تحميل الملف ${cogName}: ${error.message}`);
+                }
+            }
+        }
 
-        # مزامنة الأوامر مع ديسكورد لتحديثها فوراً
-        try:
-            synced = await self.tree.sync()
-            print(f"تمت مزامنة {len(synced)} أمر (Slash Commands) بنجاح.")
-        except Exception as e:
-            print(f"خطأ في مزامنة الأوامر: {e}")
+        // حدث عندما يصبح البوت جاهزاً
+        this.once('ready', () => {
+            console.log(`البوت جاهز الآن ويعمل باسم: ${this.user.tag} (ID: ${this.user.id})`);
+            console.log("-----------------------------------------");
+        });
 
-    async def on_ready(self):
-        print(f"البوت جاهز الآن ويعمل باسم: {self.user} (ID: {self.user.id})")
-        print("-----------------------------------------")
+        // نظام حماية عالمي لمنع البوت من الكراش بسبب الأخطاء غير المعالجة
+        process.on('unhandledRejection', error => {
+            console.error('خطأ تم رصده وتجاوزه لمنع الكراش:', error);
+        });
 
-    # نظام حماية عالمي لمنع البوت من الكراش إذا حدث خطأ غير متوقع بأي أمر
-    async def on_command_error(self, ctx, error):
-        if isinstance(error, commands.CommandNotFound):
-            return
-        print(f"خطأ تم رصده وتجاوزه لمنع الكراش: {error}")
+        // تشغيل البوت مع التوكن الصحيح من متغيرات البيئة (دعم TOKEN أو DISCORD_TOKEN)
+        const token = process.env.TOKEN || process.env.DISCORD_TOKEN;
+        if (token) {
+            try {
+                await this.login(token);
+            } catch (error) {
+                console.log(`خطأ حرج في التشغيل: ${error.message}`);
+            }
+        } else {
+            console.log("خطأ: لم يتم العثور على التوكن في متغيرات البيئة!");
+        }
+    }
+}
 
-bot = MyBot()
+const bot = MyBotClient = new MyBot();
+bot.init();
 
-# معالجة أخطاء أوامر السلاش العامة لمنع توقف التطبيق
-@bot.tree.error
-async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    print(f"خطأ في أمر سلاش: {error}")
-    try:
-        if interaction.response.is_done():
-            await interaction.followup.send("حدث خطأ بسيط أثناء تنفيذ الأمر، لكن البوت مستمر بالعمل ✅", ephemeral=True)
-        else:
-            await interaction.response.send_message("حدث خطأ بسيط أثناء تنفيذ الأمر، لكن البوت مستمر بالعمل ✅", ephemeral=True)
-    except:
-        pass
-
-# تشغيل البوت مع التوكن الصحيح (يتأكد من قراءة متغيرات البيئة DISCORD_TOKEN)
-token = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
-if token:
-    try:
-        bot.run(token)
-    except Exception as e:
-        print(f"خطأ حرج في التشغيل: {e}")
-else:
-    print("خطأ: لم يتم العثور على التوكن في متغيرات البيئة!")
+module.exports = bot;
