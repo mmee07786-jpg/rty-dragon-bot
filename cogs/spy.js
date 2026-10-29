@@ -337,11 +337,15 @@ module.exports = {
         }
     },
 
-    // 2. معالجة الذكاء الاصطناعي والرسائل عبر المنشن
+    // 2. معالجة الذكاء الاصطناعي والرسائل
     async handleMessage(message, client) {
         if (message.author.bot) return;
 
-        if (message.mentions.has(client.user) && !message.mentions.everyone) {
+        // التحقق: إذا كان في الخاص يرد مباشرة، وإذا كان في سيرفر يتطلب المنشن
+        const isDM = !message.guild;
+        const isMentioned = message.mentions.has(client.user) && !message.mentions.everyone;
+
+        if (isDM || isMentioned) {
             let cleanPrompt = message.content
                 .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), "")
                 .trim();
@@ -385,10 +389,11 @@ module.exports = {
             const systemInstruction = (
                 "أنت ذكاء اصطناعي تتصرف بصفتك ذكر واسمك (itzF18). " +
                 "تحدث دائماً بصيغة المذكر (مثلاً: سعيد، موجود، شفت، فكرت). " +
-                "قاعدة اللغات واللهجات: تتكيف تلقائياً مع لغة ولهجة المستخدم (عراقية، عربية، إنجليزية). " +
-                "قواعدك الأخلاقية: ممنوع نهائياً استخدام أي ألفاظ بذيئة أو سب. كن محترماً ونظيفاً. " +
-                "إذا سألك شخص غير فهد عن معلومات السيرفرات أو الأسرار، ارفض تماماً بحجة أن ليس لديه الصلاحية. " +
-                "الشخص الذي قام بصنعك وبرمجتك هو فهد (itzF18)."
+                "قاعدة اللغات واللهجات (مهمة جداً): يجب أن تتكيف تلقائياً مع لغة واللهجة التي يكلمك بها المستخدم. إذا كتب لك باللغة الإنجليزية رد باللغة الإنجليزية، وإذا كتب بلغة أخرى رد بها، وإذا كتب باللهجة العراقية أو العربية رد بنفس اللهجة واللغة تماماً وبشكل طبيعي. " +
+                "قواعدك الأخلاقية والصارمة جداً: ممنوع نهائياً استخدام أي ألفاظ بذيئة، أو شتائم، أو سب بالدين، أو كلام خارج عن الأدب؛ كن محترماً ونظيفاً في كلامك دائماً. " +
+                "قواعدك في الاسلوب: خذ كل كلمة يقولها فهد أو المستخدم أو اليوزر المذكور (<@1107355943408259112>) بكل جدية وتجاوب معها بدقة، واجعل ردودك قصيرة وعادية مثل البشر في الشات. " +
+                "إذا سألك شخص غير فهد عن معلومات السيرفرات أو الأسرار، ارفض تماماً وتمنع بحجة (ما عندي هاي الصلاحية أو مو من اختصاصي - أو ما يعادلها باللغة التي يخاطبك بها). " +
+                "الشخص الذي قام بصنعك وبرمجتك وتطويرك هو فهد (itzF18), اذكرها فقط إذا سألك أحد وبدون تكرار مزعج."
             );
 
             let replyText = null;
@@ -399,14 +404,14 @@ module.exports = {
                 userContentParts.push({
                     inlineData: {
                         data: imageBuffer.toString("base64"),
-                        mimeType: "image/jpeg"
+                        mimeType: "image/png"
                     }
                 });
             }
             if (cleanPrompt) {
                 userContentParts.push(cleanPrompt);
             } else {
-                userContentParts.push("ما رأيك بهذه الصورة؟");
+                userContentParts.push("ما رأيك بهذه الصورة؟ / What do you think about this image?");
             }
 
             const memoryObj = userMemory.get(userId);
@@ -415,7 +420,6 @@ module.exports = {
                 try {
                     if (!ai) break;
                     
-                    // استخدام واجهة الـ chats الصحيحة لـ @google/genai
                     const chat = ai.chats.create({
                         model: modelName,
                         config: {
