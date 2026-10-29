@@ -1,146 +1,264 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import datetime
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
-# قاموس لحفظ تحذيرات الأعضاء لكل سيرفر {guild_id: {user_id: count}}
-server_warnings = {}
+// قاموس لحفظ تحذيرات الأعضاء لكل سيرفر {guild_id: {user_id: count}}
+const serverWarnings = {};
 
-class Admin(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+module.exports = {
+    warnCommand: new SlashCommandBuilder()
+        .setName('warn')
+        .setDescription('تحذير عضو، وعند وصوله 5 تحذيرات يتم طرده تلقائياً')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('العضو المراد تحذيره')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('السبب'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers),
 
-    @app_commands.command(name="warn", description="تحذير عضو، وعند وصوله 5 تحذيرات يتم طرده تلقائياً")
-    @app_commands.checks.has_permissions(kick_members=True)
-    async def warn(self, interaction: discord.Interaction, member: discord.Member, reason: str = "لا يوجد سبب"):
-        await interaction.response.defer()
-        
-        guild_id = interaction.guild.id
-        user_id = member.id
+    clearWarningsCommand: new SlashCommandBuilder()
+        .setName('clear_warnings')
+        .setDescription('إزالة وتصفير تحذيرات العضو')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('العضو المراد تصفير تحذيراته')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers),
 
-        if guild_id not in server_warnings:
-            server_warnings[guild_id] = {}
-        if user_id not in server_warnings[guild_id]:
-            server_warnings[guild_id][user_id] = 0
+    banCommand: new SlashCommandBuilder()
+        .setName('ban')
+        .setDescription('حظر عضو من السيرفر نهائياً')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('العضو المراد حظره')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('السبب'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
 
-        server_warnings[guild_id][user_id] += 1
-        warn_count = server_warnings[guild_id][user_id]
+    unbanCommand: new SlashCommandBuilder()
+        .setName('unban')
+        .setDescription('رفع الحظر عن عضو باستخدام الآيدي (ID)')
+        .addStringOption(option =>
+            option.setName('user_id')
+                .setDescription('آيدي المستخدم المراد رفع الحظر عنه')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('السبب'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
 
-        if warn_count >= 5:
-            try:
-                await member.kick(reason=f"تخطي الحد الأقص للتحذيرات (5 تحذيرات). آخر سبب: {reason}")
-                server_warnings[guild_id][user_id] = 0
-                await interaction.followup.send(f"⚠️ | العضو {member.mention} وصل إلى **5 تحذيرات** وتم طرده تلقائياً من السيرفر! 👢")
-            except Exception as e:
-                await interaction.followup.send(f"وصل العضو 5 تحذيرات لكن فشل طرده بسبب صلاحيات البوت: `{e}`")
-        else:
-            await interaction.followup.send(f"⚠️ | تم تحذير العضو {member.mention} بنجاح.\nعدد تحذيراته الحالية: **{warn_count}/5**\nالسبب: {reason}")
+    kickCommand: new SlashCommandBuilder()
+        .setName('kick')
+        .setDescription('طرد عضو من السيرفر')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('العضو المراد طرده')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('السبب'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers),
 
-    @app_commands.command(name="clear_warnings", description="إزالة وتصفير تحذيرات العضو")
-    @app_commands.checks.has_permissions(kick_members=True)
-    async def clear_warnings(self, interaction: discord.Interaction, member: discord.Member):
-        await interaction.response.defer()
-        guild_id = interaction.guild.id
-        user_id = member.id
+    timeoutCommand: new SlashCommandBuilder()
+        .setName('timeout')
+        .setDescription('إسكات عضو مؤقتاً (تايم أوت)')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('العضو المراد إعطاؤه تايم أوت')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('time_input')
+                .setDescription('الوقت (مثال: 5 أو 10m أو 1h أو 1d)')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('السبب'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
-        if guild_id in server_warnings and user_id in server_warnings[guild_id]:
-            server_warnings[guild_id][user_id] = 0
-            await interaction.followup.send(f"✅ | تم تصفير وإزالة جميع تحذيرات العضو {member.mention} بنجاح.")
-        else:
-            await interaction.followup.send(f"ℹ️ | العضو {member.mention} ليس لديه تحذيرات مسجلة أصلاً.", ephemeral=True)
+    untimeoutCommand: new SlashCommandBuilder()
+        .setName('untimeout')
+        .setDescription('إزالة التايم أوت عن العضو')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('العضو المراد إزالة التايم أوت عنه')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('السبب'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
-    @app_commands.command(name="ban", description="حظر عضو من السيرفر نهائياً")
-    @app_commands.checks.has_permissions(ban_members=True)
-    async def ban(self, interaction: discord.Interaction, member: discord.Member, reason: str = "لا يوجد سبب"):
-        await interaction.response.defer()
-        try:
-            await member.ban(reason=reason)
-            await interaction.followup.send(f"تم حظر العضو {member.mention} بنجاح 🚷 (السبب: {reason})")
-        except Exception as e:
-            await interaction.followup.send(f"فشل الحظر: تأكد أن رتبة البوت أعلى من العضو المستهدف. ❌", ephemeral=True)
+    muteCommand: new SlashCommandBuilder()
+        .setName('mute')
+        .setDescription('كتم العضو صوتياً (Server Mute)')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('العضو المراد كتمه صوتياً')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('السبب'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.MuteMembers),
 
-    @app_commands.command(name="unban", description="رفع الحظر عن عضو باستخدام الآيدي (ID)")
-    @app_commands.checks.has_permissions(ban_members=True)
-    async def unban(self, interaction: discord.Interaction, user_id: str, reason: str = "لا يوجد سبب"):
-        await interaction.response.defer()
-        try:
-            user = await self.bot.fetch_user(int(user_id))
-            await interaction.guild.unban(user, reason=reason)
-            await interaction.followup.send(f"✅ | تم رفع الحظر عن العضو `{user.name}` بنجاح.")
-        except Exception as e:
-            await interaction.followup.send(f"❌ | فشل رفع الحظر، تأكد من صحة الآيدي (ID) أو صلاحيات البوت: `{e}`", ephemeral=True)
+    unmuteCommand: new SlashCommandBuilder()
+        .setName('unmute')
+        .setDescription('إلغاء الكتم الصوتي عن العضو')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('العضو المراد إلغاء الكتم عنه')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('السبب'))
+        .setDefaultMemberPermissions(PermissionFlagsBits.MuteMembers),
 
-    @app_commands.command(name="kick", description="طرد عضو من السيرفر")
-    @app_commands.checks.has_permissions(kick_members=True)
-    async def kick(self, interaction: discord.Interaction, member: discord.Member, reason: str = "لا يوجد سبب"):
-        await interaction.response.defer()
-        try:
-            await member.kick(reason=reason)
-            await interaction.followup.send(f"تم طرد العضو {member.mention} بنجاح 👢 (السبب: {reason})")
-        except Exception as e:
-            await interaction.followup.send(f"فشل الطرد: تأكد من صلاحيات البوت. ❌", ephemeral=True)
+    async handleWarn(interaction) {
+        await interaction.deferReply();
+        const guildId = interaction.guild.id;
+        const member = interaction.options.getMember('member');
+        const reason = interaction.options.getString('reason') || "لا يوجد سبب";
+        const userId = member.id;
 
-    @app_commands.command(name="timeout", description="إسكات عضو مؤقتاً (تايم أوت)")
-    @app_commands.checks.has_permissions(moderate_members=True)
-    async def timeout(self, interaction: discord.Interaction, member: discord.Member, time_input: str, reason: str = "لا يوجد سبب"):
-        await interaction.response.defer()
-        try:
-            time_input = time_input.lower().strip()
-            minutes = 0
-            if time_input.isdigit():
-                minutes = int(time_input)
-            elif time_input.endswith('m'):
-                minutes = int(time_input[:-1])
-            elif time_input.endswith('h'):
-                minutes = int(time_input[:-1]) * 60
-            elif time_input.endswith('d'):
-                minutes = int(time_input[:-1]) * 1440
-            else:
-                await interaction.followup.send("صيغة الوقت غير صحيحة! استعمل m للدقائق أو h للساعات ❌", ephemeral=True)
-                return
+        if (!serverWarnings[guildId]) serverWarnings[guildId] = {};
+        if (!serverWarnings[guildId][userId]) serverWarnings[guildId][userId] = 0;
 
-            duration = discord.utils.utcnow() + datetime.timedelta(minutes=minutes)
-            await member.timeout(duration, reason=reason)
-            await interaction.followup.send(f"تم إعطاء تايم أوت للعضو {member.mention} لمدة `{minutes} دقائق` ✅")
-        except Exception as e:
-            await interaction.followup.send(f"حدث خطأ: {e}", ephemeral=True)
+        serverWarnings[guildId][userId] += 1;
+        const warnCount = serverWarnings[guildId][userId];
 
-    @app_commands.command(name="untimeout", description="إزالة التايم أوت عن العضو")
-    @app_commands.checks.has_permissions(moderate_members=True)
-    async def untimeout(self, interaction: discord.Interaction, member: discord.Member, reason: str = "لا يوجد سبب"):
-        await interaction.response.defer()
-        try:
-            await member.timeout(None, reason=reason)
-            await interaction.followup.send(f"✅ | تم إزالة التايم أوت عن العضو {member.mention} بنجاح.")
-        except Exception as e:
-            await interaction.followup.send(f"❌ | حدث خطأ أثناء إزالة التايم أوت: `{e}`", ephemeral=True)
+        if (warnCount >= 5) {
+            try {
+                await member.kick(`تخطي الحد الأقصى للتحذيرات (5 تحذيرات). آخر سبب: ${reason}`);
+                serverWarnings[guildId][userId] = 0;
+                await interaction.followup.send(`⚠️ | العضو ${member} وصل إلى **5 تحذيرات** وتم طرده تلقائياً من السيرفر! 👢`);
+            } catch (e) {
+                await interaction.followup.send(`وصل العضو 5 تحذيرات لكن فشل طرده بسبب صلاحيات البوت: \`${e.message}\``);
+            }
+        } else {
+            await interaction.followup.send(`⚠️ | تم تحذير العضو ${member} بنجاح.\nعدد تحذيراته الحالية: **${warnCount}/5**\nالسبب: ${reason}`);
+        }
+    },
 
-    @app_commands.command(name="mute", description="كتم العضو صوتياً (Server Mute)")
-    @app_commands.checks.has_permissions(mute_members=True)
-    async def mute(self, interaction: discord.Interaction, member: discord.Member, reason: str = "لا يوجد سبب"):
-        await interaction.response.defer()
-        try:
-            if member.voice:
-                await member.edit(mute=True, reason=reason)
-                await interaction.followup.send(f"🔇 | تم كتم العضو {member.mention} صوتياً بنجاح.")
-            else:
-                await interaction.followup.send(f"⚠️ | العضو {member.mention} ليس متصلاً بأي روم صوتي حالياً.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ | فشل كتم العضو صوتياً: `{e}`", ephemeral=True)
+    async handleClearWarnings(interaction) {
+        await interaction.deferReply();
+        const guildId = interaction.guild.id;
+        const member = interaction.options.getMember('member');
+        const userId = member.id;
 
-    @app_commands.command(name="unmute", description="إلغاء الكتم الصوتي عن العضو")
-    @app_commands.checks.has_permissions(mute_members=True)
-    async def unmute(self, interaction: discord.Interaction, member: discord.Member, reason: str = "لا يوجد سبب"):
-        await interaction.response.defer()
-        try:
-            if member.voice:
-                await member.edit(mute=False, reason=reason)
-                await interaction.followup.send(f"🔊 | تم رفع الكتم الصوتي عن العضو {member.mention} بنجاح.")
-            else:
-                await interaction.followup.send(f"⚠️ | العضو {member.mention} ليس متصلاً بأي روم صوتي حالياً.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ | فشل رفع الكتم الصوتي: `{e}`", ephemeral=True)
+        if (serverWarnings[guildId] && serverWarnings[guildId][userId]) {
+            serverWarnings[guildId][userId] = 0;
+            await interaction.followup.send(`✅ | تم تصفير وإزالة جميع تحذيرات العضو ${member} بنجاح.`);
+        } else {
+            await interaction.followup.send({ content: `ℹ️ | العضو ${member} ليس لديه تحذيرات مسجلة أصلاً.`, ephemeral: true });
+        }
+    },
 
-async def setup(bot):
-    await bot.add_cog(Admin(bot))
+    async handleBan(interaction) {
+        await interaction.deferReply();
+        const member = interaction.options.getMember('member');
+        const reason = interaction.options.getString('reason') || "لا يوجد سبب";
+        try {
+            await member.ban({ reason });
+            await interaction.followup.send(`تم حظر العضو ${member} بنجاح 🚷 (السبب: ${reason})`);
+        } catch (e) {
+            await interaction.followup.send({ content: `فشل الحظر: تأكد أن رتبة البوت أعلى من العضو المستهدف. ❌`, ephemeral: true });
+        }
+    },
 
+    async handleUnban(interaction) {
+        await interaction.deferReply();
+        const userId = interaction.options.getString('user_id');
+        const reason = interaction.options.getString('reason') || "لا يوجد سبب";
+        try {
+            const user = await interaction.client.users.fetch(userId);
+            await interaction.guild.members.unban(user, reason);
+            await interaction.followup.send(`✅ | تم رفع الحظر عن العضو \`${user.tag}\` بنجاح.`);
+        } catch (e) {
+            await interaction.followup.send({ content: `❌ | فشل رفع الحظر، تأكد من صحة الآيدي (ID) أو صلاحيات البوت: \`${e.message}\``, ephemeral: true });
+        }
+    },
+
+    async handleKick(interaction) {
+        await interaction.deferReply();
+        const member = interaction.options.getMember('member');
+        const reason = interaction.options.getString('reason') || "لا يوجد سبب";
+        try {
+            await member.kick(reason);
+            await interaction.followup.send(`تم طرد العضو ${member} بنجاح 👢 (السبب: ${reason})`);
+        } catch (e) {
+            await interaction.followup.send({ content: `فشل الطرد: تأكد من صلاحيات البوت. ❌`, ephemeral: true });
+        }
+    },
+
+    async handleTimeout(interaction) {
+        await interaction.deferReply();
+        const member = interaction.options.getMember('member');
+        let timeInput = interaction.options.getString('time_input').toLowerCase().trim();
+        const reason = interaction.options.getString('reason') || "لا يوجد سبب";
+        try {
+            let minutes = 0;
+            if (/^\d+$/.test(timeInput)) {
+                minutes = parseInt(timeInput);
+            } else if (timeInput.endsWith('m')) {
+                minutes = parseInt(timeInput.slice(0, -1));
+            } else if (timeInput.endsWith('h')) {
+                minutes = parseInt(timeInput.slice(0, -1)) * 60;
+            } else if (timeInput.endsWith('d')) {
+                minutes = parseInt(timeInput.slice(0, -1)) * 1440;
+            } else {
+                await interaction.followup.send({ content: "صيغة الوقت غير صحيحة! استعمل m للدقائق أو h للساعات أو d للأيام ❌", ephemeral: true });
+                return;
+            }
+
+            const duration = minutes * 60 * 1000;
+            await member.timeout(duration, reason);
+            await interaction.followup.send(`تم إعطاء تايم أوت للعضو ${member} لمدة \`${minutes} دقائق\` ✅`);
+        } catch (e) {
+            await interaction.followup.send({ content: `حدث خطأ: \`${e.message}\``, ephemeral: true });
+        }
+    },
+
+    async handleUntimeout(interaction) {
+        await interaction.deferReply();
+        const member = interaction.options.getMember('member');
+        const reason = interaction.options.getString('reason') || "لا يوجد سبب";
+        try {
+            await member.timeout(null, reason);
+            await interaction.followup.send(`✅ | تم إزالة التايم أوت عن العضو ${member} بنجاح.`);
+        } catch (e) {
+            await interaction.followup.send({ content: `❌ | حدث خطأ أثناء إزالة التايم أوت: \`${e.message}\``, ephemeral: true });
+        }
+    },
+
+    async handleMute(interaction) {
+        await interaction.deferReply();
+        const member = interaction.options.getMember('member');
+        const reason = interaction.options.getString('reason') || "لا يوجد سبب";
+        try {
+            if (member.voice.channel) {
+                await member.edit({ mute: true, reason });
+                await interaction.followup.send(`🔇 | تم كتم العضو ${member} صوتياً بنجاح.`);
+            } else {
+                await interaction.followup.send({ content: `⚠️ | العضو ${member} ليس متصلاً بأي روم صوتي حالياً.`, ephemeral: true });
+            }
+        } catch (e) {
+            await interaction.followup.send({ content: `❌ | فشل كتم العضو صوتياً: \`${e.message}\``, ephemeral: true });
+        }
+    },
+
+    async handleUnmute(interaction) {
+        await interaction.deferReply();
+        const member = interaction.options.getMember('member');
+        const reason = interaction.options.getString('reason') || "لا يوجد سبب";
+        try {
+            if (member.voice.channel) {
+                await member.edit({ mute: false, reason });
+                await interaction.followup.send(`🔊 | تم رفع الكتم الصوتي عن العضو ${member} بنجاح.`);
+            } else {
+                await interaction.followup.send({ content: `⚠️ | العضو ${member} ليس متصلاً بأي روم صوتي حالياً.`, ephemeral: true });
+            }
+        } catch (e) {
+            await interaction.followup.send({ content: `❌ | فشل رفع الكتم الصوتي: \`${e.message}\``, ephemeral: true });
+        }
+    }
+};
