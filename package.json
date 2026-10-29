@@ -1,11 +1,10 @@
 {
-  "name": "bot",
+  "name": "rty-dragon-bot",
   "version": "1.0.0",
+  "description": "Discord Bot",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
-    "discord.js": "^14.14.1"
+    "@google/genai": "^0.1.2",
+    "discord.js": "^14.14.0"
   }
 }
