@@ -1,138 +1,153 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import asyncio
-import json
-import os
+const { Client, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-CONFIG_FILE = "activity_config.json"
+const CONFIG_FILE = path.join(__dirname, '../activity_config.json');
 
-class ActivityCheck(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+// دالة قراءة الإعدادات
+function loadConfig() {
+    if (fs.existsSync(CONFIG_FILE)) {
+        try {
+            const data = fs.readFileSync(CONFIG_FILE, 'utf8');
+            return JSON.parse(data);
+        } catch (error) {
+            console.error("خطأ في قراءة ملف الإعدادات:", error);
+        }
+    }
+    return {};
+}
 
-    def load_config(self):
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except:
-                pass
-        return {}
+// دالة حفظ الإعدادات
+function saveConfig(data) {
+    try {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 4), 'utf8');
+    } catch (error) {
+        console.error("خطأ في حفظ ملف الإعدادات:", error);
+    }
+}
 
-    def save_config(self, data):
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+module.exports = {
+    // تعريف أمر تحديد الرتبة
+    setActivityRoleCommand: new SlashCommandBuilder()
+        .setName('set_activity_role')
+        .setDescription('تحديد وحفظ الرتبة التلقائية التي سيتم منحها في فعاليات فحص التفاعل.')
+        .addRoleOption(option =>
+            option.setName('role')
+                .setDescription('اختر الرتبة التي تريد حفظها للفعاليات')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    # أمر منفصل لتحديد وحفظ الرتبة التلقائية
-    @app_commands.command(
-        name="set_activity_role",
-        description="تحديد وحفظ الرتبة التلقائية التي سيتم منحها في فعاليات فحص التفاعل."
-    )
-    @app_commands.describe(role="اختر الرتبة التي تريد حفظها للفعاليات")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_activity_role(self, interaction: discord.Interaction, role: discord.Role):
-        guild_id = str(interaction.guild.id)
-        config = self.load_config()
-        
-        config[guild_id] = role.id
-        self.save_config(config)
+    // تعريف أمر فحص التفاعل
+    activityCheckCommand: new SlashCommandBuilder()
+        .setName('activity_check')
+        .setDescription('فحص التفاعل وتحديد النشطين خلال 5 ثواني مع منحهم الرتبة المحفوظة تلقائياً.')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        await interaction.response.send_message(
-            f"✅ **تم حفظ رتبة الفعالية بنجاح!**\nالرتبة المعتمدة حالياً: {role.mention}",
-            ephemeral=True
-        )
+    // دالة تنفيذ أمر set_activity_role
+    async handleSetActivityRole(interaction) {
+        const guildId = interaction.guild.id;
+        const role = interaction.options.getRole('role');
+        const config = loadConfig();
 
-    # أمر فحص التفاعل (يستخدم الرتبة المحفوظة تلقائياً)
-    @app_commands.command(
-        name="activity_check",
-        description="فحص التفاعل وتحديد النشطين خلال 5 ثواني مع منحهم الرتبة المحفوظة تلقائياً."
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def activity_check(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild.id)
-        config = self.load_config()
-        role_id = config.get(guild_id)
+        config[guildId] = role.id;
+        saveConfig(config);
 
-        if not role_id:
-            await interaction.response.send_message(
-                "❌ عذراً، لم تقم بتحديد رتبة الفعالية بعد!\nيرجى استخدام الأمر `/set_activity_role` أولاً لاختيار الرتبة.",
-                ephemeral=True
-            )
-            return
+        await interaction.reply({
+            content: `✅ **تم حفظ رتبة الفعالية بنجاح!**\nالرتبة المعتمدة حالياً: ${role}`,
+            ephemeral: true
+        });
+    },
 
-        role = interaction.guild.get_role(role_id)
-        if not role:
-            await interaction.response.send_message(
-                "❌ عذراً، الرتبة المحفوظة سابقاً لم تعد موجودة في السيرفر! يرجى إعادة تحديدها بـ `/set_activity_role`.",
-                ephemeral=True
-            )
-            return
+    // دالة تنفيذ أمر activity_check
+    async handleActivityCheck(interaction) {
+        const guildId = interaction.guild.id;
+        const config = loadConfig();
+        const roleId = config[guildId];
 
-        # التحقق من صلاحيات البوت
-        if not interaction.guild.me.guild_permissions.manage_roles:
-            await interaction.response.send_message("❌ عذراً، لا أملك صلاحية (Manage Roles) لإعطاء الرتب للأعضاء!", ephemeral=True)
-            return
+        if (!roleId) {
+            await interaction.reply({
+                content: "❌ عذراً، لم تقم بتحديد رتبة الفعالية بعد!\nيرجى استخدام الأمر `/set_activity_role` أولاً لاختيار الرتبة.",
+                ephemeral: true
+            });
+            return;
+        }
 
-        if role >= interaction.guild.me.top_role:
-            await interaction.response.send_message(f"❌ عذراً، رتبة ({role.name}) أعلى من رتبتي أو تساويها، لا يمكنني إعطاؤها للأعضاء!", ephemeral=True)
-            return
+        const role = interaction.guild.roles.cache.get(roleId);
+        if (!role) {
+            await interaction.reply({
+                content: "❌ عذراً، الرتبة المحفوظة سابقاً لم تعد موجودة في السيرفر! يرجى إعادة تحديدها بـ `/set_activity_role`.",
+                ephemeral=true
+            });
+            return;
+        }
 
-        await interaction.response.defer(ephemeral=True)
-        
-        embed = discord.Embed(
-            title="✅ ACTIVITY CHECK",
-            description=f"اضغط على التفاعل أدناه لتأكيد تفاعلك والحصول على رتبة ({role.mention})!\n*(متاح لمدة 5 ثواني فقط)*",
-            color=discord.Color.green()
-        )
-        
-        message = await interaction.channel.send(content="@everyone", embed=embed)
-        check_emoji = "✅"
-        await message.add_reaction(check_emoji)
+        // التحقق من صلاحيات البوت
+        if (!interaction.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+            await interaction.reply({ content: "❌ عذراً، لا أملك صلاحية (Manage Roles) لإعطاء الرتب للأعضاء!", ephemeral: true });
+            return;
+        }
 
-        active_users = []
+        if (role.position >= interaction.guild.members.me.roles.highest.position) {
+            await interaction.reply({ content: `❌ عذراً، رتبة (${role.name}) أعلى من رتبتي أو تساويها، لا يمكنني إعطاؤها للأعضاء!`, ephemeral: true });
+            return;
+        }
 
-        def check(reaction, user):
-            return (
-                reaction.message.id == message.id
-                and str(reaction.emoji) == check_emoji
-                and not user.bot
-                and user not in active_users
-            )
+        await interaction.deferReply({ ephemeral: true });
 
-        try:
-            while True:
-                reaction, user = await self.bot.wait_for('reaction_add', timeout=5.0, check=check)
-                if user not in active_users:
-                    active_users.append(user)
-                    
-                    try:
-                        member = interaction.guild.get_member(user.id) or await interaction.guild.fetch_member(user.id)
-                        if member and role not in member.roles:
-                            await member.add_roles(role, reason="التفاعل السريع في فعالية Activity Check")
-                    except Exception as e:
-                        print(f"⚠️ لم أستطع إعطاء الرتبة لـ {user.name}: {e}")
+        const embed = new EmbedBuilder()
+            .setTitle("✅ ACTIVITY CHECK")
+            .setDescription(`اضغط على التفاعل أدناه لتأكيد تفاعلك والحصول على رتبة (${role})!\n*(متاح لمدة 5 ثواني فقط)*`)
+            .setColor(0x00FF00);
 
-        except asyncio.TimeoutError:
-            pass
+        const channel = interaction.channel;
+        const message = await channel.send({ content: "@everyone", embeds: [embed] });
+        const checkEmoji = "✅";
+        await message.react(checkEmoji);
 
-        complete_embed = discord.Embed(
-            title="✅ ACTIVITY CHECK COMPLETE!",
-            color=discord.Color.blue()
-        )
+        const activeUsers = new Set();
+        const filter = (reaction, user) => {
+            return reaction.message.id === message.id &&
+                   reaction.emoji.name === checkEmoji &&
+                   !user.bot &&
+                   !activeUsers.has(user.id);
+        };
 
-        if active_users:
-            leaderboard_text = f"🏆 **تم منح رتبة ({role.name}) لكل من:**\n\n"
-            medals = ["🥇", "🥈", "🥉", "🏅", "🏅", "🏅", "🏅", "🏅", "🏅", "🏅"]
-            for index, user in enumerate(active_users[:10]):
-                medal = medals[index] if index < len(medals) else "🔹"
-                leaderboard_text += f"{medal} {index + 1}. {user.mention}\n"
-            
-            complete_embed.description = leaderboard_text
-        else:
-            complete_embed.description = "لم يتفاعل أي عضو خلال الـ 5 ثواني!"
+        const collector = message.createReactionCollector({ filter, time: 5000 });
 
-        await message.edit(content=None, embed=complete_embed)
+        collector.on('collect', async (reaction, user) => {
+            activeUsers.add(user.id);
+            try {
+                const member = await interaction.guild.members.fetch(user.id);
+                if (member && !member.roles.cache.has(role.id)) {
+                    await member.roles.add(role, "التفاعل السريع في فعالية Activity Check");
+                }
+            } catch (e) {
+                console.log(`⚠️ لم أستطع إعطاء الرتبة لـ ${user.username}: ${e.message}`);
+            }
+        });
 
-async def setup(bot):
-    await bot.add_cog(ActivityCheck(bot))
+        collector.on('end', async () => {
+            const completeEmbed = new EmbedBuilder()
+                .setTitle("✅ ACTIVITY CHECK COMPLETE!")
+                .setColor(0x0000FF);
+
+            const usersArray = Array.from(activeUsers);
+            if (usersArray.length > 0) {
+                let leaderboardText = `🏆 **تم منح رتبة (${role.name}) لكل من:**\n\n`;
+                const medals = ["🥇", "🥈", "🥉", "🏅", "🏅", "🏅", "🏅", "🏅", "🏅", "🏅"];
+                
+                for (let i = 0; i < Math.min(usersArray.length, 10); i++) {
+                    const medal = medals[i] || "🔹";
+                    leaderboardText += `${medal} ${i + 1}. <@${usersArray[i]}>\n`;
+                }
+                completeEmbed.setDescription(leaderboardText);
+            } else {
+                completeEmbed.setDescription("لم يتفاعل أي عضو خلال الـ 5 ثواني!");
+            }
+
+            await message.edit({ content: null, embeds: [completeEmbed] }).catch(() => {});
+        });
+
+        await interaction.editReply({ content: "✅ تم بدء فعالية فحص التفاعل بنجاح في الشات!", ephemeral: true });
+    }
+};
