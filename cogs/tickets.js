@@ -1,100 +1,244 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import asyncio
+const { 
+    SlashCommandBuilder, 
+    PermissionFlagsBits, 
+    EmbedBuilder, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    ChannelType 
+} = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-class CloseTicketButtonView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
+const DATA_FILE = path.join(__dirname, '../ticket_config.json');
 
-    @discord.ui.button(label="إغلاق التكت 🔒", style=discord.ButtonStyle.danger, custom_id="close_ticket_btn")
-    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # شرط منع الأعضاء من إغلاق التكت وقصرها على الإداريين فقط
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("عذراً، زر إغلاق التكت مخصص للإداريين فقط! ❌", ephemeral=True)
-            return
+function loadTicketData() {
+    if (fs.existsSync(DATA_FILE)) {
+        try {
+            return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        } catch (e) {
+            return { guilds: {} };
+        }
+    }
+    return { guilds: {} };
+}
 
-        await interaction.response.send_message("جاري إغلاق وحذف التذكرة خلال 3 ثوانٍ... ⏱️")
-        await asyncio.sleep(3)
-        try:
-            await interaction.channel.delete()
-        except:
-            pass
+function saveTicketData(data) {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 4), 'utf8');
+}
 
-class TicketButtonView(discord.ui.View):
-    def __init__(self, bot):
-        super().__init__(timeout=None)
-        self.bot = bot
+function getGuildTicketConfig(guildId) {
+    const data = loadTicketData();
+    if (!data.guilds) data.guilds = {};
+    if (!data.guilds[guildId]) {
+        data.guilds[guildId] = {
+            counter: 0,
+            buttons: {} // key: custom_id, value: { label, description, emoji }
+        };
+        saveTicketData(data);
+    }
+    return data.guilds[guildId];
+}
 
-    @discord.ui.button(label="فتح تذكرة 🎫", style=discord.ButtonStyle.secondary, custom_id="open_ticket_btn")
-    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = interaction.guild
-        member = interaction.user
+function updateGuildTicketConfig(guildId, guildConfig) {
+    const data = loadTicketData();
+    if (!data.guilds) data.guilds = {};
+    data.guilds[guildId] = guildConfig;
+    saveTicketData(data);
+}
 
-        existing_channel = discord.utils.get(guild.text_channels, name=f"ticket-{member.name.lower()}")
-        if existing_channel:
-            await interaction.response.send_message(f"لديك تذكرة مفتوحة بالفعل هنا: {existing_channel.mention} ❌", ephemeral=True)
-            return
+// زر إغلاق التكت (ثابت)
+class CloseTicketButtonView extends ActionRowBuilder {
+    constructor() {
+        super();
+        this.addComponents(
+            new ButtonBuilder()
+                .setCustomId("close_ticket_btn")
+                .setLabel("إغلاق التكت 🔒")
+                .setStyle(ButtonStyle.Danger)
+        );
+    }
+}
 
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True)
+module.exports = {
+    // 1. أمر إرسال لوحة التكتات الرئيسية
+    ticketPanelCommand: new SlashCommandBuilder()
+        .setName('ticket-panel')
+        .setDescription('[ خاص بالإدارة ] إرسال لوحة التذاكر المتقدمة بالأزرار المخصصة')
+        .addStringOption(o => o.setName('message').setDescription('رسالة اللوحة التي ستظهر للأعضاء').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    // 2. إدارة الأزرار (إضافة)
+    ticketAddBtnCommand: new SlashCommandBuilder()
+        .setName('ticket-add-btn')
+        .setDescription('[ خاص بالإدارة ] إضافة زر جديد لقائمة التذاكر مع وصف مخصص')
+        .addStringOption(o => o.setName('id').setDescription('معرف فريد للزر بالإنجليزية (مثل: support, complaint)').setRequired(true))
+        .addStringOption(o => o.setName('label').setDescription('اسم الزر الظاهري (مثل: تقديم, شكوى)').setRequired(true))
+        .addStringOption(o => o.setName('description').setDescription('الرسالة أو الوصف الذي يظهر داخل التكت عند فتحها بهذا الزر').setRequired(true))
+        .addStringOption(o => o.setName('emoji').setDescription('إيموجي الزر (اختياري، مثل 🎫)').setRequired(false))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    // 3. إدارة الأزرار (حذف)
+    ticketRemoveBtnCommand: new SlashCommandBuilder()
+        .setName('ticket-remove-btn')
+        .setDescription('[ خاص بالإدارة ] حذف زر تذاكر موجود سابقاً')
+        .addStringOption(o => o.setName('id').setDescription('معرف الزر (ID) المراد حذفه').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    // معالجة إرسال اللوحة
+    async handleTicketPanel(interaction) {
+        const guildId = interaction.guildId;
+        const messageText = interaction.options.getString('message');
+        const config = getGuildTicketConfig(guildId);
+
+        if (Object.keys(config.buttons).length === 0) {
+            await interaction.reply({ content: "❌ | لم تقم بإضافة أي أزرار للتكتات حتى الآن! استخدم `/ticket-add-btn` أولاً.", ephemeral: true });
+            return;
         }
 
-        ticket_channel = await guild.create_text_channel(
-            name=f"ticket-{member.name}",
-            overwrites=overwrites,
-            topic=f"تذكرة دعم فني خاصة بالعضو: {member.name}"
-        )
+        const buttons = Object.entries(config.buttons).map(([btnId, btnData]) => {
+            const builder = new ButtonBuilder()
+                .setCustomId(`ticket_create_${btnId}`)
+                .setLabel(btnData.label)
+                .setStyle(ButtonStyle.Secondary);
+            if (btnData.emoji) builder.setEmoji(btnData.emoji);
+            return builder;
+        });
 
-        embed = discord.Embed(
-            title="🎫 | تذكرة دعم فني جديدة",
-            description=(
-                f"مرحباً بك {member.mention}!\n"
-                "تم فتح هذه التذكرة الخاصة لك بنجاح.\n\n"
-                "يرجى كتابة مشكلتك أو طلبك بالتفصيل، وسيتم الرد عليك من قبل الإدارة قريباً.\n"
-                "⚠️ **ملاحظة:** إذا لم يتم إرسال أي رسالة خلال **ساعة كاملة**، سيتم إغلاق التذكرة تلقائياً.\n"
-            ),
-            color=0x000000
-        )
-        embed.set_footer(text=f"Requested by {member.name}", icon_url=member.display_avatar.url)
+        const rows = [];
+        for (let i = 0; i < buttons.length; i += 5) {
+            rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+        }
 
-        await ticket_channel.send(content=f"{member.mention}", embed=embed, view=CloseTicketButtonView())
-        await interaction.response.send_message(f"تم فتح تذكرتك بنجاح: {ticket_channel.mention} ✅", ephemeral=True)
+        const embed = new EmbedBuilder()
+            .setTitle("🎫 | قسم تذاكر الدعم الفني المتقدمة")
+            .setDescription(messageText)
+            .setColor(0x000000)
+            .setFooter({ text: `Server Support • ${interaction.guild.name}` });
 
-        async def check_inactivity():
-            try:
-                def check(m):
-                    return m.channel == ticket_channel and not m.author.bot
-                await self.bot.wait_for('message', timeout=3600.0, check=check)
-            except asyncio.TimeoutError:
-                try:
-                    await ticket_channel.delete()
-                except:
-                    pass
+        await interaction.channel.send({ embeds: [embed], components: rows });
+        await interaction.reply({ content: "✅ | تم إرسال لوحة التكتات المتقدمة بنجاح!", ephemeral: true });
+    },
 
-        self.bot.loop.create_task(check_inactivity())
+    // معالجة إضافة زر
+    async handleTicketAddBtn(interaction) {
+        const guildId = interaction.guildId;
+        const btnId = interaction.options.getString('id').trim().toLowerCase();
+        const label = interaction.options.getString('label');
+        const description = interaction.options.getString('description');
+        const emoji = interaction.options.getString('emoji');
 
-class Tickets(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+        const config = getGuildTicketConfig(guildId);
+        config.buttons[btnId] = { label, description, emoji };
+        updateGuildTicketConfig(guildId, config);
 
-    @app_commands.command(name="ticket", description="إرسال لوحة تذاكر الدعم الفني")
-    @app_commands.describe(message="رسالة اللوحة التي ستظهر للأعضاء")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def slash_ticket(self, interaction: discord.Interaction, message: str):
-        await interaction.response.defer(ephemeral=True)
-        embed = discord.Embed(
-            title="🎫 | قسم تذاكر الدعم الفني",
-            description=message,
-            color=0x000000
-        )
-        embed.set_footer(text=f"Server Support • {interaction.guild.name}")
-        
-        await interaction.channel.send(embed=embed, view=TicketButtonView(self.bot))
-        await interaction.followup.send("تم إرسال لوحة التكتات بنجاح ✅", ephemeral=True)
+        await interaction.reply({ content: `✅ | تم إضافة زر التكت **(${label})** بالمعرف \`${btnId}\` بنجاح!`, ephemeral: true });
+    },
 
-async def setup(bot):
-    await bot.add_cog(Tickets(bot))
+    // معالجة حذف زر
+    async handleTicketRemoveBtn(interaction) {
+        const guildId = interaction.guildId;
+        const btnId = interaction.options.getString('id').trim().toLowerCase();
 
+        const config = getGuildTicketConfig(guildId);
+        if (config.buttons[btnId]) {
+            delete config.buttons[btnId];
+            updateGuildTicketConfig(guildId, config);
+            await interaction.reply({ content: `✅ | تم حذف الزر ذو المعرف \`${btnId}\` بنجاح.`, ephemeral: true });
+        } else {
+            await interaction.reply({ content: `❌ | لم يتم العثور على زر بهذا المعرف \`${btnId}\`.`, ephemeral: true });
+        }
+    },
+
+    // معالجة التفاعلات (فتح التكت، إغلاقها، والأزرار المخصصة)
+    async handleInteraction(interaction, client) {
+        if (!interaction.isButton()) return;
+
+        const customId = interaction.customId;
+
+        // 1. زر إغلاق التكت
+        if (customId === "close_ticket_btn") {
+            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                await interaction.reply({ content: "عذراً، زر إغلاق التكت مخصص للإداريين فقط! ❌", ephemeral: true });
+                return;
+            }
+
+            await interaction.reply({ content: "جاري إغلاق وحذف التذكرة خلال 3 ثوانٍ... ⏱️" });
+            setTimeout(async () => {
+                try {
+                    await interaction.channel.delete();
+                } catch (e) {}
+            }, 3000);
+            return;
+        }
+
+        // 2. أزرار إنشاء التذاكر المخصصة
+        if (customId.startsWith("ticket_create_")) {
+            const btnId = customId.replace("ticket_create_", "");
+            const guildId = interaction.guildId;
+            const config = getGuildTicketConfig(guildId);
+            const btnData = config.buttons[btnId];
+
+            if (!btnData) {
+                await interaction.reply({ content: "❌ | هذا الزر لم يعد متوفراً أو تم حذفه من النظام.", ephemeral: true });
+                return;
+            }
+
+            const guild = interaction.guild;
+            const member = interaction.user;
+
+            // زيادة العداد وترقيمه من 001 إلى ما لانهاية
+            config.counter = (config.counter || 0) + 1;
+            const ticketNumber = String(config.counter).padStart(3, '0');
+            updateGuildTicketConfig(guildId, config);
+
+            const channelName = `ticket-${ticketNumber}`;
+            const existingChannel = guild.channels.cache.find(c => c.name === channelName);
+            if (existingChannel) {
+                await interaction.reply({ content: `لديك تذكرة مفتوحة بالفعل هنا: ${existingChannel} ❌`, ephemeral: true });
+                return;
+            }
+
+            const overwrites = [
+                { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] }
+            ];
+
+            const ticketChannel = await guild.channels.create({
+                name: channelName,
+                type: ChannelType.GuildText,
+                permissionOverwrites: overwrites,
+                topic: `تذكرة نوع (${btnData.label}) خاصة بالعضو: ${member.tag}`
+            });
+
+            const embed = new EmbedBuilder()
+                .setTitle(`🎫 | تذكرة جديدة - ${btnData.label}`)
+                .setDescription(
+                    `مرحباً بك ${member}!\n` +
+                    `نوع التذكرة: **${btnData.label}**\n\n` +
+                    `📝 **الوصف / التعليمات:**\n${btnData.description}\n\n` +
+                    `⚠️ **ملاحظة:** إذا لم يتم إرسال أي رسالة خلال **ساعة كاملة**، سيتم إغلاق التذكرة تلقائياً.`
+                )
+                .setColor(0x000000)
+                .setFooter({ text: `Ticket #${ticketNumber} | Requested by ${member.username}`, iconURL: member.displayAvatarURL() });
+
+            const row = new CloseTicketButtonView();
+            await ticketChannel.send({ content: `${member}`, embeds: [embed], components: [row] });
+            await interaction.reply({ content: `تم فتح تذكرتك بنجاح: ${ticketChannel} ✅`, ephemeral: true });
+
+            // نظام إغلاق التكت تلقائياً بعد ساعة من عدم النشاط
+            const checkInactivity = async () => {
+                try {
+                    const filter = m => m.channelId === ticketChannel.id && !m.author.bot;
+                    await ticketChannel.awaitMessages({ filter, max: 1, time: 3600 * 1000, errors: ['time'] });
+                } catch (e) {
+                    try {
+                        await ticketChannel.delete("إغلاق تلقائي بسبب عدم النشاط لمدة ساعة");
+                    } catch (err) {}
+                }
+            };
+            checkInactivity();
+        }
+    }
+};
