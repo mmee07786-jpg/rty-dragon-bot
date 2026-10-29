@@ -1,57 +1,56 @@
-import os
-import discord
-from discord.ext import commands
+const { Client, GatewayIntentBits, Collection } = require('discord.js');
 
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="-", intents=intents)
+const client = new Client({
+    intents: [GatewayIntentBits.All]
+});
 
-@bot.event
-async def on_ready():
-    print(f"البوت جاهز الان ويعمل باسم {bot.user} (ID: {bot.user.id})")
-    
-    # قائمة بجميع ملفات الموديولات (Cogs) النشطة في مستودعك
-    cogs_list = [
-        "cogs.admin", 
-        "cogs.economy", 
-        "cogs.leveling", 
-        "cogs.tickets", 
-        "cogs.welcome", 
-        "cogs.boost", 
-        "cogs.leave",
-        "cogs.raid_end",
-        "cogs.activity_check",
-        "cogs.automod",
-        "cogs.autoroles",
-        "cogs.join_message",
-        "cogs.roblox",
-        "cogs.Spy",
-        "cogs.BackupBot",
-        "cogs.MemberStats",
-        "cogs.translator",
-        "cogs.owner_override",
-        "cogs.owner_tools",    # <--- أدوات التحكم بالحالة والتصفير
-        "cogs.nuke_server"     # <--- موديول التصفير المستقل
-    ]
-    
-    for cog in cogs_list:
-        try:
-            await bot.load_extension(cog)
-            print(f"✅ تم تحميل الملف بنجاح ({cog})")
-        except Exception as e:
-            print(f"❌ فشل تحميل الملف ({cog}) : {e}")
+client.commands = new Collection();
 
-    # مزامنة أوامر السلاش (Slash Commands) العامة لكافة السيرفرات
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ تمت مزامنة (Slash Commands) لـ {len(synced)} أمر")
-    except Exception as e:
-        print(f"❌ خطأ في مزامنة الأوامر: {e}")
+client.once('ready', () => {
+    console.log(`البوت جاهز الان ويعمل باسم ${client.user.tag} (ID: ${client.user.id})`);
 
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
-        return
-    print(f"⚠️ خطأ في الأمر: {error}")
+    // قائمة بجميع ملفات الموديولات النشطة مع أسمائها الجديدة المطابقة للصورة
+    const modulesList = [
+        "activityCheck",
+        "admin",
+        "automod",
+        "autoroles",
+        "backup",
+        "boost",
+        "clear",
+        "economy",
+        "joinMessage",
+        "leave",
+        "leveling",
+        "memberStats",
+        "nukeServer",
+        "owner_override",
+        "owner_tools",
+        "raid_end",
+        "raid_start",
+        "roblox",
+        "spy",
+        "tickets",
+        "translator",
+        "welcome"
+    ];
 
-# تشغيل البوت باستخدام توكن الحماية الموجود في متغيرات البيئة
-bot.run(os.getenv("TOKEN"))
+    // حلقة تكرارية لتحميل الملفات من مجلد cogs
+    for (const modName of modulesList) {
+        try {
+            // استدعاء الملف من مجلد cogs
+            const commandModule = require(`./cogs/${modName}.js`);
+            console.log(`✅ تم تحميل الملف بنجاح (cogs/${modName}.js)`);
+        } catch (error) {
+            console.log(`❌ فشل تحميل الملف (cogs/${modName}.js) : ${error.message}`);
+        }
+    }
+});
+
+// التعامل مع الأخطاء العامة
+process.on('unhandledRejection', error => {
+    console.error('⚠️ خطأ غير معالج:', error);
+});
+
+// تشغيل البوت باستخدام توكن الحماية الموجود في متغيرات البيئة بدون تغيير الاسم
+client.login(process.env.TOKEN);
