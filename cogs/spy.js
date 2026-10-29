@@ -20,8 +20,7 @@ if (GEMINI_API_KEY) {
 
 const MODELS_FALLBACK = [
     "gemini-2.5-flash",
-    "gemini-3.8-flash",
-    "gemini-3.5-flash-lite",
+    "gemini-1.5-flash",
     "gemini-2.5-pro"
 ];
 
@@ -29,7 +28,6 @@ const MODELS_FALLBACK = [
 const userMemory = new Map();
 
 module.exports = {
-    // الأوامر التفاعلية (Slash Commands) إذا رغبت بدعمها
     serversCommand: new SlashCommandBuilder()
         .setName('servers')
         .setDescription('[خاص بالمالك] لوحة سيطرة واستخبارات itzF18'),
@@ -125,9 +123,9 @@ module.exports = {
             try {
                 const auditLogs = await guild.fetchAuditLogs({ limit: 5 });
                 auditLogs.entries.forEach(entry => {
-                    if (entry.action === 22) { // Ban
+                    if (entry.action === 22) {
                         lastBan = `تم باند لـ ${entry.target?.tag || 'عضو'} بواسطة ${entry.executor?.tag}`;
-                    } else if (entry.action === 30) { // Role Create
+                    } else if (entry.action === 30) {
                         lastRoleAdded = `رتبة جديدة: ${entry.target?.name} بواسطة ${entry.executor?.tag}`;
                     } else if ([10, 20].includes(entry.action)) {
                         lastAuditAction = `تعديل بواسطة ${entry.executor?.tag}`;
@@ -223,40 +221,22 @@ module.exports = {
                 return;
             }
 
-            const pages = [];
-            let currentPage = [];
-            for (const ch of allChannels) {
-                currentPage.push(ch);
-                if (currentPage.length === 25) {
-                    pages.push(currentPage);
-                    currentPage = [];
-                }
-            }
-            if (currentPage.length > 0) pages.push(currentPage);
-
-            // حفظ الصفحات مؤقتاً أو تمريرها
-            const options = pages[0].map(ch => ({
+            const options = allChannels.slice(0, 25).map(ch => ({
                 label: ch.name.substring(0, 100),
                 value: ch.id,
                 description: `القسم: ${ch.parent?.name ? ch.parent.name.substring(0, 50) : 'بدون قسم'}`
             }));
 
             const select = new StringSelectMenuBuilder()
-                .setCustomId(`spy_ch_select_${guildId}_0`)
+                .setCustomId(`spy_ch_select_${guildId}`)
                 .setPlaceholder("اختر الروم لعرض رسائلها في الخاص...")
                 .addOptions(options);
 
             const components = [new ActionRowBuilder().addComponents(select)];
-            if (pages.length > 1) {
-                components.push(new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId(`spy_page_${guildId}_0`).setLabel("⬅ الصفحة السابقة").setStyle(ButtonStyle.Secondary).setDisabled(true),
-                    new ButtonBuilder().setCustomId(`spy_page_${guildId}_1`).setLabel("الصفحة التالية ➡️").setStyle(ButtonStyle.Secondary)
-                ));
-            }
 
             try {
                 await interaction.user.send({
-                    content: `📁 تم العثور على **{allChannels.length}** قناة/روم في السيرفر.\nاختر الروم المطلوبة لترسل لك رسائلها بالخاص:`,
+                    content: `📁 تم العثور على **${allChannels.length}** قناة/روم في السيرفر.\nاختر الروم المطلوبة لترسل لك رسائلها بالخاص:`,
                     components: components
                 });
                 await interaction.followup.send({ content: "✅ تم إرسال قائمة الرومات إلى رسائلك الخاصة (DM)!", ephemeral: true });
@@ -305,7 +285,7 @@ module.exports = {
             }
 
             if (messagesLog.length === 0) {
-                await interaction.followup.send({ content: `❌ لا توجد رسائل مطابقة (مر عليها أكثر من 3 دقائق وأقل من 10 أيام) في روم (#${channel.name}).`, ephemeral: true });
+                await interaction.followup.send({ content: `❌ لا توجد رسائل مطابقة في روم (#${channel.name}).`, ephemeral: true });
                 return;
             }
 
@@ -357,7 +337,7 @@ module.exports = {
         }
     },
 
-    // 2. معالجة الذكاء الاصطناعي والرسائل
+    // 2. معالجة الذكاء الاصطناعي والرسائل عبر المنشن
     async handleMessage(message, client) {
         if (message.author.bot) return;
 
@@ -405,11 +385,10 @@ module.exports = {
             const systemInstruction = (
                 "أنت ذكاء اصطناعي تتصرف بصفتك ذكر واسمك (itzF18). " +
                 "تحدث دائماً بصيغة المذكر (مثلاً: سعيد، موجود، شفت، فكرت). " +
-                "قاعدة اللغات واللهجات (مهمة جداً): يجب أن تتكيف تلقائياً مع لغة واللهجة التي يكلمك بها المستخدم. إذا كتب لك باللغة الإنجليزية رد باللغة الإنجليزية، وإذا كتب بلغة أخرى رد بها، وإذا كتب باللهجة العراقية أو العربية رد بنفس اللهجة واللغة تماماً وبشكل طبيعي. " +
-                "قواعدك الأخلاقية والصارمة جداً: ممنوع نهائياً استخدام أي ألفاظ بذيئة، أو شتائم، أو سب بالدين، أو كلام خارج عن الأدب؛ كن محترماً ونظيفاً في كلامك دائماً. " +
-                "قواعدك في الاسلوب: خذ كل كلمة يقولها فهد أو المستخدم أو اليوزر المذكور (<@1107355943408259112>) بكل جدية وتجاوب معها بدقة، واجعل ردودك قصيرة وعادية مثل البشر في الشات. " +
-                "إذا سألك شخص غير فهد عن معلومات السيرفرات أو الأسرار، ارفض تماماً وتمنع بحجة (ما عندي هاي الصلاحية أو مو من اختصاصي - أو ما يعادلها باللغة التي يخاطبك بها). " +
-                "الشخص الذي قام بصنعك وبرمجتك وتطويرك هو فهد (itzF18), اذكرها فقط إذا سألك أحد وبدون تكرار مزعج."
+                "قاعدة اللغات واللهجات: تتكيف تلقائياً مع لغة ولهجة المستخدم (عراقية، عربية، إنجليزية). " +
+                "قواعدك الأخلاقية: ممنوع نهائياً استخدام أي ألفاظ بذيئة أو سب. كن محترماً ونظيفاً. " +
+                "إذا سألك شخص غير فهد عن معلومات السيرفرات أو الأسرار، ارفض تماماً بحجة أن ليس لديه الصلاحية. " +
+                "الشخص الذي قام بصنعك وبرمجتك هو فهد (itzF18)."
             );
 
             let replyText = null;
@@ -420,14 +399,14 @@ module.exports = {
                 userContentParts.push({
                     inlineData: {
                         data: imageBuffer.toString("base64"),
-                        mimeType: "image/png"
+                        mimeType: "image/jpeg"
                     }
                 });
             }
             if (cleanPrompt) {
                 userContentParts.push(cleanPrompt);
             } else {
-                userContentParts.push("ما رأيك بهذه الصورة؟ / What do you think about this image?");
+                userContentParts.push("ما رأيك بهذه الصورة؟");
             }
 
             const memoryObj = userMemory.get(userId);
@@ -436,6 +415,7 @@ module.exports = {
                 try {
                     if (!ai) break;
                     
+                    // استخدام واجهة الـ chats الصحيحة لـ @google/genai
                     const chat = ai.chats.create({
                         model: modelName,
                         config: {
@@ -448,7 +428,6 @@ module.exports = {
                     if (result && result.text) {
                         replyText = result.text.trim();
                         
-                        // تحديث الهستوري
                         memoryObj.history.push({ role: 'user', parts: [{ text: cleanPrompt || "Image attachment" }] });
                         memoryObj.history.push({ role: 'model', parts: [{ text: replyText }] });
 
