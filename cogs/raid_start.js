@@ -1,133 +1,179 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import json
-import os
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-BANNER_URL = "https://cdn.discordapp.com/attachments/1534625592287297789/1545811316474912808/file_00000000c75881f4b2f0ec4b8cdff737-1.png?ex=6a9d8079&is=6a9c2ef9&hm=e9dfe9091e4710e406bd1dbe59c88706418390be9f939991090721b416f27b5f&"
-CONFIG_FILE = "clan_config.json"
-DATA_FILE = "raid_data.json"
+const BANNER_URL = "https://cdn.discordapp.com/attachments/1534625592287297789/1545811316474912808/file_00000000c75881f4b2f0ec4b8cdff737-1.png?ex=6a9d8079&is=6a9c2ef9&hm=e9dfe9091e4710e406bd1dbe59c88706418390be9f939991090721b416f27b5f&";
+const CONFIG_FILE = path.join(__dirname, '../clan_config.json');
+const DATA_FILE = path.join(__dirname, '../raid_data.json');
 
-def load_config():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"clan_name": "VLX", "embed_color": 0x8B0000}
+function loadConfig() {
+    if (fs.existsSync(CONFIG_FILE)) {
+        try {
+            return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+        } catch (e) {
+            return { clan_name: "VLX", embed_color: 0x8B0000 };
+        }
+    }
+    return { clan_name: "VLX", embed_color: 0x8B0000 };
+}
 
-def save_config(config):
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=4)
+function saveConfig(config) {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 4), 'utf8');
+}
 
-def load_raid_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"raider_stats": {}, "win_streak": 0}
+function loadRaidData() {
+    if (fs.existsSync(DATA_FILE)) {
+        try {
+            const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+            const gid = Object.keys(data)[0]; // دعم الهيكل المتعدد أو المباشر
+            if (gid && data[gid] && typeof data[gid] === 'object' && data[gid].raider_stats) {
+                return data[gid];
+            }
+            return data.raider_stats ? data : { raider_stats: {}, win_streak: 0 };
+        } catch (e) {
+            return { raider_stats: {}, win_streak: 0 };
+        }
+    }
+    return { raider_stats: {}, win_streak: 0 };
+}
 
-class RaidStartModal(discord.ui.Modal, title="⚔️ | Raid Start & Announcement"):
-    server_link = discord.ui.TextInput(label="Server Link", placeholder="", style=discord.TextStyle.short, required=True)
-    difficulty = discord.ui.TextInput(label="Difficulty", placeholder="", style=discord.TextStyle.short, required=True)
-    targets = discord.ui.TextInput(label="Targets / Matchup", placeholder="", style=discord.TextStyle.short, required=True, default="")
-    counts = discord.ui.TextInput(label="Our Count & Their Count", placeholder="", style=discord.TextStyle.short, required=True, default="")
-    region = discord.ui.TextInput(label="Region", placeholder="", style=discord.TextStyle.short, required=True, default="")
+class RaidStartModal extends ModalBuilder {
+    constructor() {
+        super();
+        this.setTitle("⚔️ | Raid Start & Announcement").setCustomId("raid_start_modal");
 
-    async def on_submit(self, interaction: discord.Interaction):
-        # الرد على المودال مباشرة لإرسال إعلان الرايد بالشات العامة بدون رسائل خاصة
-        await interaction.response.defer(ephemeral=True)
+        const serverLink = new TextInputBuilder().setCustomId("server_link").setLabel("Server Link").setStyle(TextInputStyle.Short).setRequired(true);
+        const difficulty = new TextInputBuilder().setCustomId("difficulty").setLabel("Difficulty").setStyle(TextInputStyle.Short).setRequired(true);
+        const targets = new TextInputBuilder().setCustomId("targets").setLabel("Targets / Matchup").setStyle(TextInputStyle.Short).setRequired(true).setValue("");
+        const counts = new TextInputBuilder().setCustomId("counts").setLabel("Our Count & Their Count").setStyle(TextInputStyle.Short).setRequired(true).setValue("");
+        const region = new TextInputBuilder().setCustomId("region").setLabel("Region").setStyle(TextInputStyle.Short).setRequired(true).setValue("");
 
-        config = load_config()
-        clan = config.get("clan_name", "VLX")
-        embed_color = config.get("embed_color", 0x8B0000)
+        this.addComponents(
+            new ActionRowBuilder().addComponents(serverLink),
+            new ActionRowBuilder().addComponents(difficulty),
+            new ActionRowBuilder().addComponents(targets),
+            new ActionRowBuilder().addComponents(counts),
+            new ActionRowBuilder().addComponents(region)
+        );
+    }
+}
 
-        embed = discord.Embed(title=f"⚔️ **{clan} Clan Raid Notification** ⚔️", color=embed_color)
-        embed.add_field(name="⚔️ Difficulty", value=f"`{self.difficulty.value}`", inline=False)
-        embed.add_field(name="🎯 Targets", value=f"`{self.targets.value}`", inline=False)
-        embed.add_field(name="🔢 Our Count & Their Count", value=f"`{self.counts.value}`", inline=False)
-        embed.add_field(name="📡 Region", value=f"🌍 `{self.region.value}`", inline=False)
-        
-        instructions = (
-            "→ Click **Join** below to enter the server\n"
-            "→ Click **Leaderboard** to check top active raiders\n"
-            "→ Follow callouts from raid leadership\n"
-            "→ Stay until the raid is concluded"
-        )
-        embed.add_field(name="📜 Instructions", value=instructions, inline=False)
-        
-        if BANNER_URL:
-            embed.set_image(url=BANNER_URL)
-            
-        embed.set_footer(text=f"Raid Initiated by {interaction.user.name} | {clan} Clan")
+module.exports = {
+    async handleRaidStartModalSubmit(interaction, serverLink, difficulty, targets, counts, region) {
+        await interaction.deferReply({ ephemeral: true });
 
-        class RaidView(discord.ui.View):
-            def __init__(self, link):
-                super().__init__(timeout=None)
-                self.add_item(discord.ui.Button(label="Join", style=discord.ButtonStyle.link, url=link, emoji="🎮"))
-                self.add_item(discord.ui.Button(label="Leaderboard", style=discord.ButtonStyle.secondary, custom_id="show_leaderboard", emoji="🏆"))
+        const config = loadConfig();
+        const clan = config.clan_name || "VLX";
+        const embedColor = config.embed_color || 0x8B0000;
 
-        view = RaidView(self.server_link.value)
-        await interaction.channel.send(content="@here 🔔 **New Raid Notification:**", embed=embed, view=view)
-        await interaction.delete_original_response()
+        const embed = new EmbedBuilder()
+            .setTitle(`⚔️ **${clan} Clan Raid Notification** ⚔️`)
+            .setColor(embedColor)
+            .addFields(
+                { name: "⚔️ Difficulty", value: `\`${difficulty}\``, inline: false },
+                { name: "🎯 Targets", value: `\`${targets}\``, inline: false },
+                { name: "🔢 Our Count & Their Count", value: `\`${counts}\``, inline: false },
+                { name: "📡 Region", value: `🌍 \`${region}\``, inline: false },
+                { 
+                    name: "📜 Instructions", 
+                    value: "→ Click **Join** below to enter the server\n→ Click **Leaderboard** to check top active raiders\n→ Follow callouts from raid leadership\n→ Stay until the raid is concluded", 
+                    inline: false 
+                }
+            );
 
-class RaidStartCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+        if (BANNER_URL) {
+            embed.setImage(BANNER_URL);
+        }
 
-    @app_commands.command(name="raid-start", description="[ Admin Only ] Start a raid with announcement")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def raid_start(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(RaidStartModal())
+        embed.setFooter({ text: `Raid Initiated by ${interaction.user.tag} | ${clan} Clan` });
 
-    @app_commands.command(name="name_clan", description="[ Admin Only ] تعيين اسم الكلان الظهور بإعلانات الرايد")
-    @app_commands.describe(name="اكتب اسم الكلان الجديد (اتركه فارغاً ليعود VLX)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def name_clan(self, interaction: discord.Interaction, name: str = "VLX"):
-        config = load_config()
-        config["clan_name"] = name
-        save_config(config)
-        await interaction.response.send_message(f"✅ | تم تحديث اسم الكلان بنجاح إلى: **{name}**", ephemeral=True)
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setLabel("Join").setStyle(ButtonStyle.Link).setURL(serverLink).setEmoji("🎮"),
+            new ButtonBuilder().setCustomId("show_leaderboard").setLabel("Leaderboard").setStyle(ButtonStyle.Secondary).setEmoji("🏆")
+        );
 
-    @app_commands.command(name="color_emed", description="[ Admin Only ] تغيير لون شريط إعلان الرايد")
-    @app_commands.describe(hex_code="اكتب كود اللون (مثل #FF0000 أو 8B0000)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def color_emed(self, interaction: discord.Interaction, hex_code: str):
-        cleaned_code = hex_code.strip()
-        if cleaned_code.startswith("#"):
-            cleaned_code = cleaned_code[1:]
-        
-        try:
-            color_int = int(cleaned_code, 16)
-        except ValueError:
-            await interaction.response.send_message("❌ | كود اللون غير صحيح! استخدم صيغة صحيحة مثل `#FF0000`.", ephemeral=True)
-            return
+        await interaction.channel.send({ content: "@here 🔔 **New Raid Notification:**", embeds: [embed], components: [row] });
+        await interaction.deleteReply().catch(() => {});
+    },
 
-        config = load_config()
-        config["embed_color"] = color_int
-        save_config(config)
-        await interaction.response.send_message(f"✅ | تم تحديث لون إعلان الرايد بنجاح إلى `#{cleaned_code}`", ephemeral=True)
+    raidStartCommand: new SlashCommandBuilder()
+        .setName('raid-start')
+        .setDescription('[ Admin Only ] Start a raid with announcement')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    @commands.Cog.listener()
-    async def on_interaction(self, interaction: discord.Interaction):
-        if interaction.type == discord.InteractionType.component and interaction.data.get("custom_id") == "show_leaderboard":
-            data = load_raid_data()
-            stats = data.get("raider_stats", {})
-            
-            if not stats:
-                await interaction.response.send_message("❌ | No raid statistics recorded yet!", ephemeral=True)
-                return
+    nameClanCommand: new SlashCommandBuilder()
+        .setName('name_clan')
+        .setDescription('[ Admin Only ] تعيين اسم الكلان الظهور بإعلانات الرايد')
+        .addStringOption(o => o.setName('name').setDescription('اكتب اسم الكلان الجديد').setRequired(false))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-            sorted_raiders = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:10]
-            
-            description = ""
-            for index, (uid, count) in enumerate(sorted_raiders, start=1):
-                user = interaction.guild.get_member(int(uid))
-                name = user.mention if user else f"User ID: {uid}"
-                medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"#{index}"
-                description += f"{medal} {name} ──> **{count}** Raids\n"
+    colorEmedCommand: new SlashCommandBuilder()
+        .setName('color_emed')
+        .setDescription('[ Admin Only ] تغيير لون شريط إعلان الرايد')
+        .addStringOption(o => o.setName('hex_code').setDescription('اكتب كود اللون (مثل #FF0000)').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-            config = load_config()
-            lb_embed = discord.Embed(title="🏆 | Clan Top Raiders (Leaderboard)", description=description, color=config.get("embed_color", 0x8B0000))
-            lb_embed.set_footer(text="Clan Statistics")
-            await interaction.response.send_message(embed=lb_embed, ephemeral=True)
+    async handleRaidStart(interaction) {
+        await interaction.showModal(new RaidStartModal());
+    },
 
-async def setup(bot):
-    await bot.add_cog(RaidStartCog(bot))
+    async handleNameClan(interaction) {
+        const name = interaction.options.getString('name') || "VLX";
+        const config = loadConfig();
+        config.clan_name = name;
+        saveConfig(config);
+        await interaction.reply({ content: `✅ | تم تحديث اسم الكلان بنجاح إلى: **${name}**`, ephemeral: true });
+    },
+
+    async handleColorEmed(interaction) {
+        const hexCode = interaction.options.getString('hex_code').trim();
+        const cleanedCode = hexCode.startsWith("#") ? hexCode.substring(1) : hexCode;
+
+        let colorInt;
+        try {
+            colorInt = parseInt(cleanedCode, 16);
+            if (isNaN(colorInt)) throw new Error();
+        } catch (e) {
+            await interaction.reply({ content: "❌ | كود اللون غير صحيح! استخدم صيغة صحيحة مثل `#FF0000`.", ephemeral: true });
+            return;
+        }
+
+        const config = loadConfig();
+        config.embed_color = colorInt;
+        saveConfig(config);
+        await interaction.reply({ content: `✅ | تم تحديث لون إعلان الرايد بنجاح إلى \`#${cleanedCode}\``, ephemeral: true });
+    },
+
+    async handleButtonInteraction(interaction) {
+        if (interaction.customId === "show_leaderboard") {
+            const data = loadRaidData();
+            const stats = data.raider_stats || {};
+
+            if (Object.keys(stats).length === 0) {
+                await interaction.reply({ content: "❌ | No raid statistics recorded yet!", ephemeral: true });
+                return;
+            }
+
+            const sortedRaiders = Object.entries(stats).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+            let description = "";
+            for (let i = 0; i < sortedRaiders.length; i++) {
+                const [uid, count] = sortedRaiders[i];
+                const index = i + 1;
+                const member = await interaction.guild.members.fetch(uid).catch(() => null);
+                const name = member ? member.toString() : `<@${uid}>`;
+                const medal = index === 1 ? "🥇" : index === 2 ? "🥈" : index === 3 ? "🥉" : `#${index}`;
+                description += `${medal} ${name} ──> **${count}** Raids\n`;
+            }
+
+            const config = loadConfig();
+            const lbEmbed = new EmbedBuilder()
+                .setTitle("🏆 | Clan Top Raiders (Leaderboard)")
+                .setDescription(description)
+                .setColor(config.embed_color || 0x8B0000)
+                .setFooter({ text: "Clan Statistics" });
+
+            await interaction.reply({ embeds: [lbEmbed], ephemeral: true });
+        }
+    }
+};
