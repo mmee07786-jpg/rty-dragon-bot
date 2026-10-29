@@ -1,57 +1,51 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import asyncio
-from datetime import datetime, timezone, timedelta
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
-class ClearCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+module.exports = {
+    clearCommand: new SlashCommandBuilder()
+        .setName('clear')
+        .setDescription('[ Admin Only ] حذف عدد محدد من الرسائل الحديثة (من 1 إلى 1000)')
+        .addIntegerOption(option =>
+            option.setName('amount')
+                .setDescription('عدد الرسائل المراد حذفها (بين 1 و 1000)')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
-    @app_commands.command(name="clear", description="[ Admin Only ] حذف عدد محدد من الرسائل الحديثة (من 1 إلى 1000)")
-    @app_commands.describe(amount="عدد الرسائل المراد حذفها (بين 1 و 1000)")
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def clear(self, interaction: discord.Interaction, amount: int):
-        if amount < 1 or amount > 1000:
-            await interaction.response.send_message("❌ | يرجى إدخال عدد يتراوح بين **1** و **1000** رسالة فقط!", ephemeral=True)
-            return
+    async handleClear(interaction) {
+        const amount = interaction.options.getInteger('amount');
 
-        # استجابة مخفية فورية لمنع خطأ التفاعل
-        await interaction.response.defer(ephemeral=True)
-        await asyncio.sleep(1)
+        if (amount < 1 || amount > 1000) {
+            await interaction.reply({ content: "❌ | يرجى إدخال عدد يتراوح بين **1** و **1000** رسالة فقط!", ephemeral: true });
+            return;
+        }
 
-        try:
-            # حساب تاريخ قبل 14 يوم בדיוק حسب نظام ديسكورد لتجنب الخطأ 50034
-            fourteen_days_ago = datetime.now(timezone.utc) - timedelta(days=14)
+        await interaction.deferReply({ ephemeral: true });
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-            messages = []
-            # جلب الرسائل وفحص عمرها تلقائياً
-            async for message in interaction.channel.history(limit=amount + 10):
-                # ديسكورد يسمح بحذف الرسائل الأحدث من 14 يوم فقط جماعياً
-                if message.created_at >= fourteen_days_ago:
-                    messages.append(message)
-                
-                # إذا جمعنا العدد المطلوب نتوقف
-                if len(messages) >= amount:
-                    break
+        try {
+            // حساب تاريخ قبل 14 يوم حسب نظام ديسكورد لتجنب الخطأ 50034
+            const fourteenDaysAgo = Date.now() - (14 * 24 * 60 * 60 * 1000);
 
-            if not messages:
-                await interaction.followup.send("❌ | عذراً، لا توجد رسائل **حديثة (أقل من 14 يوم)** يمكن حذفها ضمن هذا العدد!", ephemeral=True)
-                return
+            const fetchedMessages = await interaction.channel.messages.fetch({ limit: Math.min(amount + 10, 100) });
+            const messagesToDelete = [];
 
-            # حذف الرسائل المقبولة دفعة واحدة (مقسمة لكتل 100 حسب قيود ديسكورد)
-            for i in range(0, len(messages), 100):
-                chunk = messages[i:i + 100]
-                if len(chunk) > 1:
-                    await interaction.channel.delete_messages(chunk)
-                elif len(chunk) == 1:
-                    await chunk[0].delete()
-                await asyncio.sleep(0.5)
+            fetchedMessages.forEach(msg => {
+                if (msg.createdTimestamp >= fourteenDaysAgo && messagesToDelete.length < amount) {
+                    messagesToDelete.push(msg);
+                }
+            });
 
-            await interaction.followup.send(f"✅ | تم مسح `{len(messages)}` رسالة حديثة بنجاح وتجاوز الرسائل القديمة تلقائياً!", ephemeral=True)
+            if (messagesToDelete.length === 0) {
+                await interaction.followup({ content: "❌ | عذراً، لا توجد رسائل **حديثة (أقل من 14 يوم)** يمكن حذفها ضمن هذا العدد!", ephemeral: true });
+                return;
+            }
 
-        except Exception as e:
-            await interaction.followup.send(f"❌ | حدث خطأ أثناء الحذف: `{e}`", ephemeral=True)
+            // حذف الرسائل دفعة واحدة (Bulk Delete للرسائل الأقل من 14 يوم)
+            await interaction.channel.bulkDelete(messagesToDelete, true);
 
-async def setup(bot):
-    await bot.add_cog(ClearCog(bot))
+            await interaction.followup({ content: `✅ | تم مسح \`${messagesToDelete.length}\` رسالة حديثة بنجاح وتجاوز الرسائل القديمة تلقائياً!`, ephemeral: true });
+
+        } catch (e) {
+            await interaction.followup({ content: `❌ | حدث خطأ أثناء الحذف: \`${e.message}\``, ephemeral: true });
+        }
+    }
+};
