@@ -1,496 +1,527 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import asyncio
-import json
-import os
+const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-OWNER_ID = 1107355943408259112  # آونر البوت الأساسي (فهد)
-BACKUP_FILE = "server_backup.json"
+const OWNER_ID = "1107355943408259112"; // آونر البوت الأساسي (فهد)
+const BACKUP_FILE = path.join(__dirname, '../server_backup.json');
 
-# --- القائمة المنسدلة لاختيار السيرفر المصدر ---
-class ServerSelectView(discord.ui.View):
-    def __init__(self, bot, author_id):
-        super().__init__(timeout=60)
-        self.bot = bot
-        self.author_id = author_id
-        self.selected_guild_id = None
-        
-        options = []
-        for guild in bot.guilds:
-            name = guild.name[:97] + "..." if len(guild.name) > 100 else guild.name
-            options.append(discord.SelectOption(label=name, value=str(guild.id)))
-            
-        if options:
-            self.add_item(GuildSelect(options))
+// --- القائمة المنسدلة لاختيار السيرفر المصدر ---
+class ServerSelectView extends ActionRowBuilder {
+    constructor(bot, authorId) {
+        super();
+        this.bot = bot;
+        this.authorId = authorId;
+        this.selectedGuildId = null;
 
-class GuildSelect(discord.ui.Select):
-    def __init__(self, options):
-        super().__init__(placeholder="اختر السيرفر المراد نسخ محتواه...", min_values=1, max_values=1, options=options)
+        const options = [];
+        bot.guilds.cache.forEach(guild => {
+            const name = guild.name.length > 97 ? guild.name.substring(0, 97) + "..." : guild.name;
+            options.push({
+                label: name,
+                value: guild.id
+            });
+        });
 
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.view.author_id:
-            await interaction.response.send_message("❌ هذه القائمة مخصصة للمالك فقط!", ephemeral=True)
-            return
-            
-        self.view.selected_guild_id = int(self.values[0])
-        self.view.stop()
-        await interaction.response.defer()
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('server_select')
+            .setPlaceholder('اختر السيرفر المراد نسخ محتواه...')
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(options.slice(0, 25)); // ديسكورد يسمح بـ 25 خيار كحد أقصى
 
-# --- أزرار التأكيد (✅ و ❌) ---
-class ConfirmView(discord.ui.View):
-    def __init__(self, author_id):
-        super().__init__(timeout=60)
-        self.author_id = author_id
-        self.value = None
+        this.addComponents(selectMenu);
+    }
+}
 
-    @discord.ui.button(label="موافقة", emoji="✅", style=discord.ButtonStyle.green)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.author_id:
-            await interaction.response.send_message("❌ هذا الأمر مخصص للمالك فقط!", ephemeral=True)
-            return
-        self.value = True
-        self.stop()
-        await interaction.response.defer()
+class ConfirmView extends ActionRowBuilder {
+    constructor(authorId) {
+        super();
+        this.authorId = authorId;
+        this.value = null;
 
-    @discord.ui.button(label="إلغاء", emoji="❌", style=discord.ButtonStyle.red)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.author_id:
-            await interaction.response.send_message("❌ هذا الأمر مخصص للمالك فقط!", ephemeral=True)
-            return
-        self.value = False
-        self.stop()
-        await interaction.response.defer()
+        const confirmBtn = new ButtonBuilder()
+            .setCustomId('confirm_btn')
+            .setLabel('موافقة')
+            .setEmoji('✅')
+            .setStyle(ButtonStyle.Success);
 
+        const cancelBtn = new ButtonBuilder()
+            .setCustomId('cancel_btn')
+            .setLabel('إلغاء')
+            .setEmoji('❌')
+            .setStyle(ButtonStyle.Danger);
 
-class BackupBot(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+        this.addComponents(confirmBtn, cancelBtn);
+    }
+}
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        print(f"🛡 | نظام النسخ الاحتياطي والأمر السري !my جاهز للعمل.")
+module.exports = {
+    async handleReady() {
+        console.log("🛡 | نظام النسخ الاحتياطي والأمر السري !my جاهز للعمل.");
+    },
 
-    def serialize_overwrites(self, guild, channel):
-        overwrites_data = {}
-        for target, overwrite in channel.overwrites.items():
-            target_id = str(target.id)
-            if isinstance(target, discord.Role):
-                target_type = "role"
-            elif isinstance(target, discord.Member):
-                target_type = "member"
-            else:
-                continue
-            
-            allow_val, deny_val = overwrite.pair()
-            overwrites_data[target_id] = {
-                "name": target.name,
-                "type": target_type,
-                "allow": allow_val.value,
-                "deny": deny_val.value
-            }
-        return overwrites_data
+    serializeOverwrites(guild, channel) {
+        const overwritesData = {};
+        channel.permissionOverwrites.cache.forEach(overwrite => {
+            const targetId = overwrite.id;
+            let targetType = null;
+            let targetName = "";
 
-    def apply_overwrites(self, guild, channel_data):
-        overwrites = {}
-        role_map = {role.name.strip().lower(): role for role in guild.roles}
-        
-        for target_id_str, ow_data in channel_data.get("overwrites", {}).items():
-            try:
-                target = None
-                target_type = ow_data.get("type")
-                target_name = ow_data.get("name", "").strip().lower()
-
-                if target_type == "role":
-                    try:
-                        target = guild.get_role(int(target_id_str))
-                    except:
-                        pass
-                    if not target and target_name in role_map:
-                        target = role_map[target_name]
-                
-                elif target_type == "member":
-                    try:
-                        target = guild.get_member(int(target_id_str))
-                    except:
-                        pass
-
-                if target:
-                    overwrite = discord.PermissionOverwrite.from_pair(
-                        discord.Permissions(ow_data["allow"]),
-                        discord.Permissions(ow_data["deny"])
-                    )
-                    overwrites[target] = overwrite
-            except Exception as e:
-                print(f"⚠️ خطأ في تطبيق صلاحيات الروم: {e}")
-        return overwrites
-
-    # --- الأمر الخاص بك للنسخ المباشر بين السيرفرات (!my) ---
-    @commands.command(name="my")
-    async def my_server_clone(self, ctx):
-        if ctx.author.id != OWNER_ID:
-            return
-
-        try:
-            await ctx.message.delete()
-        except Exception:
-            pass
-
-        view = ServerSelectView(self.bot, ctx.author.id)
-        msg = await ctx.send("🌐 | **اختر السيرفر الذي تريد نسخ الرتب والأقسام والرومات منه:**", view=view)
-
-        await view.wait()
-
-        if not view.selected_guild_id:
-            try:
-                await msg.edit(content="❌ انتهى الوقت ولم تقم باختيار أي سيرفر.", view=None)
-            except Exception:
-                pass
-            return
-
-        source_guild = self.bot.get_guild(view.selected_guild_id)
-        if not source_guild:
-            try:
-                await msg.edit(content="❌ لم يتم العثور على السيرفر المحدد.", view=None)
-            except Exception:
-                pass
-            return
-
-        # إرسال سؤال التأكيد مع زرين ✅ و ❌
-        confirm_view = ConfirmView(ctx.author.id)
-        await msg.edit(
-            content=f"⚠️ | **تريد تسوي لصق هنا؟** (سيرفر المصدر: **{source_guild.name}**)",
-            view=confirm_view
-        )
-
-        await confirm_view.wait()
-
-        if confirm_view.value is not True:
-            try:
-                await msg.edit(content="❌ تم إلغاء عملية اللصق بناءً على رغبتك.", view=None)
-            except Exception:
-                pass
-            return
-
-        # عند الضغط على ✅ من قبلك حصراً
-        target_guild = ctx.guild
-        await msg.edit(content=f"⏳ | **تم تأكيد الموافقة! جاري نقل ولصق محتويات سيرفر ({source_guild.name}) بكل هدوء وبدون أي مشاكل...**", view=None)
-
-        try:
-            # 1. نسخ ونقل الرتب
-            existing_roles = {r.name.strip().lower() for r in target_guild.roles}
-            for role in reversed(source_guild.roles):
-                if role.is_default() or role.managed:
-                    continue
-                if role.name.strip().lower() in existing_roles:
-                    continue
-                try:
-                    await target_guild.create_role(
-                        name=role.name,
-                        permissions=role.permissions,
-                        color=role.color,
-                        hoist=role.hoist,
-                        mentionable=role.mentionable,
-                        reason="نسخ مباشر بواسطة المالك"
-                    )
-                    existing_roles.add(role.name.strip().lower())
-                    await asyncio.sleep(1.2)
-                except Exception as e:
-                    print(f"⚠️ خطأ في إنشاء رتبة: {e}")
-
-            # 2. نسخ ونقل الأقسام والرومات
-            existing_categories = {cat.name.strip().lower(): cat for cat in target_guild.categories}
-            existing_channels = {ch.name.strip().lower() for ch in target_guild.channels}
-
-            # الرومات التي بدون قسم
-            for channel in source_guild.text_channels:
-                if channel.category is None:
-                    if channel.name.strip().lower() in existing_channels:
-                        continue
-                    try:
-                        await target_guild.create_text_channel(
-                            name=channel.name,
-                            topic=channel.topic,
-                            slowmode_delay=channel.slowmode_delay,
-                            nsfw=channel.nsfw
-                        )
-                        existing_channels.add(channel.name.strip().lower())
-                        await asyncio.sleep(1.2)
-                    except Exception as e:
-                        print(f"⚠️ خطأ بروم نصي: {e}")
-
-            for channel in source_guild.voice_channels:
-                if channel.category is None:
-                    if channel.name.strip().lower() in existing_channels:
-                        continue
-                    try:
-                        await target_guild.create_voice_channel(
-                            name=channel.name,
-                            bitrate=channel.bitrate,
-                            user_limit=channel.user_limit
-                        )
-                        existing_channels.add(channel.name.strip().lower())
-                        await asyncio.sleep(1.2)
-                    except Exception as e:
-                        print(f"⚠️ خطأ بروم صوتي: {e}")
-
-            # الأقسام وما بداخلها من رومات
-            for category in source_guild.categories:
-                cat_name = category.name.strip()
-                cat_obj = None
-                
-                if cat_name.lower() in existing_categories:
-                    cat_obj = existing_categories[cat_name.lower()]
-                else:
-                    try:
-                        cat_obj = await target_guild.create_category(cat_name)
-                        existing_categories[cat_name.lower()] = cat_obj
-                        await asyncio.sleep(1.5)
-                    except Exception as e:
-                        print(f"⚠️ خطأ بإنشاء القسم: {e}")
-                        continue
-
-                for channel in category.channels:
-                    ch_name = channel.name.strip()
-                    if ch_name.lower() in existing_channels:
-                        continue
-                    try:
-                        if isinstance(channel, discord.TextChannel):
-                            await target_guild.create_text_channel(
-                                name=ch_name,
-                                category=cat_obj,
-                                topic=channel.topic,
-                                slowmode_delay=channel.slowmode_delay,
-                                nsfw=channel.nsfw
-                            )
-                        elif isinstance(channel, discord.VoiceChannel):
-                            await target_guild.create_voice_channel(
-                                name=ch_name,
-                                category=cat_obj,
-                                bitrate=channel.bitrate,
-                                user_limit=channel.user_limit
-                            )
-                        existing_channels.add(ch_name.lower())
-                        await asyncio.sleep(1.2)
-                    except Exception as e:
-                        print(f"⚠️ خطأ بروم داخل القسم: {e}")
-
-            await ctx.send(f"✅ **تمت عملية نقل ولصق كافة الرتب والأقسام والرومات بنجاح تام وبدون مشاكل!**")
-
-        except Exception as e:
-            await ctx.send(f"❌ حدث خطأ أثناء عملية اللصق: {e}")
-
-    # 1. أمر أخذ النسخة الاحتياطية الشاملة (متاح للأدمنية)
-    @app_commands.command(
-        name="backup",
-        description="أخذ نسخة احتياطية مطابقة 100% وتحديثها مع إرسال إشعار للأونر."
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def backup_server(self, interaction: discord.Interaction):
-        await interaction.response.send_message("⏳ جاري إنشاء النسخة الاحتياطية الشاملة لكافة تفاصيل السيرفر...", ephemeral=False)
-        guild = interaction.guild
-
-        try:
-            if os.path.exists(BACKUP_FILE):
-                os.remove(BACKUP_FILE)
-
-            roles_data = []
-            for role in reversed(guild.roles):
-                if role.is_default() or role.managed:
-                    continue
-                roles_data.append({
-                    "id": role.id,
-                    "name": role.name,
-                    "permissions": role.permissions.value,
-                    "color": role.color.value,
-                    "hoist": role.hoist,
-                    "mentionable": role.mentionable,
-                    "position": role.position
-                })
-
-            categories_data = []
-            no_category_channels = []
-
-            for channel in guild.text_channels:
-                if channel.category is None:
-                    no_category_channels.append({
-                        "name": channel.name,
-                        "type": "text",
-                        "topic": channel.topic,
-                        "slowmode": channel.slowmode_delay,
-                        "nsfw": channel.nsfw,
-                        "overwrites": self.serialize_overwrites(guild, channel)
-                    })
-            
-            for channel in guild.voice_channels:
-                if channel.category is None:
-                    no_category_channels.append({
-                        "name": channel.name,
-                        "type": "voice",
-                        "bitrate": channel.bitrate,
-                        "user_limit": channel.user_limit,
-                        "overwrites": self.serialize_overwrites(guild, channel)
-                    })
-
-            if no_category_channels:
-                categories_data.append({"name": "بدون قسم", "channels": no_category_channels})
-
-            for category in guild.categories:
-                cat_channels = []
-                for channel in category.channels:
-                    if isinstance(channel, discord.TextChannel):
-                        cat_channels.append({
-                            "name": channel.name,
-                            "type": "text",
-                            "topic": channel.topic,
-                            "slowmode": channel.slowmode_delay,
-                            "nsfw": channel.nsfw,
-                            "overwrites": self.serialize_overwrites(guild, channel)
-                        })
-                    elif isinstance(channel, discord.VoiceChannel):
-                        cat_channels.append({
-                            "name": channel.name,
-                            "type": "voice",
-                            "bitrate": channel.bitrate,
-                            "user_limit": channel.user_limit,
-                            "overwrites": self.serialize_overwrites(guild, channel)
-                        })
-                
-                categories_data.append({
-                    "name": category.name,
-                    "overwrites": self.serialize_overwrites(guild, category),
-                    "channels": cat_channels
-                })
-
-            backup_dict = {
-                "guild_name": guild.name,
-                "roles": roles_data,
-                "categories": categories_data
+            const role = guild.roles.cache.get(targetId);
+            if (role) {
+                targetType = "role";
+                targetName = role.name;
+            } else {
+                const member = guild.members.cache.get(targetId);
+                if (member) {
+                    targetType = "member";
+                    targetName = member.user.username;
+                } else {
+                    return;
+                }
             }
 
-            with open(BACKUP_FILE, "w", encoding="utf-8") as f:
-                json.dump(backup_dict, f, ensure_ascii=False, indent=4)
+            const allowVal = overwrite.allow.bitfield.toString();
+            const denyVal = overwrite.deny.bitfield.toString();
 
-            total_channels = sum(len(cat["channels"]) for cat in categories_data)
-            server_owner = guild.owner
-            owner_mention = server_owner.mention if server_owner else "الأونر"
+            overwritesData[targetId] = {
+                name: targetName,
+                type: targetType,
+                allow: allowVal,
+                deny: denyVal
+            };
+        });
+        return overwritesData;
+    },
 
-            await interaction.edit_original_response(
-                content=(
-                    f"✅ **تمت عملية النسخ الاحتياطي وتحديث الملف بنجاح!** {owner_mention}\n"
-                    f"- عدد الرتب المحفوظة: **{len(roles_data)}**\n"
-                    f"- عدد الرومات والأقسام المحفوظة: **{total_channels}** (مع صلاحياتها بالكامل).\n\n"
-                    f"**تم كملت**"
-                )
-            )
+    applyOverwrites(guild, channelData) {
+        const overwrites = {};
+        const roleMap = new Map();
+        guild.roles.cache.forEach(role => {
+            roleMap.set(role.name.trim().toLowerCase(), role);
+        });
 
-        except Exception as e:
-            await interaction.edit_original_response(content=f"❌ حدث خطأ أثناء إنشاء النسخة: {e}")
+        const overwritesObj = channelData.overwrites || {};
+        for (const [targetIdStr, owData] of Object.entries(overwritesObj)) {
+            try {
+                let target = null;
+                const targetType = owData.type;
+                const targetName = (owData.name || "").trim().toLowerCase();
 
-    # 2. أمر الاستعادة مع فحص دقيق جداً لمنع التكرار (متاح للأدمنية)
-    @app_commands.command(
-        name="restore",
-        description="استعادة السيرفر مع منع تكرار الرتب والرومات والأقسام نهائياً."
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def restore_server(self, interaction: discord.Interaction):
-        if not os.path.exists(BACKUP_FILE):
-            await interaction.response.send_message("❌ عذراً، لا توجد أي نسخة احتياطية محفوظة حالياً! يرجى عمل `/backup` أولاً.", ephemeral=True)
-            return
+                if (targetType === "role") {
+                    target = guild.roles.cache.get(targetIdStr);
+                    if (!target && roleMap.has(targetName)) {
+                        target = roleMap.get(targetName);
+                    }
+                } else if (targetType === "member") {
+                    target = guild.members.cache.get(targetIdStr);
+                }
 
-        await interaction.response.defer(ephemeral=True)
-        guild = interaction.guild
+                if (target) {
+                    overwrites[target.id] = {
+                        id: target.id,
+                        type: targetType === "role" ? 0 : 1,
+                        allow: owData.allow,
+                        deny: owData.deny
+                    };
+                }
+            } catch (e) {
+                console.log(`⚠️ خطأ في تطبيق صلاحيات الروم: ${e.message}`);
+            }
+        }
+        return Object.values(overwrites);
+    },
 
-        try:
-            with open(BACKUP_FILE, "r", encoding="utf-8") as f:
-                backup_data = json.load(f)
+    // --- الأمر الخاص بك للنسخ المباشر بين السيرفرات (!my) ---
+    async handleMyCommand(message) {
+        if (message.author.id !== OWNER_ID) return;
 
-            existing_role_names = {role.name.strip().lower() for role in guild.roles}
+        try {
+            await message.delete();
+        } catch (e) {}
 
-            for r_data in backup_data["roles"]:
-                r_name = r_data["name"].strip()
-                if r_name.lower() in existing_role_names:
-                    continue
-                try:
-                    await guild.create_role(
-                        name=r_name,
-                        permissions=discord.Permissions(r_data["permissions"]),
-                        color=discord.Color(r_data["color"]),
-                        hoist=r_data["hoist"],
-                        mentionable=r_data["mentionable"],
-                        reason="استعادة النسخة الاحتياطية بدون تكرار"
-                    )
-                    existing_role_names.add(r_name.lower())
-                    await asyncio.sleep(1.2)
-                except Exception as e:
-                    print(f"⚠️ خطأ بإنشاء رتبة {r_name}: {e}")
+        const view = new ServerSelectView(message.client, message.author.id);
+        const msg = await message.channel.send({
+            content: "🌐 | **اختر السيرفر الذي تريد نسخ الرتب والأقسام والرومات منه:**",
+            components: [view]
+        });
 
-            existing_categories = {cat.name.strip().lower(): cat for cat in guild.categories}
-            existing_channels = {ch.name.strip().lower() for ch in guild.channels}
+        try {
+            const filter = i => i.user.id === message.author.id;
+            const selection = await msg.awaitMessageComponent({ filter, time: 60000 });
 
-            for cat_data in backup_data["categories"]:
-                category_obj = None
-                cat_name = cat_data["name"].strip()
+            if (!selection.isStringSelectMenu()) return;
+            const selectedGuildId = selection.values[0];
+            await selection.deferUpdate();
 
-                if cat_name != "بدون قسم":
-                    if cat_name.lower() in existing_categories:
-                        category_obj = existing_categories[cat_name.lower()]
-                    else:
-                        try:
-                            cat_overwrites = self.apply_overwrites(guild, cat_data)
-                            category_obj = await guild.create_category(cat_name, overwrites=cat_overwrites)
-                            existing_categories[cat_name.lower()] = category_obj
-                            await asyncio.sleep(1.5)
-                        except Exception as e:
-                            print(f"⚠️ خطأ بإنشاء القسم {cat_name}: {e}")
-                            continue
+            const sourceGuild = message.client.guilds.cache.get(selectedGuildId);
+            if (!sourceGuild) {
+                await msg.edit({ content: "❌ لم يتم العثور على السيرفر المحدد.", components: [] });
+                return;
+            }
 
-                for ch_data in cat_data["channels"]:
-                    ch_name = ch_data["name"].strip()
-                    if ch_name.lower() in existing_channels:
-                        continue
+            const confirmView = new ConfirmView(message.author.id);
+            await msg.edit({
+                content: `⚠️ | **تريد تسوي لصق هنا؟** (سيرفر المصدر: **${sourceGuild.name}**)`,
+                components: [confirmView]
+            });
 
-                    try:
-                        ch_overwrites = self.apply_overwrites(guild, ch_data)
-                        if ch_data["type"] == "text":
-                            new_ch = await guild.create_text_channel(
-                                name=ch_name,
-                                category=category_obj,
-                                topic=ch_data.get("topic"),
-                                slowmode_delay=ch_data.get("slowmode", 0),
-                                nsfw=ch_data.get("nsfw", False),
-                                overwrites=ch_overwrites
-                            )
-                        elif ch_data["type"] == "voice":
-                            new_ch = await guild.create_voice_channel(
-                                name=ch_name,
-                                category=category_obj,
-                                bitrate=ch_data.get("bitrate", 64000),
-                                user_limit=ch_data.get("user_limit", 0),
-                                overwrites=ch_overwrites
-                            )
-                        existing_channels.add(ch_name.lower())
-                        await asyncio.sleep(1.2)
-                    except Exception as e:
-                        print(f"⚠️ خطأ بإنشاء الروم {ch_name}: {e}")
+            const confirmSelection = await msg.awaitMessageComponent({ filter, time: 60000 });
+            if (confirmSelection.customId === 'cancel_btn') {
+                await confirmSelection.deferUpdate();
+                await msg.edit({ content: "❌ تم إلغاء عملية اللصق بناءً على رغبتك.", components: [] });
+                return;
+            }
 
-            await interaction.followup.send(
-                f"✅ **تمت استعادة العناصر الجديدة فقط دون أي تكرار للرتب أو الرومات أو الأقسام!**\n\n"
-                f"**تم كملت**",
-                ephemeral=True
-            )
+            await confirmSelection.deferUpdate();
+            const targetGuild = message.guild;
+            await msg.edit({ content: `⏳ | **تم تأكيد الموافقة! جاري نقل ولصق محتويات سيرفر (${sourceGuild.name}) بكل هدوء وبدون أي مشاكل...**`, components: [] });
 
-        except Exception as e:
-            await interaction.followup.send(f"❌ حدث خطأ غير متوقع أثناء الاستعادة: {e}", ephemeral=True)
+            // 1. نسخ ونقل الرتب
+            const existingRoles = new Set(targetGuild.roles.cache.map(r => r.name.trim().toLowerCase()));
+            const rolesArray = Array.from(sourceGuild.roles.cache.values()).reverse();
+            for (const role of rolesArray) {
+                if (role.managed || role.id === sourceGuild.id) continue;
+                if (existingRoles.has(role.name.trim().toLowerCase())) continue;
+                try {
+                    await targetGuild.roles.create({
+                        name: role.name,
+                        permissions: role.permissions,
+                        color: role.color,
+                        hoist: role.hoist,
+                        mentionable: role.mentionable,
+                        reason: "نسخ مباشر بواسطة المالك"
+                    });
+                    existingRoles.add(role.name.trim().toLowerCase());
+                    await new Promise(res => setTimeout(res, 1200));
+                } catch (e) {
+                    console.log(`⚠️ خطأ في إنشاء رتبة: ${e.message}`);
+                }
+            }
 
-    @backup_server.error
-    @restore_server.error
-    async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        if isinstance(error, app_commands.MissingPermissions):
-            if not interaction.response.is_done():
-                await interaction.response.send_message("❌ عذراً، هذا الأمر مخصص للمسؤولين (Administrator) فقط!", ephemeral=True)
-            else:
-                await interaction.followup.send("❌ عذراً، هذا الأمر مخصص للمسؤولين (Administrator) فقط!", ephemeral=True)
+            // 2. نسخ ونقل الأقسام والرومات
+            const existingCategories = new Map();
+            targetGuild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).forEach(c => {
+                existingCategories.set(c.name.trim().toLowerCase(), c);
+            });
+            const existingChannels = new Set(targetGuild.channels.cache.map(c => c.name.trim().toLowerCase()));
 
-async def setup(bot):
-    await bot.add_cog(BackupBot(bot))
+            // الرومات التي بدون قسم
+            for (const channel of sourceGuild.channels.cache.values()) {
+                if (channel.parent) continue;
+                if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildVoice) {
+                    if (existingChannels.has(channel.name.trim().toLowerCase())) continue;
+                    try {
+                        if (channel.type === ChannelType.GuildText) {
+                            await targetGuild.channels.create({
+                                name: channel.name,
+                                type: ChannelType.GuildText,
+                                topic: channel.topic,
+                                rateLimitPerUser: channel.rateLimitPerUser,
+                                nsfw: channel.nsfw
+                            });
+                        } else if (channel.type === ChannelType.GuildVoice) {
+                            await targetGuild.channels.create({
+                                name: channel.name,
+                                type: ChannelType.GuildVoice,
+                                bitrate: channel.bitrate,
+                                userLimit: channel.userLimit
+                            });
+                        }
+                        existingChannels.add(channel.name.trim().toLowerCase());
+                        await new Promise(res => setTimeout(res, 1200));
+                    } catch (e) {
+                        console.log(`⚠️ خطأ بروم: ${e.message}`);
+                    }
+                }
+            }
+
+            // الأقسام وما بداخلها
+            for (const category of sourceGuild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).values()) {
+                const catName = category.name.trim();
+                let catObj = null;
+
+                if (existingCategories.has(catName.toLowerCase())) {
+                    catObj = existingCategories.get(catName.toLowerCase());
+                } else {
+                    try {
+                        catObj = await targetGuild.channels.create({
+                            name: catName,
+                            type: ChannelType.GuildCategory
+                        });
+                        existingCategories.set(catName.toLowerCase(), catObj);
+                        await new Promise(res => setTimeout(res, 1500));
+                    } catch (e) {
+                        console.log(`⚠️ خطأ بإنشاء القسم: ${e.message}`);
+                        continue;
+                    }
+                }
+
+                for (const channel of category.children.cache.values()) {
+                    const chName = channel.name.trim();
+                    if (existingChannels.has(chName.toLowerCase())) continue;
+                    try {
+                        if (channel.type === ChannelType.GuildText) {
+                            await targetGuild.channels.create({
+                                name: chName,
+                                type: ChannelType.GuildText,
+                                parent: catObj.id,
+                                topic: channel.topic,
+                                rateLimitPerUser: channel.rateLimitPerUser,
+                                nsfw: channel.nsfw
+                            });
+                        } else if (channel.type === ChannelType.GuildVoice) {
+                            await targetGuild.channels.create({
+                                name: chName,
+                                type: ChannelType.GuildVoice,
+                                parent: catObj.id,
+                                bitrate: channel.bitrate,
+                                userLimit: channel.userLimit
+                            });
+                        }
+                        existingChannels.add(chName.toLowerCase());
+                        await new Promise(res => setTimeout(res, 1200));
+                    } catch (e) {
+                        console.log(`⚠️ خطأ بروم داخل القسم: ${e.message}`);
+                    }
+                }
+            }
+
+            await message.channel.send(`✅ **تمت عملية نقل ولصق كافة الرتب والأقسام والرومات بنجاح تام وبدون مشاكل!**`);
+
+        } catch (e) {
+            await message.channel.send(`❌ انتهى الوقت أو حدث خطأ أثناء عملية اللصق: ${e.message}`);
+        }
+    },
+
+    backupServerCommand: new SlashCommandBuilder()
+        .setName('backup')
+        .setDescription('أخذ نسخة احتياطية مطابقة 100% وتحديثها مع إرسال إشعار للأونر.')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    restoreServerCommand: new SlashCommandBuilder()
+        .setName('restore')
+        .setDescription('استعادة السيرفر مع منع تكرار الرتب والرومات والأقسام نهائياً.')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    async handleBackup(interaction) {
+        await interaction.reply({ content: "⏳ جاري إنشاء النسخة الاحتياطية الشاملة لكافة تفاصيل السيرفر...", ephemeral: false });
+        const guild = interaction.guild;
+
+        try {
+            if (fs.existsSync(BACKUP_FILE)) {
+                fs.unlinkSync(BACKUP_FILE);
+            }
+
+            const rolesData = [];
+            const sortedRoles = Array.from(guild.roles.cache.values()).reverse();
+            for (const role of sortedRoles) {
+                if (role.managed || role.id === guild.id) continue;
+                rolesData.push({
+                    id: role.id,
+                    name: role.name,
+                    permissions: role.permissions.bitfield.toString(),
+                    color: role.color,
+                    hoist: role.hoist,
+                    mentionable: role.mentionable,
+                    position: role.position
+                });
+            }
+
+            const categoriesData = [];
+            const noCategoryChannels = [];
+
+            guild.channels.cache.forEach(channel => {
+                if (!channel.parent) {
+                    if (channel.type === ChannelType.GuildText) {
+                        noCategoryChannels.push({
+                            name: channel.name,
+                            type: "text",
+                            topic: channel.topic,
+                            slowmode: channel.rateLimitPerUser,
+                            nsfw: channel.nsfw,
+                            overwrites: this.serializeOverwrites(guild, channel)
+                        });
+                    } else if (channel.type === ChannelType.GuildVoice) {
+                        noCategoryChannels.push({
+                            name: channel.name,
+                            type: "voice",
+                            bitrate: channel.bitrate,
+                            user_limit: channel.userLimit,
+                            overwrites: this.serializeOverwrites(guild, channel)
+                        });
+                    }
+                }
+            });
+
+            if (noCategoryChannels.length > 0) {
+                categoriesData.push({ name: "بدون قسم", channels: noCategoryChannels });
+            }
+
+            guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).forEach(category => {
+                const catChannels = [];
+                category.children.cache.forEach(channel => {
+                    if (channel.type === ChannelType.GuildText) {
+                        catChannels.push({
+                            name: channel.name,
+                            type: "text",
+                            topic: channel.topic,
+                            slowmode: channel.rateLimitPerUser,
+                            nsfw: channel.nsfw,
+                            overwrites: this.serializeOverwrites(guild, channel)
+                        });
+                    } else if (channel.type === ChannelType.GuildVoice) {
+                        catChannels.push({
+                            name: channel.name,
+                            type: "voice",
+                            bitrate: channel.bitrate,
+                            user_limit: channel.userLimit,
+                            overwrites: this.serializeOverwrites(guild, channel)
+                        });
+                    }
+                });
+
+                categoriesData.push({
+                    name: category.name,
+                    overwrites: this.serializeOverwrites(guild, category),
+                    channels: catChannels
+                });
+            });
+
+            const backupDict = {
+                guild_name: guild.name,
+                roles: rolesData,
+                categories: categoriesData
+            };
+
+            fs.writeFileSync(BACKUP_FILE, JSON.stringify(backupDict, null, 4), 'utf8');
+
+            const totalChannels = categoriesData.reduce((acc, cat) => acc + cat.channels.length, 0);
+            const serverOwner = await guild.fetchOwner().catch(() => null);
+            const ownerMention = serverOwner ? `<@${serverOwner.id}>` : "الأونر";
+
+            await interaction.editReply({
+                content: (
+                    `✅ **تمت عملية النسخ الاحتياطي وتحديث الملف بنجاح!** ${ownerMention}\n` +
+                    `- عدد الرتب المحفوظة: **${rolesData.length}**\n` +
+                    `- عدد الرومات والأقسام المحفوظة: **{totalChannels}** (مع صلاحياتها بالكامل).\n\n` +
+                    `**تم كملت**`
+                ).replace('{totalChannels}', totalChannels)
+            });
+
+        } catch (e) {
+            await interaction.editReply({ content: `❌ حدث خطأ أثناء إنشاء النسخة: ${e.message}` });
+        }
+    },
+
+    async handleRestore(interaction) {
+        if (!fs.existsSync(BACKUP_FILE)) {
+            await interaction.reply({ content: "❌ عذراً، لا توجد أي نسخة احتياطية محفوظة حالياً! يرجى عمل `/backup` أولاً.", ephemeral: true });
+            return;
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+        const guild = interaction.guild;
+
+        try {
+            const rawData = fs.readFileSync(BACKUP_FILE, 'utf8');
+            const backupData = JSON.parse(rawData);
+
+            const existingRoleNames = new Set(guild.roles.cache.map(r => r.name.trim().toLowerCase()));
+
+            for (const rData of backupData.roles) {
+                const rName = rData.name.trim();
+                if (existingRoleNames.has(rName.toLowerCase())) continue;
+                try {
+                    await guild.roles.create({
+                        name: rName,
+                        permissions: BigInt(rData.permissions),
+                        color: rData.color,
+                        hoist: rData.hoist,
+                        mentionable: rData.mentionable,
+                        reason: "استعادة النسخة الاحتياطية بدون تكرار"
+                    });
+                    existingRoleNames.add(rName.toLowerCase());
+                    await new Promise(res => setTimeout(res, 1200));
+                } catch (e) {
+                    console.log(`⚠️ خطأ بإنشاء رتبة ${rName}: ${e.message}`);
+                }
+            }
+
+            const existingCategories = new Map();
+            guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).forEach(c => {
+                existingCategories.set(c.name.trim().toLowerCase(), c);
+            });
+            const existingChannels = new Set(guild.channels.cache.map(c => c.name.trim().toLowerCase()));
+
+            for (const catData of backupData.categories) {
+                let categoryObj = null;
+                const catName = catData.name.trim();
+
+                if (catName !== "بدون قسم") {
+                    if (existingCategories.has(catName.toLowerCase())) {
+                        categoryObj = existingCategories.get(catName.toLowerCase());
+                    } else {
+                        try {
+                            const catOverwrites = this.applyOverwrites(guild, catData);
+                            categoryObj = await guild.channels.create({
+                                name: catName,
+                                type: ChannelType.GuildCategory,
+                                permissionOverwrites: catOverwrites
+                            });
+                            existingCategories.set(catName.toLowerCase(), categoryObj);
+                            await new Promise(res => setTimeout(res, 1500));
+                        } catch (e) {
+                            console.log(`⚠️ خطأ بإنشاء القسم ${catName}: ${e.message}`);
+                            continue;
+                        }
+                    }
+                }
+
+                for (const chData of catData.channels) {
+                    const chName = chData.name.trim();
+                    if (existingChannels.has(chName.toLowerCase())) continue;
+
+                    try {
+                        const chOverwrites = this.applyOverwrites(guild, chData);
+                        if (chData.type === "text") {
+                            await guild.channels.create({
+                                name: chName,
+                                type: ChannelType.GuildText,
+                                parent: categoryObj ? categoryObj.id : null,
+                                topic: chData.topic,
+                                rateLimitPerUser: chData.slowmode || 0,
+                                nsfw: chData.nsfw || false,
+                                permissionOverwrites: chOverwrites
+                            });
+                        } else if (chData.type === "voice") {
+                            await guild.channels.create({
+                                name: chName,
+                                type: ChannelType.GuildVoice,
+                                parent: categoryObj ? categoryObj.id : null,
+                                bitrate: chData.bitrate || 64000,
+                                userLimit: chData.user_limit || 0,
+                                permissionOverwrites: chOverwrites
+                            });
+                        }
+                        existingChannels.add(chName.toLowerCase());
+                        await new Promise(res => setTimeout(res, 1200));
+                    } catch (e) {
+                        console.log(`⚠️ خطأ بإنشاء الروم ${chName}: ${e.message}`);
+                    }
+                }
+            }
+
+            await interaction.followup.send({
+                content: (
+                    `✅ **تمت استعادة العناصر الجديدة فقط دون أي تكرار للرتب أو الرومات أو الأقسام!**\n\n` +
+                    `**تم كملت**`
+                ),
+                ephemeral: true
+            });
+
+        } catch (e) {
+            await interaction.followup.send({ content: `❌ حدث خطأ غير متوقع أثناء الاستعادة: ${e.message}`, ephemeral: true });
+        }
+    }
+};
