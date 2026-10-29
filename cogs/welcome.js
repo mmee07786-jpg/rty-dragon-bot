@@ -76,6 +76,7 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async handleWelcomeSetup(interaction) {
+        await interaction.deferReply({ ephemeral: true });
         const guildId = interaction.guildId;
         const channel = interaction.options.getChannel('channel');
 
@@ -83,10 +84,11 @@ module.exports = {
         gData.channel_id = channel.id;
         updateGuildWelcome(guildId, gData);
 
-        await interaction.reply({ content: `✅ تم ضبط روم الترحيب بنجاح في هذا السيرفر: ${channel}`, ephemeral: true });
+        await interaction.editReply({ content: `✅ تم ضبط روم الترحيب بنجاح في هذا السيرفر: ${channel}` });
     },
 
     async handleWelcomeMessage(interaction) {
+        await interaction.deferReply({ ephemeral: true });
         const guildId = interaction.guildId;
         const messageText = interaction.options.getString('message');
 
@@ -94,10 +96,11 @@ module.exports = {
         gData.message = messageText;
         updateGuildWelcome(guildId, gData);
 
-        await interaction.reply({ content: "✅ تم تحديث رسالة الترحيب في هذا السيرفر بنجاح!", ephemeral: true });
+        await interaction.editReply({ content: "✅ تم تحديث رسالة الترحيب في هذا السيرفر بنجاح!" });
     },
 
     async handleWelcomeImage(interaction) {
+        await interaction.deferReply({ ephemeral: true });
         const guildId = interaction.guildId;
         const imageUrl = interaction.options.getString('image_url');
 
@@ -105,10 +108,11 @@ module.exports = {
         gData.image_url = imageUrl;
         updateGuildWelcome(guildId, gData);
 
-        await interaction.reply({ content: "✅ تم تحديث صورة الترحيب في هذا السيرفر بنجاح!", ephemeral: true });
+        await interaction.editReply({ content: "✅ تم تحديث صورة الترحيب في هذا السيرفر بنجاح!" });
     },
 
     async handleTestWelcome(interaction) {
+        await interaction.deferReply({ ephemeral: true });
         const guildId = interaction.guildId;
         const gData = getGuildWelcome(guildId);
 
@@ -121,7 +125,7 @@ module.exports = {
             embed.setImage(gData.image_url);
         }
 
-        await interaction.reply({ content: interaction.user.toString(), embeds: [embed], ephemeral: true });
+        await interaction.editReply({ content: interaction.user.toString(), embeds: [embed] });
     },
 
     async handleMemberJoin(member) {
