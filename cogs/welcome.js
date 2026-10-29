@@ -1,97 +1,157 @@
-import discord
-from discord import app_commands
-from discord.ext import commands
-import json
-import os
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-WELCOME_DATA_FILE = "welcome_data.json"
+const WELCOME_DATA_FILE = path.join(__dirname, '../welcome_data.json');
 
-def load_welcome_data():
-    if os.path.exists(WELCOME_DATA_FILE):
-        with open(WELCOME_DATA_FILE, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return {}
-    return {}
-
-def save_welcome_data(data):
-    with open(WELCOME_DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-def get_guild_welcome(guild_id: str):
-    data = load_welcome_data()
-    if guild_id not in data:
-        data[guild_id] = {
-            "channel_id": None,
-            "message": "منورنا يا {member}, نتمنى لك أوقات ممتعة معنا.",
-            "image_url": None
+function loadWelcomeData() {
+    if (fs.existsSync(WELCOME_DATA_FILE)) {
+        try {
+            const data = fs.readFileSync(WELCOME_DATA_FILE, 'utf8');
+            return JSON.parse(data);
+        } catch (error) {
+            return {};
         }
-    return data[guild_id]
+    }
+    return {};
+}
 
-def update_guild_welcome(guild_id: str, guild_data):
-    data = load_welcome_data()
-    data[guild_id] = guild_data
-    save_welcome_data(data)
+function saveWelcomeData(data) {
+    try {
+        fs.writeFileSync(WELCOME_DATA_FILE, JSON.stringify(data, null, 4), 'utf8');
+    } catch (error) {
+        console.error("خطأ في حفظ بيانات الترحيب:", error);
+    }
+}
 
-class Welcome(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+function getGuildWelcome(guildId) {
+    const data = loadWelcomeData();
+    if (!data[guildId]) {
+        data[guildId] = {
+            channel_id: null,
+            message: "منورنا يا {member}, نتمنى لك أوقات ممتعة معنا.",
+            image_url: null
+        };
+    }
+    return data[guildId];
+}
 
-    @app_commands.command(name="welcome_setup", description="تعيين روم الترحيب بالأعضاء الجدد لهذا السيرفر")
-    @app_commands.default_permissions(administrator=True)
-    async def welcome_setup(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        guild_id = str(interaction.guild_id)
-        g_data = get_guild_welcome(guild_id)
-        g_data["channel_id"] = channel.id
-        update_guild_welcome(guild_id, g_data)
-        await interaction.response.send_message(f"✅ تم ضبط روم الترحيب بنجاح في هذا السيرفر: {channel.mention}", ephemeral=True)
+function updateGuildWelcome(guildId, guildData) {
+    const data = loadWelcomeData();
+    data[guildId] = guildData;
+    saveWelcomeData(data);
+}
 
-    @app_commands.command(name="welcome_message", description="تعديل رسالة الترحيب (استخدم {member} للمنشن)")
-    @app_commands.default_permissions(administrator=True)
-    async def welcome_message_cmd(self, interaction: discord.Interaction, message: str):
-        guild_id = str(interaction.guild_id)
-        g_data = get_guild_welcome(guild_id)
-        g_data["message"] = message
-        update_guild_welcome(guild_id, g_data)
-        await interaction.response.send_message(f"✅ تم تحديث رسالة الترحيب في هذا السيرفر بنجاح!", ephemeral=True)
+module.exports = {
+    welcomeSetupCommand: new SlashCommandBuilder()
+        .setName('welcome_setup')
+        .setDescription('تعيين روم الترحيب بالأعضاء الجدد لهذا السيرفر')
+        .addChannelOption(option =>
+            option.setName('channel')
+                .setDescription('روم الترحيب')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    @app_commands.command(name="welcome_image", description="تعديل رابط صورة الترحيب")
-    @app_commands.default_permissions(administrator=True)
-    async def welcome_image_cmd(self, interaction: discord.Interaction, image_url: str):
-        guild_id = str(interaction.guild_id)
-        g_data = get_guild_welcome(guild_id)
-        g_data["image_url"] = image_url
-        update_guild_welcome(guild_id, g_data)
-        await interaction.response.send_message(f"✅ تم تحديث صورة الترحيب في هذا السيرفر بنجاح!", ephemeral=True)
+    welcomeMessageCommand: new SlashCommandBuilder()
+        .setName('welcome_message')
+        .setDescription('تعديل رسالة الترحيب (استخدم {member} للمنشن)')
+        .addStringOption(option =>
+            option.setName('message')
+                .setDescription('الرسالة الجديدة')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    @app_commands.command(name="test_welcome", description="تجربة رسالة الترحيب لنفسك")
-    @app_commands.default_permissions(administrator=True)
-    async def test_welcome(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild_id)
-        g_data = get_guild_welcome(guild_id)
-        
-        formatted_msg = g_data["message"].replace("{member}", interaction.user.mention)
-        embed = discord.Embed(description=formatted_msg, color=discord.Color.green())
-        if g_data["image_url"]:
-            embed.set_image(url=g_data["image_url"])
-        await interaction.response.send_message(content=f"{interaction.user.mention}", embed=embed, ephemeral=True)
+    welcomeImageCommand: new SlashCommandBuilder()
+        .setName('welcome_image')
+        .setDescription('تعديل رابط صورة الترحيب')
+        .addStringOption(option =>
+            option.setName('image_url')
+                .setDescription('رابط الصورة')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member):
-        guild_id = str(member.guild.id)
-        g_data = get_guild_welcome(guild_id)
-        
-        if g_data["channel_id"] is None:
-            return
-            
-        channel = self.bot.get_channel(g_data["channel_id"])
-        if channel:
-            formatted_msg = g_data["message"].replace("{member}", member.mention)
-            embed = discord.Embed(description=formatted_msg, color=discord.Color.green())
-            if g_data["image_url"]:
-                embed.set_image(url=g_data["image_url"])
-            await channel.send(content=f"{member.mention}", embed=embed)
+    testWelcomeCommand: new SlashCommandBuilder()
+        .setName('test_welcome')
+        .setDescription('تجربة رسالة الترحيب لنفسك')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-async def setup(bot):
-    await bot.add_cog(Welcome(bot))
+    async handleWelcomeSetup(interaction) {
+        const guildId = interaction.guildId;
+        const channel = interaction.options.getChannel('channel');
+
+        const gData = getGuildWelcome(guildId);
+        gData.channel_id = channel.id;
+        updateGuildWelcome(guildId, gData);
+
+        await interaction.reply({ content: `✅ تم ضبط روم الترحيب بنجاح في هذا السيرفر: ${channel}`, ephemeral: true });
+    },
+
+    async handleWelcomeMessage(interaction) {
+        const guildId = interaction.guildId;
+        const messageText = interaction.options.getString('message');
+
+        const gData = getGuildWelcome(guildId);
+        gData.message = messageText;
+        updateGuildWelcome(guildId, gData);
+
+        await interaction.reply({ content: "✅ تم تحديث رسالة الترحيب في هذا السيرفر بنجاح!", ephemeral: true });
+    },
+
+    async handleWelcomeImage(interaction) {
+        const guildId = interaction.guildId;
+        const imageUrl = interaction.options.getString('image_url');
+
+        const gData = getGuildWelcome(guildId);
+        gData.image_url = imageUrl;
+        updateGuildWelcome(guildId, gData);
+
+        await interaction.reply({ content: "✅ تم تحديث صورة الترحيب في هذا السيرفر بنجاح!", ephemeral: true });
+    },
+
+    async handleTestWelcome(interaction) {
+        const guildId = interaction.guildId;
+        const gData = getGuildWelcome(guildId);
+
+        const formattedMsg = gData.message.replace(/\{member\}/g, interaction.user.toString());
+        const embed = new EmbedBuilder()
+            .setDescription(formattedMsg)
+            .setColor(0x00FF00);
+
+        if (gData.image_url) {
+            embed.setImage(gData.image_url);
+        }
+
+        await interaction.reply({ content: interaction.user.toString(), embeds: [embed], ephemeral: true });
+    },
+
+    async handleMemberJoin(member) {
+        const guildId = member.guild.id;
+        const gData = getGuildWelcome(guildId);
+
+        if (!gData.channel_id) return;
+
+        let channel = member.guild.channels.cache.get(gData.channel_id);
+        if (!channel) {
+            try {
+                channel = await member.guild.channels.fetch(gData.channel_id);
+            } catch (e) {
+                return;
+            }
+        }
+
+        if (channel) {
+            const formattedMsg = gData.message.replace(/\{member\}/g, member.toString());
+            const embed = new EmbedBuilder()
+                .setDescription(formattedMsg)
+                .setColor(0x00FF00);
+
+            if (gData.image_url) {
+                embed.setImage(gData.image_url);
+            }
+
+            try {
+                await channel.send({ content: member.toString(), embeds: [embed] });
+            } catch (e) {}
+        }
+    }
+};
