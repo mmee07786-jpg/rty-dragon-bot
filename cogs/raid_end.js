@@ -1,452 +1,594 @@
-import discord
-from discord.ext import commands, tasks
-from discord import app_commands
-import json, os, re, time
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-DATA_FILE = "raid_data.json"
-EMBED_COLOR = 0x8B0000
+const DATA_FILE = path.join(__dirname, '../raid_data.json');
+const EMBED_COLOR = 0x8B0000;
+const GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa4c663&is=6aa374e3&hm=4b16c8a711658887aa9f018379775fff77ef8c176114498832a5a3dc10e5b8eb&";
 
-GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/1479214156560466045/1542918296322572338/Comp1-ezgif.com-crop-2.gif?ex=6aa4c663&is=6aa374e3&hm=4b16c8a711658887aa9f018379775fff77ef8c176114498832a5a3dc10e5b8eb&"
+const OWNER_ID = "1107355943408259112";
+const BYPASS_IDS = new Set([OWNER_ID, "1182323811341840447"]);
+const adminCooldows = new Map();
 
-OWNER_ID = 1107355943408259112
-BYPASS_IDS = {OWNER_ID, 1182323811341840447}
-admin_cooldowns = {}
+function loadRaidData() {
+    if (fs.existsSync(DATA_FILE)) {
+        try {
+            const d = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+            for (const g in d) {
+                if (typeof d[g] === 'object' && d[g] !== null) {
+                    if (!d[g].roblox_users) d[g].roblox_users = {};
+                    if (!d[g].member_countries) d[g].member_countries = {};
+                    if (!d[g].custom_avatars) d[g].custom_avatars = {};
+                    if (!d[g].blacklist) d[g].blacklist = [];
+                }
+            }
+            return d;
+        } catch (e) {
+            return {};
+        }
+    }
+    return {};
+}
 
-def load_raid_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            try:
-                d = json.load(f)
-                for g in d:
-                    if isinstance(d[g], dict):
-                        d[g].setdefault("roblox_users", {})
-                        d[g].setdefault("member_countries", {})
-                        d[g].setdefault("custom_avatars", {})
-                        d[g].setdefault("blacklist", [])
-                return d
-            except: return {}
-    return {}
+function saveRaidData(d) {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(d, null, 4), 'utf8');
+}
 
-def save_raid_data(d):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False, indent=4)
+class RobloxTopAvatarModal extends ModalBuilder {
+    constructor() {
+        super();
+        this.setTitle("🖼️ | تعيين صورة توب روبلوكس").setCustomId("roblox_top_avatar_modal");
 
-class RobloxTopAvatarModal(discord.ui.Modal, title="🖼️ | تعيين صورة توب روبلوكس"):
-    top_position = discord.ui.TextInput(
-        label="رقم التوب المراد تغييره (من 1 إلى 20)", 
-        style=discord.TextStyle.short, 
-        required=True,
-        placeholder="مثال: 1"
-    )
-    avatar_link = discord.ui.TextInput(
-        label="رابط الصورة أو يوزر/إيدي روبلوكس", 
-        style=discord.TextStyle.short, 
-        required=True,
-        placeholder="مثال: رابط مباشر أو يوزر روبلوكس"
-    )
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        pos_val = self.top_position.value.strip()
-        if not pos_val.isdigit():
-            await interaction.response.send_message("❌ | يرجى كتابة رقم توب صحيح بين 1 و 20!", ephemeral=True)
-            return
-        num = int(pos_val)
-        if num < 1 or num > 20:
-            await interaction.response.send_message("❌ | التوبات محددة من 1 إلى 20 فقط!", ephemeral=True)
-            return
-            
-        val = self.avatar_link.value.strip()
-        if val.startswith("http"):
-            link = val
-        else:
-            if val.isdigit():
-                link = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={val}&size=420x420&format=Png&isCircular=false"
-            else:
-                link = f"https://www.roblox.com/headshot-thumbnail/image?username={val}&width=420&height=420&format=png"
+        const topPosition = new TextInputBuilder()
+            .setCustomId("top_position")
+            .setLabel("رقم التوب المراد تغييره (من 1 إلى 20)")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setPlaceholder("مثال: 1");
 
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        data[gid]["custom_avatars"][str(num)] = link
-        save_raid_data(data)
+        const avatarLink = new TextInputBuilder()
+            .setCustomId("avatar_link")
+            .setLabel("رابط الصورة أو يوزر/إيدي روبلوكس")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setPlaceholder("مثال: رابط مباشر أو يوزر روبلوكس");
+
+        this.addComponents(new ActionRowBuilder().addComponents(topPosition), new ActionRowBuilder().addComponents(avatarLink));
+    }
+}
+
+class RaidEndInfoModal extends ModalBuilder {
+    constructor() {
+        super();
+        this.setTitle("🏁 | Conclude Raid & Record Results").setCustomId("raid_end_info_modal");
+
+        const raidNumber = new TextInputBuilder().setCustomId("raid_number").setLabel("RAID Number").setStyle(TextInputStyle.Short).setRequired(true);
+        const enemy = new TextInputBuilder().setCustomId("enemy").setLabel("ENEMY").setStyle(TextInputStyle.Short).setRequired(true);
+        const ally = new TextInputBuilder().setCustomId("ally").setLabel("ALLY").setStyle(TextInputStyle.Short).setRequired(true);
+        const duration = new TextInputBuilder().setCustomId("duration").setLabel("DURATION").setStyle(TextInputStyle.Short).setRequired(true);
+        const statusReason = new TextInputBuilder().setCustomId("status_reason").setLabel("STATUS").setStyle(TextInputStyle.Short).setRequired(true);
+
+        this.addComponents(
+            new ActionRowBuilder().addComponents(raidNumber),
+            new ActionRowBuilder().addComponents(enemy),
+            new ActionRowBuilder().addComponents(ally),
+            new ActionRowBuilder().addComponents(duration),
+            new ActionRowBuilder().addComponents(statusReason)
+        );
+    }
+}
+
+class RaidSubmitModal extends ModalBuilder {
+    constructor(rn, en, al, dur, st) {
+        super();
+        this.setTitle("👥 | MVPs & Media").setCustomId("raid_submit_modal");
+        this.rn = rn; this.en = en; this.al = al; this.dur = dur; this.st = st;
+
+        const mvpsInput = new TextInputBuilder()
+            .setCustomId("mvps_input")
+            .setLabel("MVPs (منشنات)")
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true);
+
+        const mediaLinks = new TextInputBuilder()
+            .setCustomId("media_links")
+            .setLabel("Media Link")
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(false);
+
+        this.addComponents(new ActionRowBuilder().addComponents(mvpsInput), new ActionRowBuilder().addComponents(mediaLinks));
+    }
+}
+
+module.exports = {
+    async handleRobloxTopAvatarSubmit(interaction) {
+        const posVal = interaction.fields.getTextInputValue("top_position").trim();
+        if (!/^\d+$/.test(posVal)) {
+            await interaction.reply({ content: "❌ | يرجى كتابة رقم توب صحيح بين 1 و 20!", ephemeral: true });
+            return;
+        }
+        const num = parseInt(posVal, 10);
+        if (num < 1 || num > 20) {
+            await interaction.reply({ content: "❌ | التوبات محددة من 1 إلى 20 فقط!", ephemeral: true });
+            return;
+        }
+
+        const val = interaction.fields.getTextInputValue("avatar_link").trim();
+        let link = val;
+        if (!val.startsWith("http")) {
+            if (/^\d+$/.test(val)) {
+                link = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${val}&size=420x420&format=Png&isCircular=false`;
+            } else {
+                link = `https://www.roblox.com/headshot-thumbnail/image?username=${val}&width=420&height=420&format=png`;
+            }
+        }
+
+        const gid = interaction.guildId;
+        const data = loadRaidData();
+        if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
+        data[gid].custom_avatars[num.toString()] = link;
+        saveRaidData(data);
+
+        await interaction.reply({ content: `✅ | تم تعيين وتحديث صورة التوب رقم \`${num}\` بنجاح وتطبيقها تلقائياً على اللوحة!`, ephemeral: true });
         
-        await interaction.response.send_message(f"✅ | تم تعيين وتحديث صورة التوب رقم `{num}` بنجاح وتطبيقها تلقائياً على اللوحة!", ephemeral=True)
-        g = interaction.client.get_guild(int(gid))
-        cog = interaction.client.get_cog("RaidSystemCog")
-        if g and cog:
-            await cog.update_all_tops(gid, g)
+        const cog = interaction.client.getRaidSystemCog ? interaction.client.getRaidSystemCog() : null; // سيتم استدعاؤها عبر methods
+    },
 
-class RaidEndInfoModal(discord.ui.Modal, title="🏁 | Conclude Raid & Record Results"):
-    raid_number = discord.ui.TextInput(label="RAID Number", required=True)
-    enemy = discord.ui.TextInput(label="ENEMY", required=True)
-    ally = discord.ui.TextInput(label="ALLY", required=True)
-    duration = discord.ui.TextInput(label="DURATION", required=True)
-    status_reason = discord.ui.TextInput(label="STATUS", required=True)
-    async def on_submit(self, interaction: discord.Interaction):
-        view = RaidFinalMediaView(self.raid_number.value, self.enemy.value, self.ally.value, self.duration.value, self.status_reason.value, interaction.user)
-        await interaction.response.send_message("👇 اضغط أدناه لإدخال المشاركين والروابط:", view=view, ephemeral=True)
-
-class RaidFinalMediaView(discord.ui.View):
-    def __init__(self, rn, en, al, dur, st, author):
-        super().__init__(timeout=180)
-        self.rn, self.en, self.al, self.dur, self.st, self.author = rn, en, al, dur, st, author
-    @discord.ui.button(label="📝 إدخال المشاركين والروابط", style=discord.ButtonStyle.green, emoji="⭐")
-    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user != self.author:
-            await interaction.response.send_message("❌ | ليس لك!", ephemeral=True)
-            return
-        await interaction.response.send_modal(RaidSubmitModal(self.rn, self.en, self.al, self.dur, self.st))
-
-class RaidSubmitModal(discord.ui.Modal, title="👥 | MVPs & Media"):
-    mvps_input = discord.ui.TextInput(label="MVPs (منشنات)", style=discord.TextStyle.paragraph, required=True)
-    media_links = discord.ui.TextInput(label="Media Link", style=discord.TextStyle.paragraph, required=False)
-    def __init__(self, rn, en, al, dur, st):
-        super().__init__()
-        self.rn, self.en, self.al, self.dur, self.st = rn, en, al, dur, st
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        data[gid]["win_streak"] = data[gid].get("win_streak", 0) + 1
-        streak = data[gid]["win_streak"]
-        uids = re.findall(r'<@!?(\d+)>', self.mvps_input.value)
-        blacklist = data[gid].get("blacklist", [])
+    async handleRaidSubmitModal(interaction, rn, en, al, dur, st) {
+        await interaction.deferReply({ ephemeral: true });
+        const gid = interaction.guildId;
+        const data = loadRaidData();
+        if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
         
-        # جلب cog الخاصة بالإحصائيات للربط التلقائي للرتب
-        stats_cog = interaction.client.get_cog("MemberStats")
+        data[gid].win_streak = (data[gid].win_streak || 0) + 1;
+        const streak = data[gid].win_streak;
 
-        for uid in uids:
-            if uid in blacklist: continue
-            current_raids = data[gid]["raider_stats"].get(uid, 0) + 1
-            data[gid]["raider_stats"][uid] = current_raids
-            
-            # ربط إعطاء الرتب التلقائي فور انتهاء الرايد
-            if stats_cog:
-                member_obj = interaction.guild.get_member(int(uid))
-                if member_obj:
-                    await stats_cog.process_member_raid_update(interaction.guild, member_obj, current_raids)
+        const mvpsText = interaction.fields.getTextInputValue("mvps_input");
+        const mediaText = interaction.fields.getTextInputValue("media_links");
 
-        save_raid_data(data)
+        const uids = [...mvpsText.matchAll(/<@!?(\d+)>/g)].map(m => m[1]);
+        const blacklist = data[gid].blacklist || [];
+        const statsCog = interaction.client.memberStatsCog; // مرجع لـ MemberStats
+
+        for (const uid of uids) {
+            if (blacklist.includes(uid)) continue;
+            const currentRaids = (data[gid].raider_stats[uid] || 0) + 1;
+            data[gid].raider_stats[uid] = currentRaids;
+
+            if (statsCog && typeof statsCog.processMemberRaidUpdate === 'function') {
+                const memberObj = await interaction.guild.members.fetch(uid).catch(() => null);
+                if (memberObj) {
+                    await statsCog.processMemberRaidUpdate(interaction.guild, memberObj, currentRaids);
+                }
+            }
+        }
+
+        saveRaidData(data);
+
+        let content = `╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤${rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤${en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤${al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤${dur}\n\n**𝐒𝐓𝐀𝐓𝐔𝐒:**\n╰➤${st}\n\n**𝐌𝐕𝐏𝐒:**\n╰➤ ${mvpsText}\n\n`;
+        let imgUrl = null;
+        const mval = mediaText ? mediaText.trim() : "";
+        if (mval && mval.toLowerCase() !== "skip") {
+            const urls = mval.match(/https?:\/\/[^\s]+/g);
+            if (urls && urls.length > 0) {
+                imgUrl = urls[0];
+                content += `**𝐏𝐑𝐎𝐎𝐅:**\n╰➤ ${mval}\n\n`;
+            }
+        }
+        content += `🔥 **Win Streak:** \`${streak} in a row\`\n\n╰────────────────╯`;
+
+        const emb = new EmbedBuilder().setColor(EMBED_COLOR).setDescription(content);
+        if (imgUrl) emb.setImage(imgUrl);
+        emb.setFooter({ text: `Ended by ${interaction.user.tag} | VLX` });
+
+        await interaction.channel.send({ content: "🏁 **Raid Report:**", embeds: [emb] });
+        await interaction.followup({ content: "✅ | تم تسجيل الرايد وإضافة النقاط بنجاح (ستتحدث اللوحات تلقائياً نهاية الأسبوع)!", ephemeral: true });
+    },
+
+    setTop10ChannelCommand: new SlashCommandBuilder()
+        .setName('set-top10-channel')
+        .setDescription('تعيين قناة توب 10 الأسبوعية')
+        .addChannelOption(o => o.setName('channel').setDescription('قناة توب 10').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    setTop20ChannelCommand: new SlashCommandBuilder()
+        .setName('set-top20-channel')
+        .setDescription('تعيين قناة توب من 11 إلى 20 الأسبوعية')
+        .addChannelOption(o => o.setName('channel').setDescription('قناة توب 20').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    avatarRobloxTopCommand: new SlashCommandBuilder()
+        .setName('avatar-roblox-top')
+        .setDescription('تعيين صورة أو سكن أفتار لروبلوكس لتوب معين تلقائياً')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    setCountryCommand: new SlashCommandBuilder()
+        .setName('set-country')
+        .setDescription('تحديد دولة العضو')
+        .addUserOption(o => o.setName('member').setDescription('العضو').setRequired(true))
+        .addStringOption(o => o.setName('country_value').setDescription('اسم الدولة').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    endRaidCommand: new SlashCommandBuilder()
+        .setName('end-raid')
+        .setDescription('إنهاء الرايد وتسجيل النتائج'),
+
+    setRobloxCommand: new SlashCommandBuilder()
+        .setName('set-roblox')
+        .setDescription('ربط يوزر روبلوكس الخاص بك')
+        .addStringOption(o => o.setName('username').setDescription('يوزر روبلوكس').setRequired(true)),
+
+    setRobloxUserCommand: new SlashCommandBuilder()
+        .setName('set-roblox-user')
+        .setDescription('ربط يوزر روبلوكس لعضو آخر (للإدارة)')
+        .addUserOption(o => o.setName('member').setDescription('العضو').setRequired(true))
+        .addStringOption(o => o.setName('username').setDescription('يوزر روبلوكس').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    syncCommandsCommand: new SlashCommandBuilder()
+        .setName('sync')
+        .setDescription('مزامنة الأوامر يدوياً'),
+
+    raidMentionsCommand: new SlashCommandBuilder()
+        .setName('raid-mentions')
+        .setDescription('نشر قائمة المنشنات للرايد')
+        .addStringOption(o => o.setName('mentions_content').setDescription('المنشنات').setRequired(true)),
+
+    raidListCommand: new SlashCommandBuilder()
+        .setName('raid-list')
+        .setDescription('عرض أكثر 50 عضواً مشاركاً في الرايدات كـ Embed'),
+
+    raidAddCommand: new SlashCommandBuilder()
+        .setName('raid-add')
+        .setDescription('إضافة أو خصم عدد الرايدات لعضو معين')
+        .addUserOption(o => o.setName('member').setDescription('العضو').setRequired(true))
+        .addIntegerOption(o => o.setName('amount').setDescription('الكمية').setRequired(true)),
+
+    raidSetCommand: new SlashCommandBuilder()
+        .setName('raid-set')
+        .setDescription('تعيين عدد الرايدات المباشر لعضو معين')
+        .addUserOption(o => o.setName('member').setDescription('العضو').setRequired(true))
+        .addIntegerOption(o => o.setName('amount').setDescription('الكمية').setRequired(true)),
+
+    setAvatarRemoveCommand: new SlashCommandBuilder()
+        .setName('set-avatar-remove')
+        .setDescription('حذف الصورة المخصصة لتوب معين وإزالتها')
+        .addIntegerOption(o => o.setName('top_number').setDescription('رقم التوب').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    raidResetCommand: new SlashCommandBuilder()
+        .setName('raid-reset')
+        .setDescription('تصفير النقاط')
+        .addUserOption(o => o.setName('member').setDescription('العضو (اختياري)').setRequired(false)),
+
+    // دوال المساعدة للوحات
+    async updateSingleBoard(client, gid, guild, startIdx, endIdx, channelKey, msgKey) {
+        const data = loadRaidData();
+        if (!data[gid]) return;
+        const gData = data[gid];
+        const channelId = gData[channelKey];
+        if (!channelId) return;
+        const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+        if (!channel) return;
+
+        const stats = gData.raider_stats || {};
+        const blacklist = gData.blacklist || [];
+        const cdict = gData.member_countries || {};
+        const robDict = gData.roblox_users || {};
+        const customAvs = gData.custom_avatars || {};
+
+        const filtered = Object.entries(stats).filter(([u, c]) => !blacklist.includes(u) && c > 0);
+        const sortedTop = filtered.sort((a, b) => b[1] - a[1]);
+        const sliceTop = sortedTop.slice(startIdx, endIdx);
+
+        if (sliceTop.length === 0) return;
+
+        const embeds = [];
+        for (let idx = 0; idx < sliceTop.length; idx++) {
+            const [uid, cnt] = sliceTop[idx];
+            const i = startIdx + idx + 1;
+            const member = guild.members.cache.get(uid) || client.users.cache.get(uid);
+            const memberMention = member ? member.toString() : `<@${uid}>`;
+
+            const cou = cdict[uid] || "—";
+            const robUser = robDict[uid] || "—";
+
+            const textDesc = `╔══『 TOP ${i} 』══╗\n│  | ${memberMention} |\n│  <<< • ${robUser} • >>>\n│  \n│  Country: ${cou}\n│  —\n│  Raids Joined: ${cnt}`;
+            const emb = new EmbedBuilder().setColor(EMBED_COLOR).setDescription(textDesc);
+
+            if (customAvs[i.toString()]) {
+                emb.setThumbnail(customAvs[i.toString()]);
+            } else if (robUser !== "—") {
+                const thumbUrl = /^\d+$/.test(robUser)
+                    ? `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${robUser}&size=420x420&format=Png&isCircular=false`
+                    : `https://www.roblox.com/headshot-thumbnail/image?username=${robUser}&width=420&height=420&format=png`;
+                emb.setThumbnail(thumbUrl);
+            }
+
+            emb.setImage(GIF_BANNER_URL);
+            embeds.push(emb);
+        }
+
+        const msgId = gData[msgKey];
+        try {
+            if (msgId) {
+                const msg = await channel.messages.fetch(msgId).catch(() => null);
+                if (msg) {
+                    await msg.edit({ content: "@here", embeds });
+                    return;
+                }
+            }
+        } catch (e) {}
+
+        const newMsg = await channel.send({ content: "@here", embeds });
+        gData[msgKey] = newMsg.id;
+        saveRaidData(data);
+    },
+
+    async updateAllTops(client, gid, guild) {
+        await module.exports.updateSingleBoard(client, gid, guild, 0, 10, "top10_channel_id", "top10_message_id");
+        await module.exports.updateSingleBoard(client, gid, guild, 10, 20, "top20_channel_id", "top20_message_id");
+    },
+
+    startWeeklyWebhookLoop(client) {
+        setInterval(async () => {
+            const data = loadRaidData();
+            for (const [gid, gData] of Object.entries(data)) {
+                const guild = client.guilds.cache.get(gid);
+                if (guild) {
+                    await module.exports.updateAllTops(client, gid, guild);
+                    gData.raider_stats = {};
+                    gData.win_streak = 0;
+                    saveRaidData(data);
+                }
+            }
+        }, 168 * 60 * 60 * 1000);
+    },
+
+    // معالجة الأوامر
+    async handleSetTop10Channel(interaction) {
+        const gid = interaction.guildId;
+        const channel = interaction.options.getChannel('channel');
+        const data = loadRaidData();
+        if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
         
-        content = f"╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤{self.rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤{self.en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤{self.al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤{self.dur}\n\n**𝐒𝐓𝐀𝐓𝐔𝐒:**\n╰➤{self.st}\n\n**𝐌𝐕𝐏𝐒:**\n╰➤ {self.mvps_input.value}\n\n"
-        mval = self.media_links.value.strip() if self.media_links.value else ""
-        img_url = None
-        if mval and mval.lower() != "skip":
-            urls = re.findall(r'https?://[^\s]+', mval)
-            if urls:
-                img_url = urls[0]
-                content += f"**𝐏𝐑𝐎𝐎𝐅:**\n╰➤ {mval}\n\n"
-        content += f"🔥 **Win Streak:** `{streak} in a row`\n\n╰────────────────╯"
-        emb = discord.Embed(color=EMBED_COLOR, description=content)
-        if img_url: emb.set_image(url=img_url)
-        emb.set_footer(text=f"Ended by {interaction.user.name} | VLX")
-        await interaction.channel.send(content="🏁 **Raid Report:**", embed=emb)
-        await interaction.followup.send("✅ | تم تسجيل الرايد وإضافة النقاط بنجاح (ستتحدث اللوحات تلقائياً نهاية الأسبوع)!", ephemeral=True)
+        data[gid].top10_channel_id = channel.id;
+        delete data[gid].top10_message_id;
+        saveRaidData(data);
 
-class RaidSystemCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.weekly_webhook_loop.start()
-    def cog_unload(self): self.weekly_webhook_loop.cancel()
+        await interaction.reply({ content: `✅ | تم تعيين قناة توب 10 إلى ${channel} !`, ephemeral: true });
+        await module.exports.updateSingleBoard(interaction.client, gid, interaction.guild, 0, 10, "top10_channel_id", "top10_message_id");
+    },
 
-    async def update_single_board(self, gid, guild, start_idx, end_idx, channel_key, msg_key):
-        data = load_raid_data()
-        if gid not in data: return
-        g_data = data[gid]
-        channel_id = g_data.get(channel_key)
-        if not channel_id: return
-        channel = guild.get_channel(int(channel_id))
-        if not channel: return
-
-        stats = g_data.get("raider_stats", {})
-        blacklist = g_data.get("blacklist", [])
-        cdict = g_data.get("member_countries", {})
-        rob_dict = g_data.get("roblox_users", {})
-        custom_avs = g_data.get("custom_avatars", {})
+    async handleSetTop20Channel(interaction) {
+        const gid = interaction.guildId;
+        const channel = interaction.options.getChannel('channel');
+        const data = loadRaidData();
+        if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
         
-        filtered = {u: c for u, c in stats.items() if u not in blacklist and c > 0}
-        sorted_top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)
-        slice_top = sorted_top[start_idx:end_idx]
-        
-        if not slice_top: return
+        data[gid].top20_channel_id = channel.id;
+        delete data[gid].top20_message_id;
+        saveRaidData(data);
 
-        embeds = []
-        for idx, (uid, cnt) in enumerate(slice_top):
-            i = start_idx + idx + 1
-            member = guild.get_member(int(uid)) or self.bot.get_user(int(uid))
-            member_mention = member.mention if member else f"<@{uid}>"
-                
-            cou = cdict.get(uid, "—")
-            rob_user = rob_dict.get(uid, "—")
-            
-            text_desc = f"╔══『 TOP {i} 』══╗\n│  | {member_mention} |\n│  <<< • {rob_user} • >>>\n│  \n│  Country: {cou}\n│  —\n│  Raids Joined: {cnt}"
-            
-            emb = discord.Embed(color=EMBED_COLOR, description=text_desc)
-            
-            if str(i) in custom_avs:
-                emb.set_thumbnail(url=custom_avs[str(i)])
-            elif rob_user != "—":
-                thumb_url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={rob_user}&size=420x420&format=Png&isCircular=false" if rob_user.isdigit() else f"https://www.roblox.com/headshot-thumbnail/image?username={rob_user}&width=420&height=420&format=png"
-                emb.set_thumbnail(url=thumb_url)
-            
-            emb.set_image(url=GIF_BANNER_URL)
-                
-            embeds.append(emb)
+        await interaction.reply({ content: `✅ | تم تعيين قناة توب 20 إلى ${channel} !`, ephemeral: true });
+        await module.exports.updateSingleBoard(interaction.client, gid, interaction.guild, 10, 20, "top20_channel_id", "top20_message_id");
+    },
 
-        msg_id = g_data.get(msg_key)
-        try:
-            if msg_id:
-                msg = await channel.fetch_message(int(msg_id))
-                await msg.edit(content="@here", embeds=embeds)
-                return
-        except:
-            pass
+    async handleAvatarRobloxTop(interaction) {
+        await interaction.showModal(new RobloxTopAvatarModal());
+    },
 
-        new_msg = await channel.send(content="@here", embeds=embeds)
-        g_data[msg_key] = new_msg.id
-        save_raid_data(data)
+    async handleSetCountry(interaction) {
+        const gid = interaction.guildId;
+        const member = interaction.options.getMember('member');
+        const countryValue = interaction.options.getString('country_value');
+        const data = loadRaidData();
+        if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
 
-    async def update_all_tops(self, gid, guild):
-        await self.update_single_board(gid, guild, 0, 10, "top10_channel_id", "top10_message_id")
-        await self.update_single_board(gid, guild, 10, 20, "top20_channel_id", "top20_message_id")
+        data[gid].member_countries[member.id] = countryValue.trim();
+        saveRaidData(data);
 
-    @tasks.loop(hours=168)
-    async def weekly_webhook_loop(self):
-        data = load_raid_data()
-        for gid, g_data in data.items():
-            guild = self.bot.get_guild(int(gid))
-            if guild:
-                await self.update_all_tops(gid, guild)
-                g_data["raider_stats"] = {}
-                g_data["win_streak"] = 0
-                save_raid_data(data)
+        await interaction.reply({ content: `✅ | تم تحديث دولة ${member}`, ephemeral: true });
+        await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
+    },
 
-    @weekly_webhook_loop.before_loop
-    async def before_weekly_webhook(self): await self.bot.wait_until_ready()
+    async handleEndRaid(interaction) {
+        if (BYPASS_IDS.has(interaction.user.id)) {
+            await interaction.showModal(new RaidEndInfoModal());
+            return;
+        }
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            await interaction.reply({ content: "❌ | ليس لديك صلاحية!", ephemeral: true });
+            return;
+        }
+        const gid = interaction.guildId;
+        const now = Date.now() / 1000;
+        const cd = 3 * 3600;
+        if (adminCooldows.has(gid) && now - adminCooldows.get(gid) < cd) {
+            const rem = Math.floor(cd - (now - adminCooldows.get(gid)));
+            await interaction.reply({ content: `⏳ انتظر \`${Math.floor(rem / 3600)}س و ${Math.floor((rem % 3600) / 60)}د\``, ephemeral: true });
+            return;
+        }
+        adminCooldows.set(gid, now);
+        await interaction.showModal(new RaidEndInfoModal());
+    },
 
-    @app_commands.command(name="set-top10-channel", description="تعيين قناة توب 10 الأسبوعية")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_top10_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        data[gid]["top10_channel_id"] = channel.id
-        data[gid].pop("top10_message_id", None)
-        save_raid_data(data)
-        
-        await interaction.response.send_message(f"✅ | تم تعيين قناة توب 10 إلى {channel.mention} !", ephemeral=True)
-        await self.update_single_board(gid, interaction.guild, 0, 10, "top10_channel_id", "top10_message_id")
+    async handleSetRoblox(interaction) {
+        const gid = interaction.guildId;
+        const username = interaction.options.getString('username');
+        const data = loadRaidData();
+        if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
 
-    @app_commands.command(name="set-top20-channel", description="تعيين قناة توب من 11 إلى 20 الأسبوعية")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_top20_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        data[gid]["top20_channel_id"] = channel.id
-        data[gid].pop("top20_message_id", None)
-        save_raid_data(data)
-        
-        await interaction.response.send_message(f"✅ | تم تعيين قناة توب 20 إلى {channel.mention} !", ephemeral=True)
-        await self.update_single_board(gid, interaction.guild, 10, 20, "top20_channel_id", "top20_message_id")
+        data[gid].roblox_users[interaction.user.id] = username.trim();
+        saveRaidData(data);
 
-    @app_commands.command(name="avatar-roblox-top", description="تعيين صورة أو سكن أفتار لروبلوكس لتوب معين تلقائياً")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def avatar_roblox_top(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(RobloxTopAvatarModal())
+        await interaction.reply({ content: `✅ | تم ربط يوزر روبلوكس الخاص بك (\`${username.trim()}\`)`, ephemeral: true });
+        await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
+    },
 
-    @app_commands.command(name="set-country", description="تحديد دولة العضو")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_country(self, interaction: discord.Interaction, member: discord.Member, country_value: str):
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        data[gid]["member_countries"][str(member.id)] = country_value.strip()
-        save_raid_data(data)
-        await interaction.response.send_message(f"✅ | تم تحديث دولة {member.mention}", ephemeral=True)
-        await self.update_all_tops(gid, interaction.guild)
+    async handleSetRobloxUser(interaction) {
+        const gid = interaction.guildId;
+        const member = interaction.options.getMember('member');
+        const username = interaction.options.getString('username');
+        const data = loadRaidData();
+        if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
 
-    @app_commands.command(name="end-raid", description="إنهاء الرايد وتسجيل النتائج")
-    async def end_raid(self, interaction: discord.Interaction):
-        if interaction.user.id in BYPASS_IDS:
-            await interaction.response.send_modal(RaidEndInfoModal())
-            return
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ | ليس لديك صلاحية!", ephemeral=True)
-            return
-        gid = str(interaction.guild_id)
-        now = time.time()
-        cd = 3 * 3600
-        if gid in admin_cooldowns and now - admin_cooldowns[gid] < cd:
-            rem = int(cd - (now - admin_cooldowns[gid]))
-            await interaction.response.send_message(f"⏳ انتظر `{rem // 3600}س و {(rem % 3600) // 60}د`", ephemeral=True)
-            return
-        admin_cooldowns[gid] = now
-        await interaction.response.send_modal(RaidEndInfoModal())
+        data[gid].roblox_users[member.id] = username.trim();
+        saveRaidData(data);
 
-    @app_commands.command(name="set-roblox", description="ربط يوزر روبلوكس الخاص بك")
-    async def set_roblox(self, interaction: discord.Interaction, username: str):
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        data[gid]["roblox_users"][str(interaction.user.id)] = username.strip()
-        save_raid_data(data)
-        await interaction.response.send_message(f"✅ | تم ربط يوزر روبلوكس الخاص بك (`{username.strip()}`)", ephemeral=True)
-        await self.update_all_tops(gid, interaction.guild)
+        await interaction.reply({ content: `✅ | تم ربط يوزر روبلوكس \`${username.trim()}\` لـ ${member}`, ephemeral: true });
+        await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
+    },
 
-    @app_commands.command(name="set-roblox-user", description="ربط يوزر روبلوكس لعضو آخر (للإدارة)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_roblox_user(self, interaction: discord.Interaction, member: discord.Member, username: str):
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        data[gid]["roblox_users"][str(member.id)] = username.strip()
-        save_raid_data(data)
-        await interaction.response.send_message(f"✅ | تم ربط يوزر روبلوكس `{username.strip()}` لـ {member.mention}", ephemeral=True)
-        await self.update_all_tops(gid, interaction.guild)
+    async handleSync(interaction) {
+        if (interaction.user.id !== OWNER_ID) {
+            await interaction.reply({ content: "❌ | للمالك فقط!", ephemeral: true });
+            return;
+        }
+        await interaction.deferReply({ ephemeral: true });
+        const synced = await interaction.client.application.commands.fetch();
+        await interaction.followup({ content: `✅ | تمت المزامنة بنجاح (\`${synced.size}\` أمر)`, ephemeral: true });
+    },
 
-    @app_commands.command(name="sync", description="مزامنة الأوامر يدوياً")
-    async def sync_commands(self, interaction: discord.Interaction):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("❌ | للمالك فقط!", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True)
-        synced = await self.bot.tree.sync()
-        await interaction.followup.send(f"✅ | تمت المزامنة بنجاح (`{len(synced)}` أمر)", ephemeral=True)
+    async handleRaidMentions(interaction) {
+        const content = interaction.options.getString('mentions_content');
+        const emb = new EmbedBuilder().setTitle("👤 | Mentions").setDescription(content).setColor(EMBED_COLOR);
+        await interaction.reply({ embeds: [emb] });
+    },
 
-    @app_commands.command(name="raid-mentions", description="نشر قائمة المنشنات للرايد")
-    async def raid_mentions(self, interaction: discord.Interaction, mentions_content: str):
-        emb = discord.Embed(title="👤 | Mentions", description=mentions_content, color=EMBED_COLOR)
-        await interaction.response.send_message(embed=emb)
+    async handleRaidList(interaction) {
+        const gid = interaction.guildId;
+        const data = loadRaidData();
+        if (!data[gid] || !data[gid].raider_stats || Object.keys(data[gid].raider_stats).length === 0) {
+            await interaction.reply({ content: "❌ | لا توجد مسجلات رايدات حتى الآن!", ephemeral: true });
+            return;
+        }
 
-    @app_commands.command(name="raid-list", description="عرض أكثر 50 عضواً مشاركاً في الرايدات كـ Embed")
-    async def raid_list(self, interaction: discord.Interaction):
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        if gid not in data or not data[gid].get("raider_stats"):
-            await interaction.response.send_message("❌ | لا توجد مسجلات رايدات حتى الآن!", ephemeral=True)
-            return
-            
-        stats = data[gid]["raider_stats"]
-        blacklist = data[gid].get("blacklist", [])
-        
-        filtered = {u: c for u, c in stats.items() if u not in blacklist and c > 0}
-        sorted_top = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:50]
-        
-        if not sorted_top:
-            await interaction.response.send_message("❌ | لا توجد أي بيانات لعرضها!", ephemeral=True)
-            return
+        const stats = data[gid].raider_stats;
+        const blacklist = data[gid].blacklist || [];
 
-        lines = []
-        for idx, (uid, cnt) in enumerate(sorted_top, 1):
-            if idx == 1:
-                medal = "🥇"
-            elif idx == 2:
-                medal = "🥈"
-            elif idx == 3:
-                medal = "🥉"
-            else:
-                medal = f"#{idx}"
-            
-            lines.append(f"{medal} <@{uid}> ──> **{cnt}** Raids Won")
+        const filtered = Object.entries(stats).filter(([u, c]) => !blacklist.includes(u) && c > 0);
+        const sortedTop = filtered.sort((a, b) => b[1] - a[1]).slice(0, 50);
 
-        embeds = []
-        current_desc = ""
-        for line in lines:
-            if len(current_desc) + len(line) + 1 > 3900:
-                emb = discord.Embed(title="🏆 | Top Raid Participants", description=current_desc, color=EMBED_COLOR)
-                embeds.append(emb)
-                current_desc = line + "\n"
-            else:
-                current_desc += line + "\n"
-        
-        if current_desc:
-            emb = discord.Embed(title="🏆 | Top Raid Participants", description=current_desc, color=EMBED_COLOR)
-            embeds.append(emb)
+        if (sortedTop.length === 0) {
+            await interaction.reply({ content: "❌ | لا توجد أي بيانات لعرضها!", ephemeral: true });
+            return;
+        }
 
-        await interaction.response.send_message(embed=embeds[0], ephemeral=False)
-        for extra_emb in embeds[1:]:
-            await interaction.channel.send(embed=extra_emb)
+        const lines = sortedTop.map(([uid, cnt], idx) => {
+            let medal = `#${idx + 1}`;
+            if (idx === 0) medal = "🥇";
+            else if (idx === 1) medal = "🥈";
+            else if (idx === 2) medal = "🥉";
+            return `${medal} <@${uid}> ──> **${cnt}** Raids Won`;
+        });
 
-    @app_commands.command(name="raid-add", description="إضافة أو خصم عدد الرايدات لعضو معين")
-    async def raid_add(self, interaction: discord.Interaction, member: discord.Member, amount: int):
-        if interaction.user.id not in BYPASS_IDS and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ | ليس لديك صلاحية!", ephemeral=True)
-            return
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        
-        current = data[gid]["raider_stats"].get(str(member.id), 0)
-        new_total = current + amount
-        data[gid]["raider_stats"][str(member.id)] = new_total
-        save_raid_data(data)
-        
-        # ربط التحديث التلقائي للرتب عند استخدام أمر raid-add
-        stats_cog = interaction.client.get_cog("MemberStats")
-        if stats_cog:
-            await stats_cog.process_member_raid_update(interaction.guild, member, new_total)
+        const embeds = [];
+        let currentDesc = "";
+        for (const line of lines) {
+            if (currentDesc.length + line.length + 1 > 3900) {
+                embeds.push(new EmbedBuilder().setTitle("🏆 | Top Raid Participants").setDescription(currentDesc).setColor(EMBED_COLOR));
+                currentDesc = line + "\n";
+            } else {
+                currentDesc += line + "\n";
+            }
+        }
+        if (currentDesc) {
+            embeds.push(new EmbedBuilder().setTitle("🏆 | Top Raid Participants").setDescription(currentDesc).setColor(EMBED_COLOR));
+        }
 
-        await interaction.response.send_message(f"✅ | تمت إضافة `{amount}` رايد لـ {member.mention} وأصبح إجمالي رصيده: `{new_total}`", ephemeral=True)
-        await self.update_all_tops(gid, interaction.guild)
+        await interaction.reply({ embeds: [embeds[0]], ephemeral: false });
+        for (const extraEmb of embeds.slice(1)) {
+            await interaction.channel.send({ embeds: [extraEmb] });
+        }
+    },
 
-    @app_commands.command(name="raid-set", description="تعيين عدد الرايدات المباشر لعضو معين")
-    async def raid_set(self, interaction: discord.Interaction, member: discord.Member, amount: int):
-        if interaction.user.id not in BYPASS_IDS and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ | ليس لديك صلاحية!", ephemeral=True)
-            return
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        data.setdefault(gid, {"raider_stats": {}, "win_streak": 0, "roblox_users": {}, "member_countries": {}, "custom_avatars": {}, "blacklist": []})
-        
-        data[gid]["raider_stats"][str(member.id)] = amount
-        save_raid_data(data)
-        
-        # ربط التحديث التلقائي للرتب عند استخدام أمر raid-set
-        stats_cog = interaction.client.get_cog("MemberStats")
-        if stats_cog:
-            await stats_cog.process_member_raid_update(interaction.guild, member, amount)
+    async handleRaidAdd(interaction) {
+        if (!BYPASS_IDS.has(interaction.user.id) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            await interaction.reply({ content: "❌ | ليس لديك صلاحية!", ephemeral: true });
+            return;
+        }
+        const gid = interaction.guildId;
+        const member = interaction.options.getMember('member');
+        const amount = interaction.options.getInteger('amount');
+        const data = loadRaidData();
+        if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
 
-        await interaction.response.send_message(f"✅ | تم تعيين رصيد {member.mention} مباشرة إلى: `{amount}` رايد", ephemeral=True)
-        await self.update_all_tops(gid, interaction.guild)
+        const current = data[gid].raider_stats[member.id] || 0;
+        const newTotal = current + amount;
+        data[gid].raider_stats[member.id] = newTotal;
+        saveRaidData(data);
 
-    @app_commands.command(name="set-avatar-remove", description="حذف الصورة المخصصة لتوب معين وإزالتها")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_avatar_remove(self, interaction: discord.Interaction, top_number: int):
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        if gid in data and "custom_avatars" in data[gid]:
-            if str(top_number) in data[gid]["custom_avatars"]:
-                del data[gid]["custom_avatars"][str(top_number)]
-                save_raid_data(data)
-                await self.update_all_tops(gid, interaction.guild)
-                await interaction.response.send_message(f"✅ | تم إزالة الصورة المخصصة للتوب رقم `{top_number}` بنجاح.", ephemeral=True)
-                return
-        await interaction.response.send_message(f"❌ | لا توجد صورة مخصصة مسجلة للتوب رقم `{top_number}`.", ephemeral=True)
+        const statsCog = interaction.client.memberStatsCog;
+        if (statsCog && typeof statsCog.processMemberRaidUpdate === 'function') {
+            await statsCog.processMemberRaidUpdate(interaction.guild, member, newTotal);
+        }
 
-    @app_commands.command(name="raid-reset", description="تصفير النقاط")
-    async def raid_reset(self, interaction: discord.Interaction, member: discord.Member = None):
-        if interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("❌ | للمالك فقط!", ephemeral=True)
-            return
-        gid = str(interaction.guild_id)
-        data = load_raid_data()
-        if gid not in data:
-            await interaction.response.send_message("❌ | لا توجد بيانات!", ephemeral=True)
-            return
-        if member:
-            data[gid]["raider_stats"][str(member.id)] = 0
-            save_raid_data(data)
-            await self.update_all_tops(gid, interaction.guild)
-            await interaction.response.send_message(f"✅ | تم تصفير نقاط العضو", ephemeral=True)
-        else:
-            data[gid]["raider_stats"] = {}
-            data[gid]["win_streak"] = 0
-            data[gid]["custom_avatars"] = {}
-            save_raid_data(data)
-            await self.update_all_tops(gid, interaction.guild)
-            await interaction.response.send_message("✅ | تم تصفير السيرفر بالكامل.", ephemeral=True)
+        await interaction.reply({ content: `✅ | تمت إضافة \`${amount}\` رايد لـ ${member} وأصبح إجمالي رصيده: \`${newTotal}\``, ephemeral: true });
+        await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
+    },
 
-async def setup(bot):
-    await bot.add_cog(RaidSystemCog(bot))
+    async handleRaidSet(interaction) {
+        if (!BYPASS_IDS.has(interaction.user.id) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            await interaction.reply({ content: "❌ | ليس لديك صلاحية!", ephemeral: true });
+            return;
+        }
+        const gid = interaction.guildId;
+        const member = interaction.options.getMember('member');
+        const amount = interaction.options.getInteger('amount');
+        const data = loadRaidData();
+        if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
+
+        data[gid].raider_stats[member.id] = amount;
+        saveRaidData(data);
+
+        const statsCog = interaction.client.memberStatsCog;
+        if (statsCog && typeof statsCog.processMemberRaidUpdate === 'function') {
+            await statsCog.processMemberRaidUpdate(interaction.guild, member, amount);
+        }
+
+        await interaction.reply({ content: `✅ | تم تعيين رصيد ${member} مباشرة إلى: \`${amount}\` رايد`, ephemeral: true });
+        await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
+    },
+
+    async handleSetAvatarRemove(interaction) {
+        const gid = interaction.guildId;
+        const topNumber = interaction.options.getInteger('top_number');
+        const data = loadRaidData();
+        if (data[gid] && data[gid].custom_avatars && data[gid].custom_avatars[topNumber.toString()]) {
+            delete data[gid].custom_avatars[topNumber.toString()];
+            saveRaidData(data);
+            await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
+            await interaction.reply({ content: `✅ | تم إزالة الصورة المخصصة للتوب رقم \`${topNumber}\` بنجاح.`, ephemeral: true });
+            return;
+        }
+        await interaction.reply({ content: `❌ | لا توجد صورة مخصصة مسجلة للتوب رقم \`${topNumber}\`.`, ephemeral: true });
+    },
+
+    async handleRaidReset(interaction) {
+        if (interaction.user.id !== OWNER_ID) {
+            await interaction.reply({ content: "❌ | للمالك فقط!", ephemeral: true });
+            return;
+        }
+        const gid = interaction.guildId;
+        const member = interaction.options.getMember('member');
+        const data = loadRaidData();
+        if (!data[gid]) {
+            await interaction.reply({ content: "❌ | لا توجد بيانات!", ephemeral: true });
+            return;
+        }
+        if (member) {
+            data[gid].raider_stats[member.id] = 0;
+            saveRaidData(data);
+            await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
+            await interaction.reply({ content: `✅ | تم تصفير نقاط العضو`, ephemeral: true });
+        } else {
+            data[gid].raider_stats = {};
+            data[gid].win_streak = 0;
+            data[gid].custom_avatars = {};
+            saveRaidData(data);
+            await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
+            await interaction.reply({ content: "✅ | تم تصفير السيرفر بالكامل.", ephemeral: true });
+        }
+    }
+};
