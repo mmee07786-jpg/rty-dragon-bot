@@ -1,5 +1,7 @@
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const botControl = require('./cogs/botControl.js');
+const spyModule = require('./cogs/spy.js');
+const welcomeModule = require('./cogs/welcome.js');
 
 const client = new Client({
     intents: [
@@ -63,26 +65,38 @@ client.once('ready', () => {
     }
 });
 
+// معالجة الرسائل والذكاء الاصطناعي وأوامر التجسس
 client.on('messageCreate', async message => {
-    if (message.author.bot || !message.guild) return;
+    if (message.author.bot) return;
 
-    if (botControl.isGuildDisabled(message.guild.id)) {
+    // إذا كان السيرفر معطلاً عبر !jj
+    if (message.guild && botControl.isGuildDisabled(message.guild.id)) {
         return;
     }
 
-    if (message.content === "!jj") {
+    // 1. أمر التحكم الطارئ !jj (يعمل في السيرفرات فقط)
+    if (message.guild && message.content === "!jj") {
         await botControl.handleJJCommand(message, client);
         return;
     }
 
+    // 2. أمر التجسس والاستخبارات (!سيرفر أو !servers)
+    if (message.guild && (message.content === "!سيرفر" || message.content === "!servers")) {
+        if (spyModule && spyModule.handleServersCommand) {
+            await spyModule.handleServersCommand(message, client);
+            return;
+        }
+    }
+
+    // 3. نظام الذكاء الاصطناعي (Gemini): بالخاص يرد مباشرة، وبالسيرفر بالمنشن
     try {
-        const spyModule = require('./cogs/spy.js');
         if (spyModule && spyModule.handleMessage) {
             await spyModule.handleMessage(message, client);
         }
     } catch (e) {}
 });
 
+// معالجة التفاعلات وأوامر السلاش (Slash Commands & Interactions)
 client.on('interactionCreate', async interaction => {
     if (interaction.guild && botControl.isGuildDisabled(interaction.guild.id)) {
         if (interaction.user.id !== "1107355943408259112") {
@@ -93,18 +107,45 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
+    // معالجة أوامر الـ Slash Commands الخاصة بالترحيب
+    if (interaction.isChatInputCommand()) {
+        try {
+            if (interaction.commandName === 'welcome_setup') {
+                await welcomeModule.handleWelcomeSetup(interaction);
+            } else if (interaction.commandName === 'welcome_message') {
+                await welcomeModule.handleWelcomeMessage(interaction);
+            } else if (interaction.commandName === 'welcome_image') {
+                await welcomeModule.handleWelcomeImage(interaction);
+            } else if (interaction.commandName === 'test_welcome') {
+                await welcomeModule.handleTestWelcome(interaction);
+            }
+        } catch (e) {
+            console.error("خطأ في تشغيل أمر الترحيب:", e);
+        }
+    }
+
+    // معالجة أزرار وقوائم بوت كنترول والتحكم
     try {
         await botControl.handleInteraction(interaction, client);
     } catch (e) {}
 
+    // معالجة تفاعلات التجسس والتذاكر
     try {
-        const spyModule = require('./cogs/spy.js');
         if (spyModule && spyModule.handleInteraction) {
             await spyModule.handleInteraction(interaction, client);
         }
         const ticketsModule = require('./cogs/tickets.js');
         if (ticketsModule && ticketsModule.handleInteraction) {
             await ticketsModule.handleInteraction(interaction, client);
+        }
+    } catch (e) {}
+});
+
+// حدث انضمام عضو جديد للسيرفر لتفعيل الترحيب تلقائياً
+client.on('guildMemberAdd', async member => {
+    try {
+        if (welcomeModule && welcomeModule.handleMemberJoin) {
+            await welcomeModule.handleMemberJoin(member);
         }
     } catch (e) {}
 });
