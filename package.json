@@ -1,6 +1,16 @@
-discord.py
-aiohttp
-Pillow
-pymongo
-google-generativeai
-deep-translator
+{
+  "name": "rty-dragon-bot",
+  "version": "1.0.0",
+  "description": "Discord Management Bot in Node.js",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "mongoose": "^8.0.3",
+    "canvas": "^2.11.2",
+    "@google/genai": "^0.1.1",
+    "translate-google": "^1.5.0"
+  }
+}
