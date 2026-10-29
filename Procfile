@@ -1,1 +1,1 @@
-worker: python itzF18.py
+worker: node itzF18.js
