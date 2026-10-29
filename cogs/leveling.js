@@ -1,282 +1,385 @@
-import discord
-from discord.ext import commands, tasks
-from discord import app_commands
-import random
-import json
-import os
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-DATA_FILE = "level_data.json"
+const DATA_FILE = path.join(__dirname, '../level_data.json');
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return {}
-    return {}
-
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-def get_guild_settings(guild_id: str):
-    data = load_data()
-    if "guilds" not in data:
-        data["guilds"] = {}
-    
-    if guild_id not in data["guilds"]:
-        data["guilds"][guild_id] = {
-            "leveling_status": False,
-            "levels": {},
-            "top_channel": None,
-            "top_message": "🔥 | هؤلاء هم الأبطال الأكثر تفاعلاً لهذا الأسبوع !",
-            "level_channel": None,
-            "custom_level_message": "🎉 مبروك {member}! صعدت إلى **Level {level}** 🚀"
+function loadData() {
+    if (fs.existsSync(DATA_FILE)) {
+        try {
+            const data = fs.readFileSync(DATA_FILE, 'utf8');
+            return JSON.parse(data);
+        } catch (error) {
+            return {};
         }
-        save_data(data)
-    return data["guilds"][guild_id]
+    }
+    return {};
+}
 
-def update_guild_settings(guild_id: str, guild_data):
-    data = load_data()
-    if "guilds" not in data:
-        data["guilds"] = {}
-    data["guilds"][guild_id] = guild_data
-    save_data(data)
+function saveData(data) {
+    try {
+        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 4), 'utf8');
+    } catch (error) {
+        console.error("خطأ في حفظ بيانات التلفيل:", error);
+    }
+}
 
-class Leveling(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.weekly_leaderboard_loop.start()
+function getGuildSettings(guildId) {
+    const data = loadData();
+    if (!data.guilds) {
+        data.guilds = {};
+    }
+    
+    if (!data.guilds[guildId]) {
+        data.guilds[guildId] = {
+            leveling_status: false,
+            levels: {},
+            top_channel: null,
+            top_message: "🔥 | هؤلاء هم الأبطال الأكثر تفاعلاً لهذا الأسبوع !",
+            level_channel: null,
+            custom_level_message: "🎉 مبروك {member}! صعدت إلى **Level {level}** 🚀",
+            level_image_url: null
+        };
+        saveData(data);
+    }
+    return data.guilds[guildId];
+}
 
-    def cog_unload(self):
-        self.weekly_leaderboard_loop.cancel()
+function updateGuildSettings(guildId, guildData) {
+    const data = loadData();
+    if (!data.guilds) {
+        data.guilds = {};
+    }
+    data.guilds[guildId] = guildData;
+    saveData(data);
+}
 
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author.bot or not message.guild:
-            return
+module.exports = {
+    toggleLevelingCommand: new SlashCommandBuilder()
+        .setName('toggle-leveling')
+        .setDescription('[ خاص بالإدارة ] تفعيل أو إيقاف نظام التلفيل في هذا السيرفر فقط')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        guild_id = str(message.guild.id)
-        g_settings = get_guild_settings(guild_id)
+    rankCommand: new SlashCommandBuilder()
+        .setName('rank')
+        .setDescription('معرفة لفلك الحالي ونقاط الـ XP الخاصة بك في هذا السيرفر')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('العضو المراد فحص رانكه')),
 
-        # التحقق هل نظام التلفيل مفعل في هذا السيرفر بالذات أم لا
-        if not g_settings.get("leveling_status", False):
-            return
+    leaderboardCommand: new SlashCommandBuilder()
+        .setName('leaderboard')
+        .setDescription('عرض قائمة أفضل 10 أعضاء متفاعلين في هذا السيرفر'),
 
-        user_id = str(message.author.id)
-        if "levels" not in g_settings:
-            g_settings["levels"] = {}
+    setLevelChannelCommand: new SlashCommandBuilder()
+        .setName('set-level-channel')
+        .setDescription('[ خاص بالإدارة ] تحديد القناة المخصصة لإرسال إشعارات صعود الفلل لهذا السيرفر')
+        .addChannelOption(option =>
+            option.setName('channel')
+                .setDescription('اختر القناة المخصصة للفلل')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        if user_id not in g_settings["levels"]:
-            g_settings["levels"][user_id] = {"xp": 0, "level": 1}
+    disableLevelChannelCommand: new SlashCommandBuilder()
+        .setName('disable-level-channel')
+        .setDescription('[ خاص بالإدارة ] إلغاء قناة التلفيل المخصصة لتظهر الرسائل في نفس روم الدردشة')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        xp_gain = random.randint(15, 25)
-        user_data = g_settings["levels"][user_id]
-        user_data["xp"] += xp_gain
+    setLevelMessageCommand: new SlashCommandBuilder()
+        .setName('set-level-message')
+        .setDescription('[ خاص بالإدارة ] تعديل رسالة التلفيل الخاصة بهذا السيرفر (استخدم {member} و {lvl})')
+        .addStringOption(option =>
+            option.setName('message')
+                .setDescription('اكتب رسالة التلفيل الجديدة')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        xp_needed = user_data["level"] * 100
+    setLevelImageCommand: new SlashCommandBuilder()
+        .setName('set-level-image')
+        .setDescription('[ خاص بالإدارة ] تعيين رابط صورة إضافية تظهر مع رسالة صعود الفل')
+        .addStringOption(option =>
+            option.setName('image_url')
+                .setDescription('رابط الصورة المباشر')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        if user_data["xp"] >= xp_needed:
-            user_data["xp"] -= xp_needed
-            user_data["level"] += 1
-            new_level = user_data["level"]
-            
-            # تحديد القناة الخاصة بهذا السيرفر حصرياً
-            target_channel = message.channel
-            level_channel_id = g_settings.get("level_channel")
-            if level_channel_id:
-                custom_channel = message.guild.get_channel(level_channel_id)
-                if custom_channel:
-                    target_channel = custom_channel
+    setTopChannelCommand: new SlashCommandBuilder()
+        .setName('set-top-channel')
+        .setDescription('[ خاص بالإدارة ] تحديد قناة التوب الأسبوعي لهذا السيرفر')
+        .addChannelOption(option =>
+            option.setName('channel')
+                .setDescription('اختر القناة المخصصة')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-            msg_template = g_settings.get("custom_level_message", "🎉 مبروك {member}! صعدت إلى **Level {level}** 🚀")
-            final_msg = msg_template.replace("{member}", message.author.mention).replace("{level}", str(new_level))
+    disableTopChannelCommand: new SlashCommandBuilder()
+        .setName('disable-top-channel')
+        .setDescription('[ خاص بالإدارة ] إلغاء تفعيل قناة التوبات الأسبوعية لهذا السيرفر')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-            try:
-                await target_channel.send(final_msg)
-            except:
-                pass
-            
-        update_guild_settings(guild_id, g_settings)
+    setTopMessageCommand: new SlashCommandBuilder()
+        .setName('set-top-message')
+        .setDescription('[ خاص بالإدارة ] تخصيص رسالة التوب الأسبوعي لهذا السيرفر')
+        .addStringOption(option =>
+            option.setName('message')
+                .setDescription('اكتب نص الرسالة الجديد')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    @app_commands.command(name="toggle-leveling", description="[ خاص بالإدارة ] تفعيل أو إيقاف نظام التلفيل في هذا السيرفر فقط")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def toggle_leveling(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild_id)
-        g_settings = get_guild_settings(guild_id)
-        
-        current_status = g_settings.get("leveling_status", False)
-        new_status = not current_status
-        g_settings["leveling_status"] = new_status
-        update_guild_settings(guild_id, g_settings)
+    async handleMessage(message, client) {
+        if (message.author.bot || !message.guild) return;
 
-        if new_status:
-            await interaction.response.send_message("✅ | تم **تفعيل** نظام التلفيل بنجاح في هذا السيرفر فقط!", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ | تم **إيقاف وتعطيل** نظام التلفيل في هذا السيرفر فقط!", ephemeral=True)
+        const guildId = message.guild.id;
+        const gSettings = getGuildSettings(guildId);
 
-    @app_commands.command(name="rank", description="معرفة لفلك الحالي ونقاط الـ XP الخاصة بك في هذا السيرفر")
-    async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
-        await interaction.response.defer(ephemeral=False)
-        
-        target = member or interaction.user
-        guild_id = str(interaction.guild_id)
-        user_id = str(target.id)
+        if (!gSettings.leveling_status) return;
 
-        g_settings = get_guild_settings(guild_id)
-        levels_data = g_settings.get("levels", {})
+        const userId = message.author.id;
+        if (!gSettings.levels) gSettings.levels = {};
 
-        if user_id not in levels_data:
-            level = 1
-            xp = 0
-        else:
-            level = levels_data[user_id]["level"]
-            xp = levels_data[user_id]["xp"]
+        if (!gSettings.levels[userId]) {
+            gSettings.levels[userId] = { xp: 0, level: 1 };
+        }
 
-        xp_needed = level * 100
+        const xpGain = Math.floor(Math.random() * 11) + 15; // بين 15 و 25
+        gSettings.levels[userId].xp += xpGain;
 
-        embed = discord.Embed(
-            title=f"📊 | إحصائيات الرانك لـ {target.name}",
-            color=0x000000
-        )
-        embed.set_thumbnail(url=target.display_avatar.url)
-        embed.add_field(name="المستوى ( Level )", value=str(level), inline=True)
-        embed.add_field(name="النقاط ( XP )", value=f"{xp} / {xp_needed}", inline=True)
-        
-        await interaction.followup.send(embed=embed)
+        const userData = gSettings.levels[userId];
+        const xpNeeded = userData.level * 100;
 
-    @app_commands.command(name="leaderboard", description="عرض قائمة أفضل 10 أعضاء متفاعلين في هذا السيرفر")
-    async def leaderboard(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=False)
-        guild_id = str(interaction.guild_id)
+        if (userData.xp >= xpNeeded) {
+            userData.xp -= xpNeeded;
+            userData.level += 1;
+            const newLevel = userData.level;
 
-        g_settings = get_guild_settings(guild_id)
-        levels_data = g_settings.get("levels", {})
+            let targetChannel = message.channel;
+            const levelChannelId = gSettings.level_channel;
+            if (levelChannelId) {
+                const customChannel = message.guild.channels.cache.get(levelChannelId);
+                if (customChannel) {
+                    targetChannel = customChannel;
+                }
+            }
 
-        if not levels_data:
-            await interaction.followup.send("لا توجد بيانات تفاعل مسجلة في هذا السيرفر حتى الآن ! ❌")
-            return
+            const msgTemplate = gSettings.custom_level_message || "🎉 مبروك {member}! صعدت إلى **Level {level}** 🚀";
+            const finalMsg = msgTemplate
+                .replace(/\{member\}/g, message.author.toString())
+                .replace(/\{lvl\}/g, newLevel.toString())
+                .replace(/\{level\}/g, newLevel.toString());
 
-        sorted_users = sorted(
-            levels_data.items(),
-            key=lambda item: (item[1]["level"], item[1]["xp"]),
-            reverse=True
-        )[:10]
+            try {
+                const imageUrl = gSettings.level_image_url;
+                if (imageUrl) {
+                    const embed = new EmbedBuilder()
+                        .setDescription(finalMsg)
+                        .setImage(imageUrl)
+                        .setColor(0x000000);
+                    await targetChannel.send({ embeds: [embed] });
+                } else {
+                    await targetChannel.send({ content: finalMsg });
+                }
+            } catch (e) {}
+        }
 
-        description = ""
-        for index, (user_id, data) in enumerate(sorted_users, start=1):
-            user = interaction.guild.get_member(int(user_id))
-            name = user.mention if user else f"User ID: {user_id}"
-            description += f"**#{index}** | {name}\n ┗ Level: **{data['level']}** | XP: **{data['xp']}**\n\n"
+        updateGuildSettings(guildId, gSettings);
+    },
 
-        embed = discord.Embed(
-            title="🏆 | قائمة أفضل 10 متفاعلين في السيرفر",
-            description=description,
-            color=0x000000
-        )
-        embed.set_footer(text=f"Server: {interaction.guild.name}")
+    async handleToggleLeveling(interaction) {
+        const guildId = interaction.guild.id;
+        const gSettings = getGuildSettings(guildId);
 
-        await interaction.followup.send(embed=embed)
+        const currentStatus = gSettings.leveling_status || false;
+        const newStatus = !currentStatus;
+        gSettings.leveling_status = newStatus;
+        updateGuildSettings(guildId, gSettings);
 
-    @app_commands.command(name="set-level-channel", description="[ خاص بالإدارة ] تحديد القناة المخصصة لإرسال إشعارات صعود الفلل لهذا السيرفر")
-    @app_commands.describe(channel="اختر القناة المخصصة للفلل")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_level_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        guild_id = str(interaction.guild_id)
-        g_settings = get_guild_settings(guild_id)
-        g_settings["level_channel"] = channel.id
-        update_guild_settings(guild_id, g_settings)
-        await interaction.response.send_message(f"✅ | تم تعيين قناة إشعارات التلفيل في هذا السيرفر إلى {channel.mention} !", ephemeral=True)
+        if (newStatus) {
+            await interaction.reply({ content: "✅ | تم **تفعيل** نظام التلفيل بنجاح في هذا السيرفر فقط!", ephemeral: true });
+        } else {
+            await interaction.reply({ content: "❌ | تم **إيقاف وتعطيل** نظام التلفيل في هذا السيرفر فقط!", ephemeral: true });
+        }
+    },
 
-    @app_commands.command(name="disable-level-channel", description="[ خاص بالإدارة ] إلغاء قناة التلفيل المخصصة لتظهر الرسائل بنسس روم الدردشة")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def disable_level_channel(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild_id)
-        g_settings = get_guild_settings(guild_id)
-        g_settings["level_channel"] = None
-        update_guild_settings(guild_id, g_settings)
-        await interaction.response.send_message("✅ | تم إلغاء قناة التلفيل المخصصة في هذا السيرفر. ستعود الرسائل في نفس روم الدردشة.", ephemeral=True)
+    async handleRank(interaction) {
+        await interaction.deferReply({ ephemeral: false });
 
-    @app_commands.command(name="set-level-message", description="[ خاص بالإدارة ] تعديل رسالة التلفيل الخاصة بهذا السيرفر")
-    @app_commands.describe(message="اكتب رسالة التلفيل الجديدة")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_level_message(self, interaction: discord.Interaction, message: str):
-        guild_id = str(interaction.guild_id)
-        g_settings = get_guild_settings(guild_id)
-        g_settings["custom_level_message"] = message
-        update_guild_settings(guild_id, g_settings)
-        await interaction.response.send_message(f"✅ | تم تحديث رسالة التلفيل في هذا السيرفر!\n📝 النص الجديد: `{message}`", ephemeral=True)
+        const target = interaction.options.getUser('member') || interaction.user;
+        const guildId = interaction.guild.id;
+        const userId = target.id;
 
-    @app_commands.command(name="set-top-channel", description="[ خاص بالإدارة ] تحديد قناة التوب الأسبوعي لهذا السيرفر")
-    @app_commands.describe(channel="اختر القناة المخصصة")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_top_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        guild_id = str(interaction.guild_id)
-        g_settings = get_guild_settings(guild_id)
-        g_settings["top_channel"] = channel.id
-        update_guild_settings(guild_id, g_settings)
-        await interaction.response.send_message(f"✅ | تم تعيين قناة التوبات الأسبوعية في هذا السيرفر إلى {channel.mention} !", ephemeral=True)
+        const gSettings = getGuildSettings(guildId);
+        const levelsData = gSettings.levels || {};
 
-    @app_commands.command(name="disable-top-channel", description="[ خاص بالإدارة ] إلغاء تفعيل قناة التوبات الأسبوعية لهذا السيرفر")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def disable_top_channel(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild_id)
-        g_settings = get_guild_settings(guild_id)
-        g_settings["top_channel"] = None
-        update_guild_settings(guild_id, g_settings)
-        await interaction.response.send_message("✅ | تم إلغاء تفعيل قناة التوبات الأسبوعية في هذا السيرفر.", ephemeral=True)
+        let level = 1;
+        let xp = 0;
+        if (levelsData[userId]) {
+            level = levelsData[userId].level;
+            xp = levelsData[userId].xp;
+        }
 
-    @app_commands.command(name="set-top-message", description="[ خاص بالإدارة ] تخصيص رسالة التوب الأسبوعي لهذا السيرفر")
-    @app_commands.describe(message="اكتب نص الرسالة الجديد")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_top_message(self, interaction: discord.Interaction, message: str):
-        guild_id = str(interaction.guild_id)
-        g_settings = get_guild_settings(guild_id)
-        g_settings["top_message"] = message
-        update_guild_settings(guild_id, g_settings)
-        await interaction.response.send_message(f"✅ | تم حفظ رسالة التوب الجديدة لهذا السيرفر بنجاح !", ephemeral=True)
+        const xpNeeded = level * 100;
 
-    @tasks.loop(hours=168)
-    async def weekly_leaderboard_loop(self):
-        data = load_data()
-        guilds_data = data.get("guilds", {})
+        const embed = new EmbedBuilder()
+            .setTitle(`📊 | إحصائيات الرانك لـ ${target.username}`)
+            .setColor(0x000000)
+            .setThumbnail(target.displayAvatarURL())
+            .addFields(
+                { name: "المستوى ( Level )", value: String(level), inline: true },
+                { name: "النقاط ( XP )", value: `${xp} / ${xpNeeded}`, inline: true }
+            );
 
-        for guild_id, g_settings in guilds_data.items():
-            if not g_settings.get("leveling_status", False):
-                continue
+        await interaction.followup({ embeds: [embed] });
+    },
 
-            guild = self.bot.get_guild(int(guild_id))
-            if not guild:
-                continue
+    async handleLeaderboard(interaction) {
+        await interaction.deferReply({ ephemeral: false });
+        const guildId = interaction.guild.id;
 
-            levels_data = g_settings.get("levels", {})
-            top_channel_id = g_settings.get("top_channel")
-            top_msg = g_settings.get("top_message", "🔥 | هؤلاء هم الأبطال الأكثر تفاعلاً لهذا الأسبوع !")
+        const gSettings = getGuildSettings(guildId);
+        const levelsData = gSettings.levels || {};
 
-            if levels_data and top_channel_id:
-                top_user_id = max(levels_data, key=lambda uid: (levels_data[uid]["level"], levels_data[uid]["xp"]))
-                top_member = guild.get_member(int(top_user_id))
-                
-                if top_member:
-                    channel = guild.get_channel(top_channel_id)
-                    if channel:
-                        embed = discord.Embed(
-                            title="👑 | التوب الأسبوعي للمتفاعلين",
-                            description=f"{top_msg}\n\n🏆 المركز الأول لهذا الأسبوع: {top_member.mention} 🎯",
-                            color=0x000000
-                        )
-                        embed.set_thumbnail(url=top_member.display_avatar.url)
-                        await channel.send(embed=embed)
-                
-                # تصفير رتب هذا السيرفر فقط للأسبوع الجديد
-                g_settings["levels"] = {}
-                update_guild_settings(guild_id, g_settings)
+        if (Object.keys(levelsData).length === 0) {
+            await interaction.followup.send("لا توجد بيانات تفاعل مسجلة في هذا السيرفر حتى الآن ! ❌");
+            return;
+        }
 
-    @weekly_leaderboard_loop.before_loop
-    async def before_weekly_loop(self):
-        await self.bot.wait_until_ready()
+        const sortedUsers = Object.entries(levelsData)
+            .sort((a, b) => (b[1].level - a[1].level) || (b[1].xp - a[1].xp))
+            .slice(0, 10);
 
-async def setup(bot):
-    await bot.add_cog(Leveling(bot))
+        let description = "";
+        sortedUsers.forEach(([userId, data], index) => {
+            description += `**#${index + 1}** | <@${userId}>\n ┗ Level: **${data.level}** | XP: **${data.xp}**\n\n`;
+        });
 
+        const embed = new EmbedBuilder()
+            .setTitle("🏆 | قائمة أفضل 10 متفاعلين في السيرفر")
+            .setDescription(description)
+            .setColor(0x000000)
+            .setFooter({ text: `Server: ${interaction.guild.name}` });
+
+        await interaction.followup.send({ embeds: [embed] });
+    },
+
+    async handleSetLevelChannel(interaction) {
+        const guildId = interaction.guild.id;
+        const channel = interaction.options.getChannel('channel');
+        const gSettings = getGuildSettings(guildId);
+
+        gSettings.level_channel = channel.id;
+        updateGuildSettings(guildId, gSettings);
+
+        await interaction.reply({ content: `✅ | تم تعيين قناة إشعارات التلفيل في هذا السيرفر إلى ${channel} !`, ephemeral: true });
+    },
+
+    async handleDisableLevelChannel(interaction) {
+        const guildId = interaction.guild.id;
+        const gSettings = getGuildSettings(guildId);
+
+        gSettings.level_channel = null;
+        updateGuildSettings(guildId, gSettings);
+
+        await interaction.reply({ content: "✅ | تم إلغاء قناة التلفيل المخصصة في هذا السيرفر. ستعود الرسائل في نفس روم الدردشة.", ephemeral: true });
+    },
+
+    async handleSetLevelMessage(interaction) {
+        const guildId = interaction.guild.id;
+        const messageText = interaction.options.getString('message');
+        const gSettings = getGuildSettings(guildId);
+
+        gSettings.custom_level_message = messageText;
+        updateGuildSettings(guildId, gSettings);
+
+        await interaction.reply({ content: `✅ | تم تحديث رسالة التلفيل في هذا السيرفر!\n📝 النص الجديد: \`${messageText}\``, ephemeral: true });
+    },
+
+    async handleSetLevelImage(interaction) {
+        const guildId = interaction.guild.id;
+        const imageUrl = interaction.options.getString('image_url');
+        const gSettings = getGuildSettings(guildId);
+
+        gSettings.level_image_url = imageUrl;
+        updateGuildSettings(guildId, gSettings);
+
+        await interaction.reply({ content: `✅ | تم تعيين صورة إشعارات التلفيل بنجاح!`, ephemeral: true });
+    },
+
+    async handleSetTopChannel(interaction) {
+        const guildId = interaction.guild.id;
+        const channel = interaction.options.getChannel('channel');
+        const gSettings = getGuildSettings(guildId);
+
+        gSettings.top_channel = channel.id;
+        updateGuildSettings(guildId, gSettings);
+
+        await interaction.reply({ content: `✅ | تم تعيين قناة التوبات الأسبوعية في هذا السيرفر إلى ${channel} !`, ephemeral: true });
+    },
+
+    async handleDisableTopChannel(interaction) {
+        const guildId = interaction.guild.id;
+        const gSettings = getGuildSettings(guildId);
+
+        gSettings.top_channel = null;
+        updateGuildSettings(guildId, gSettings);
+
+        await interaction.reply({ content: "✅ | تم إلغاء تفعيل قناة التوبات الأسبوعية لهذا السيرفر.", ephemeral: true });
+    },
+
+    async handleSetTopMessage(interaction) {
+        const guildId = interaction.guild.id;
+        const messageText = interaction.options.getString('message');
+        const gSettings = getGuildSettings(guildId);
+
+        gSettings.top_message = messageText;
+        updateGuildSettings(guildId, gSettings);
+
+        await interaction.reply({ content: `✅ | تم حفظ رسالة التوب الجديدة لهذا السيرفر بنجاح !`, ephemeral: true });
+    },
+
+    // دالة حلقة التوب الأسبوعي التي تعمل كل 168 ساعة (7 أيام)
+    startWeeklyLoop(client) {
+        setInterval(async () => {
+            const data = loadData();
+            const guildsData = data.guilds || {};
+
+            for (const [guildId, gSettings] of Object.entries(guildsData)) {
+                if (!gSettings.leveling_status) continue;
+
+                const guild = client.guilds.cache.get(guildId);
+                if (!guild) continue;
+
+                const levelsData = gSettings.levels || {};
+                const topChannelId = gSettings.top_channel;
+                const topMsg = gSettings.top_message || "🔥 | هؤلاء هم الأبطال الأكثر تفاعلاً لهذا الأسبوع !";
+
+                if (Object.keys(levelsData).length > 0 && topChannelId) {
+                    const topUserId = Object.keys(levelsData).reduce((maxId, currentId) => {
+                        const current = levelsData[currentId];
+                        const max = levelsData[maxId];
+                        if (current.level > max.level || (current.level === max.level && current.xp > max.xp)) {
+                            return currentId;
+                        }
+                        return maxId;
+                    });
+
+                    const topMember = await guild.members.fetch(topUserId).catch(() => null);
+                    if (topMember) {
+                        const channel = guild.channels.cache.get(topChannelId);
+                        if (channel) {
+                            const embed = new EmbedBuilder()
+                                .setTitle("👑 | التوب الأسبوعي للمتفاعلين")
+                                .setDescription(`${topMsg}\n\n🏆 المركز الأول لهذا الأسبوع: ${topMember} 🎯`)
+                                .setColor(0x000000)
+                                .setThumbnail(topMember.displayAvatarURL());
+                            
+                            await channel.send({ embeds: [embed] }).catch(() => {});
+                        }
+                    }
+
+                    gSettings.levels = {};
+                    updateGuildSettings(guildId, gSettings);
+                }
+            }
+        }, 168 * 60 * 60 * 1000);
+    }
+};
