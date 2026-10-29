@@ -1,38 +1,69 @@
-import os
-from pymongo import MongoClient
+const { MongoClient } = require('mongodb');
 
-MONGO_URI = "mongodb+srv://esramer2009_db_user:@cluster0.fkw1q0y.mongodb.net/?appName=Cluster0"
+// استخدام نفس رابط الاتصال بقاعدة البيانات الخاص بك
+const MONGO_URI = "mongodb+srv://esramer2009_db_user:@cluster0.fkw1q0y.mongodb.net/?appName=Cluster0";
 
-client = MongoClient(MONGO_URI)
-db = client["discord_bot_db"]
+const client = new MongoClient(MONGO_URI);
+let db, settings_collection, economy_collection;
 
-settings_collection = db["guild_settings"]
-economy_collection = db["economy_data"]
+async function connectDB() {
+    if (!db) {
+        await client.connect();
+        db = client.db("discord_bot_db");
+        settings_collection = db.collection("guild_settings");
+        economy_collection = db.collection("economy_data");
+    }
+}
 
-def get_guild_setting(guild_id, key, default=None):
-    guild_id = str(guild_id)
-    doc = settings_collection.find_one({"guild_id": guild_id})
-    if doc and key in doc:
-        return doc[key]
-    return default
+async function get_guild_setting(guild_id, key, default_value = null) {
+    await connectDB();
+    guild_id = String(guild_id);
+    const doc = await settings_collection.findOne({ guild_id: guild_id });
+    if (doc && key in doc) {
+        return doc[key];
+    }
+    return default_value;
+}
 
-def set_guild_setting(guild_id, key, value):
-    guild_id = str(guild_id)
-    settings_collection.update_one(
-        {"guild_id": guild_id},
-        {"$set": {key: value}},
-        upsert=True
-    )
+async function set_guild_setting(guild_id, key, value) {
+    await connectDB();
+    guild_id = String(guild_id);
+    await settings_collection.updateOne(
+        { guild_id: guild_id },
+        { $set: { [key]: value } },
+        { upsert: true }
+    );
+}
 
-def load_data():
-    doc = economy_collection.find_one({"_id": "global_economy"})
-    if not doc:
-        return {"balances": {}, "shops": {}}
-    return {"balances": doc.get("balances", {}), "shops": doc.get("shops", {})}
+async function load_data() {
+    await connectDB();
+    const doc = await economy_collection.findOne({ _id: "global_economy" });
+    if (!doc) {
+        return { balances: {}, shops: {} };
+    }
+    return {
+        balances: doc.balances || {},
+        shops: doc.shops || {}
+    };
+}
 
-def save_data(data):
-    economy_collection.update_one(
-        {"_id": "global_economy"},
-        {"$set": {"balances": data.get("balances", {}), "shops": data.get("shops", {})}},
-        upsert=True
-    )
+async function save_data(data) {
+    await connectDB();
+    await economy_collection.updateOne(
+        { _id: "global_economy" },
+        {
+            $set: {
+                balances: data.balances || {},
+                shops: data.shops || {}
+            }
+        },
+        { upsert: true }
+    );
+}
+
+module.exports = {
+    get_guild_setting,
+    set_guild_setting,
+    load_data,
+    save_data
+};
