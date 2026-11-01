@@ -57,7 +57,6 @@ class RobloxTopAvatarModal extends ModalBuilder {
     }
 }
 
-// النافذة الموحدة المحدثة مع خانة إدخال رابط الصورة (Media Link)
 class RaidEndUnifiedModal extends ModalBuilder {
     constructor() {
         super();
@@ -114,7 +113,9 @@ module.exports = {
     },
 
     async handleRaidUnifiedSubmit(interaction) {
+        // الاستجابة الفورية المؤجلة لمنع خطأ مهلة ديسكورد
         await interaction.deferReply({ ephemeral: true });
+
         const gid = interaction.guildId;
         const data = loadRaidData();
         if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
@@ -167,7 +168,7 @@ module.exports = {
         emb.setFooter({ text: `Ended by ${interaction.user.tag} | VLX` });
 
         await interaction.channel.send({ content: "🏁 **Raid Report:**", embeds: [emb] });
-        await interaction.followup({ content: "✅ | تم تسجيل الرايد وإضافة النقاط بنجاح!", ephemeral: true });
+        await interaction.editReply({ content: "✅ | تم تسجيل الرايد وإضافة النقاط وتحديث اللوحات بنجاح تام!" });
         
         await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
     },
@@ -242,7 +243,7 @@ module.exports = {
 
     setAvatarRemoveCommand: new SlashCommandBuilder()
         .setName('set-avatar-remove')
-        .setDescription('حذف الصورة المخصصة لتوب معين وإزالتها')
+        .setDescription('حذف الصورة المخصصة للتوب معين وإزالتها')
         .addIntegerOption(o => o.setName('top_number').setDescription('رقم التوب').setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
