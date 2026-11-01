@@ -57,30 +57,55 @@ class RobloxTopAvatarModal extends ModalBuilder {
     }
 }
 
-class RaidEndUnifiedModal extends ModalBuilder {
+// النافذة الأولى (النتائج الأساسية للرايد)
+class RaidEndInfoModal extends ModalBuilder {
     constructor() {
         super();
-        this.setTitle("🏁 | Conclude Raid & Record Results").setCustomId("raid_end_unified_modal");
+        this.setTitle("🏁 | Conclude Raid & Record Results").setCustomId("raid_end_info_modal");
 
         const raidNumber = new TextInputBuilder().setCustomId("raid_number").setLabel("RAID Number").setStyle(TextInputStyle.Short).setRequired(true);
         const enemy = new TextInputBuilder().setCustomId("enemy").setLabel("ENEMY").setStyle(TextInputStyle.Short).setRequired(true);
         const ally = new TextInputBuilder().setCustomId("ally").setLabel("ALLY").setStyle(TextInputStyle.Short).setRequired(true);
         const duration = new TextInputBuilder().setCustomId("duration").setLabel("DURATION").setStyle(TextInputStyle.Short).setRequired(true);
-        const mvpsInput = new TextInputBuilder().setCustomId("mvps_input").setLabel("MVPs (منشنات الأعضاء)").setStyle(TextInputStyle.Paragraph).setRequired(true);
-        const mediaLinks = new TextInputBuilder().setCustomId("media_links").setLabel("Media Link (رابط الصورة / Proof)").setStyle(TextInputStyle.Short).setRequired(false);
+        const statusReason = new TextInputBuilder().setCustomId("status_reason").setLabel("STATUS").setStyle(TextInputStyle.Short).setRequired(true);
 
         this.addComponents(
             new ActionRowBuilder().addComponents(raidNumber),
             new ActionRowBuilder().addComponents(enemy),
             new ActionRowBuilder().addComponents(ally),
             new ActionRowBuilder().addComponents(duration),
-            new ActionRowBuilder().addComponents(mvpsInput),
-            new ActionRowBuilder().addComponents(mediaLinks)
+            new ActionRowBuilder().addComponents(statusReason)
         );
     }
 }
 
+// النافذة الثانية (المنشنات وروابط الإثبات)
+class RaidSubmitModal extends ModalBuilder {
+    constructor(rn, en, al, dur, st) {
+        super();
+        this.setTitle("👥 | MVPs & Media").setCustomId(`raid_submit_modal_${rn}_${en}_${al}_${dur}_${st}`);
+        this.rn = rn; this.en = en; this.al = al; this.dur = dur; this.st = st;
+
+        const mvpsInput = new TextInputBuilder()
+            .setCustomId("mvps_input")
+            .setLabel("MVPs (منشنات الأعضاء)")
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true);
+
+        const mediaLinks = new TextInputBuilder()
+            .setCustomId("media_links")
+            .setLabel("Media Link (رابط الصورة / Proof)")
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(false);
+
+        this.addComponents(new ActionRowBuilder().addComponents(mvpsInput), new ActionRowBuilder().addComponents(mediaLinks));
+    }
+}
+
 module.exports = {
+    RaidSubmitModal,
+    RaidEndInfoModal,
+
     async handleRobloxTopAvatarSubmit(interaction) {
         const posVal = interaction.fields.getTextInputValue("top_position").trim();
         if (!/^\d+$/.test(posVal)) {
@@ -112,10 +137,8 @@ module.exports = {
         await interaction.reply({ content: `✅ | تم تعيين وتحديث صورة التوب رقم \`${num}\` بنجاح وتطبيقها تلقائياً على اللوحة!`, ephemeral: true });
     },
 
-    async handleRaidUnifiedSubmit(interaction) {
-        // الاستجابة الفورية المؤجلة لمنع خطأ مهلة ديسكورد
+    async handleRaidSubmitModal(interaction, rn, en, al, dur, st) {
         await interaction.deferReply({ ephemeral: true });
-
         const gid = interaction.guildId;
         const data = loadRaidData();
         if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
@@ -123,10 +146,6 @@ module.exports = {
         data[gid].win_streak = (data[gid].win_streak || 0) + 1;
         const streak = data[gid].win_streak;
 
-        const rn = interaction.fields.getTextInputValue("raid_number");
-        const en = interaction.fields.getTextInputValue("enemy");
-        const al = interaction.fields.getTextInputValue("ally");
-        const dur = interaction.fields.getTextInputValue("duration");
         const mvpsText = interaction.fields.getTextInputValue("mvps_input");
         const mediaText = interaction.fields.getTextInputValue("media_links");
 
@@ -149,8 +168,7 @@ module.exports = {
 
         saveRaidData(data);
 
-        let content = `╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤${rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤${en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤${al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤${dur}\n\n**𝐒𝐓𝐀𝐓𝐔𝐒:**\n╰➤Win\n\n**𝐌𝐕𝐏𝐒:**\n╰➤ ${mvpsText}\n\n`;
-        
+        let content = `╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤${rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤${en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤${al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤${dur}\n\n**𝐒𝐓𝐀𝐓𝐔𝐒:**\n╰➤${st}\n\n**𝐌𝐕𝐏𝐒:**\n╰➤ ${mvpsText}\n\n`;
         let imgUrl = GIF_BANNER_URL;
         const mval = mediaText ? mediaText.trim() : "";
         if (mval && mval.toLowerCase() !== "skip") {
@@ -160,7 +178,6 @@ module.exports = {
                 content += `**𝐏𝐑𝐎𝐎𝐅:**\n╰➤ ${mval}\n\n`;
             }
         }
-
         content += `🔥 **Win Streak:** \`${streak} in a row\`\n\n╰────────────────╯`;
 
         const emb = new EmbedBuilder().setColor(EMBED_COLOR).setDescription(content);
@@ -369,7 +386,7 @@ module.exports = {
 
     async handleEndRaid(interaction) {
         if (BYPASS_IDS.has(interaction.user.id)) {
-            await interaction.showModal(new RaidEndUnifiedModal());
+            await interaction.showModal(new RaidEndInfoModal());
             return;
         }
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
@@ -385,7 +402,7 @@ module.exports = {
             return;
         }
         adminCooldows.set(gid, now);
-        await interaction.showModal(new RaidEndUnifiedModal());
+        await interaction.showModal(new RaidEndInfoModal());
     },
 
     async handleSetRoblox(interaction) {
@@ -540,30 +557,41 @@ module.exports = {
         await interaction.reply({ content: `❌ | لا توجد صورة مخصصة مسجلة للتوب رقم \`${topNumber}\`.`, ephemeral: true });
     },
 
-    async handleRaidReset(interaction) {
-        if (!BYPASS_IDS.has(interaction.user.id)) {
-            await interaction.reply({ content: "❌ | للمالك فقط!", ephemeral: true });
-            return;
-        }
-        const gid = interaction.guildId;
-        const member = interaction.options.getMember('member');
-        const data = loadRaidData();
-        if (!data[gid]) {
-            await interaction.reply({ content: "❌ | لا توجد بيانات!", ephemeral: true });
-            return;
-        }
-        if (member) {
-            data[gid].raider_stats[member.id] = 0;
-            saveRaidData(data);
-            await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
-            await interaction.reply({ content: `✅ | تم تصفير نقاط العضو`, ephemeral: true });
-        } else {
-            data[gid].raider_stats = {};
-            data[gid].win_streak = 0;
-            data[gid].custom_avatars = {};
-            saveRaidData(data);
-            await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
-            await interaction.reply({ content: "✅ | تم تصفير السيرفر بالكامل.", ephemeral: true });
+---
+
+ولكي تتصل النافذة الأولى بالنافذة الثانية بدون أي مشاكل، تأكد أن جزء معالجة الـ Modals في ملف **`index.js`** يحتوي على هذا الترتيب الصحيح تماماً:
+
+```javascript
+    if (interaction.isModalSubmit()) {
+        try {
+            if (interaction.customId === 'raid_start_modal') {
+                const serverLink = interaction.fields.getTextInputValue('server_link');
+                const difficulty = interaction.fields.getTextInputValue('difficulty');
+                const targets = interaction.fields.getTextInputValue('targets');
+                const counts = interaction.fields.getTextInputValue('counts');
+                const region = interaction.fields.getTextInputValue('region');
+                await raidStartModule.handleRaidStartModalSubmit(interaction, serverLink, difficulty, targets, counts, region);
+            } else if (interaction.customId === 'raid_end_info_modal') {
+                const rn = interaction.fields.getTextInputValue('raid_number');
+                const en = interaction.fields.getTextInputValue('enemy');
+                const al = interaction.fields.getTextInputValue('ally');
+                const dur = interaction.fields.getTextInputValue('duration');
+                const st = interaction.fields.getTextInputValue('status_reason');
+
+                // فتح النافذة الثانية فوراً بدون تأخير وبدون أخطاء
+                await interaction.showModal(new raidEndModule.RaidSubmitModal(rn, en, al, dur, st));
+            } else if (interaction.customId.startsWith('raid_submit_modal_')) {
+                const parts = interaction.customId.split('_');
+                const rn = parts[3];
+                const en = parts[4];
+                const al = parts[5];
+                const dur = parts[6];
+                const st = parts.slice(7).join('_');
+                await raidEndModule.handleRaidSubmitModal(interaction, rn, en, al, dur, st);
+            } else if (interaction.customId === 'roblox_top_avatar_modal') {
+                await raidEndModule.handleRobloxTopAvatarSubmit(interaction);
+            }
+        } catch (e) {
+            console.error("خطأ في معالجة Modal:", e);
         }
     }
-};
