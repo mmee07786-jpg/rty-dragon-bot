@@ -1,169 +1,185 @@
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
-const botControl = require('./cogs/botControl.js');
-const spyModule = require('./cogs/spy.js');
-const welcomeModule = require('./cogs/welcome.js');
-const leaveModule = require('./cogs/leave.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildModeration,
-        GatewayIntentBits.GuildEmojisAndStickers,
-        GatewayIntentBits.GuildIntegrations,
-        GatewayIntentBits.GuildWebhooks,
-        GatewayIntentBits.GuildInvites,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildMessageTyping,
-        GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.DirectMessageReactions,
-        GatewayIntentBits.DirectMessageTyping,
-        GatewayIntentBits.MessageContent
-    ]
-});
+const DATA_FILE = path.join(__dirname, '../leave_data.json');
 
-client.commands = new Collection();
-
-client.once('ready', () => {
-    console.log(`البوت جاهز الان ويعمل باسم ${client.user.tag} (ID: ${client.user.id})`);
-
-    const modulesList = [
-        "admin",
-        "automod",
-        "autoroles",
-        "backup",
-        "boost",
-        "botControl",
-        "clear",
-        "economy",
-        "joinMessage",
-        "leave",
-        "leveling",
-        "nukeServer",
-        "owner_override",
-        "owner_tools",
-        "raid_end",
-        "raid_start",
-        "roblox",
-        "spy",
-        "tickets",
-        "translator",
-        "welcome"
-    ];
-
-    for (const modName of modulesList) {
+function loadLeaveData() {
+    if (fs.existsSync(DATA_FILE)) {
         try {
-            require(`./cogs/${modName}.js`);
-            console.log(`✅ تم تحميل الملف بنجاح (cogs/${modName}.js)`);
+            return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
         } catch (error) {
-            console.log(`❌ فشل تحميل الملف (cogs/${modName}.js) : ${error.message}`);
+            return {};
         }
     }
-});
+    return {};
+}
 
-// معالجة الرسائل والذكاء الاصطناعي وأوامر التجسس
-client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-
-    if (message.guild && botControl.isGuildDisabled(message.guild.id)) {
-        return;
-    }
-
-    if (message.guild && message.content === "!jj") {
-        await botControl.handleJJCommand(message, client);
-        return;
-    }
-
-    if (message.guild && message.content === "!spy") {
-        if (spyModule && spyModule.handleServersCommand) {
-            await spyModule.handleServersCommand(message, client);
-            return;
-        }
-    }
-
+function saveLeaveData(data) {
     try {
-        if (spyModule && spyModule.handleMessage) {
-            await spyModule.handleMessage(message, client);
-        }
-    } catch (e) {}
-});
-
-// معالجة التفاعلات وأوامر السلاش (Slash Commands & Interactions)
-client.on('interactionCreate', async interaction => {
-    if (interaction.guild && botControl.isGuildDisabled(interaction.guild.id)) {
-        if (interaction.user.id !== "1107355943408259112") {
-            if (interaction.isRepliable()) {
-                await interaction.reply({ content: "❌ | هذا البوت معطل حالياً في هذا السيرفر بأمر من الإدارة.", ephemeral: true }).catch(() => {});
-            }
-            return;
-        }
+        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 4), 'utf8');
+    } catch (error) {
+        console.error("خطأ في حفظ بيانات المغادرة:", error);
     }
+}
 
-    // معالجة أوامر الـ Slash Commands
-    if (interaction.isChatInputCommand()) {
+function getGuildLeaveData(guildId) {
+    const data = loadLeaveData();
+    if (!data[guildId]) {
+        data[guildId] = {
+            channel_id: null,
+            message: "مع السلامة {member}، ننتظر عودتك يوماً ما.",
+            image_url: null
+        };
+    }
+    return data[guildId];
+}
+
+function updateGuildLeaveData(guildId, guildData) {
+    const data = loadLeaveData();
+    data[guildId] = guildData;
+    saveLeaveData(data);
+}
+
+module.exports = {
+    leaveSetupCommand: new SlashCommandBuilder()
+        .setName('leave_setup')
+        .setDescription('تعيين روم رسائل المغادرة لهذا السيرفر')
+        .addChannelOption(option =>
+            option.setName('channel')
+                .setDescription('روم المغادرة')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    leaveMessageCommand: new SlashCommandBuilder()
+        .setName('leave_message')
+        .setDescription('تعديل رسالة المغادرة لهذا السيرفر')
+        .addStringOption(option =>
+            option.setName('message')
+                .setDescription('الرسالة الجديدة')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    leaveImageCommand: new SlashCommandBuilder()
+        .setName('leave_image')
+        .setDescription('تعديل صورة المغادرة لهذا السيرفر')
+        .addStringOption(option =>
+            option.setName('image_url')
+                .setDescription('رابط الصورة')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    testLeaveCommand: new SlashCommandBuilder()
+        .setName('test_leave')
+        .setDescription('تجربة رسالة المغادرة لنفسك')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    async handleLeaveSetup(interaction) {
         try {
-            // أوامر الترحيب
-            if (interaction.commandName === 'welcome_setup') {
-                await welcomeModule.handleWelcomeSetup(interaction);
-            } else if (interaction.commandName === 'welcome_message') {
-                await welcomeModule.handleWelcomeMessage(interaction);
-            } else if (interaction.commandName === 'welcome_image') {
-                await welcomeModule.handleWelcomeImage(interaction);
-            } else if (interaction.commandName === 'test_welcome') {
-                await welcomeModule.handleTestWelcome(interaction);
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
             }
-            // أوامر المغادرة (الجديدة)
-            else if (interaction.commandName === 'leave_setup') {
-                await leaveModule.handleLeaveSetup(interaction);
-            } else if (interaction.commandName === 'leave_message') {
-                await leaveModule.handleLeaveMessage(interaction);
-            } else if (interaction.commandName === 'leave_image') {
-                await leaveModule.handleLeaveImage(interaction);
-            } else if (interaction.commandName === 'test_leave') {
-                await leaveModule.handleTestLeave(interaction);
-            }
+            const guildId = interaction.guildId;
+            const channel = interaction.options.getChannel('channel');
+
+            const guildData = getGuildLeaveData(guildId);
+            guildData.channel_id = channel.id;
+            updateGuildLeaveData(guildId, guildData);
+
+            await interaction.editReply({ content: `✅ تم ضبط روم المغادرة بنجاح في هذا السيرفر: ${channel}` });
         } catch (e) {
-            console.error("خطأ في تشغيل أمر السلاش:", e);
+            console.error("خطأ في leave_setup:", e);
+        }
+    },
+
+    async handleLeaveMessage(interaction) {
+        try {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
+            }
+            const guildId = interaction.guildId;
+            const messageText = interaction.options.getString('message');
+
+            const guildData = getGuildLeaveData(guildId);
+            guildData.message = messageText;
+            updateGuildLeaveData(guildId, guildData);
+
+            await interaction.editReply({ content: "✅ تم تحديث رسالة المغادرة في هذا السيرفر بنجاح!" });
+        } catch (e) {
+            console.error("خطأ في leave_message:", e);
+        }
+    },
+
+    async handleLeaveImage(interaction) {
+        try {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
+            }
+            const guildId = interaction.guildId;
+            const imageUrl = interaction.options.getString('image_url');
+
+            const guildData = getGuildLeaveData(guildId);
+            guildData.image_url = imageUrl;
+            updateGuildLeaveData(guildId, guildData);
+
+            await interaction.editReply({ content: "✅ تم تحديث صورة المغادرة في هذا السيرفر بنجاح!" });
+        } catch (e) {
+            console.error("خطأ في leave_image:", e);
+        }
+    },
+
+    async handleTestLeave(interaction) {
+        try {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
+            }
+            const guildId = interaction.guildId;
+            const guildData = getGuildLeaveData(guildId);
+
+            const formattedMsg = guildData.message.replace(/\{member\}/g, interaction.user.toString());
+            const embed = new EmbedBuilder()
+                .setDescription(formattedMsg)
+                .setColor(0xFF0000);
+
+            if (guildData.image_url) {
+                embed.setImage(guildData.image_url);
+            }
+
+            await interaction.editReply({ content: " تجربة رسالة المغادرة:", embeds: [embed] });
+        } catch (e) {
+            console.error("خطأ في test_leave:", e);
+        }
+    },
+
+    async handleMemberRemove(member) {
+        const guildId = member.guild.id;
+        const guildData = getGuildLeaveData(guildId);
+
+        const channelId = guildData.channel_id;
+        if (!channelId) return;
+
+        let channel = member.guild.channels.cache.get(channelId);
+        if (!channel) {
+            try {
+                channel = await member.guild.channels.fetch(channelId);
+            } catch (e) {
+                return;
+            }
+        }
+
+        if (channel) {
+            const formattedMsg = guildData.message.replace(/\{member\}/g, member.toString());
+            const embed = new EmbedBuilder()
+                .setDescription(formattedMsg)
+                .setColor(0xFF0000);
+
+            if (guildData.image_url) {
+                embed.setImage(guildData.image_url);
+            }
+
+            try {
+                await channel.send({ embeds: [embed] });
+            } catch (e) {}
         }
     }
-
-    try {
-        await botControl.handleInteraction(interaction, client);
-    } catch (e) {}
-
-    try {
-        if (spyModule && spyModule.handleInteraction) {
-            await spyModule.handleInteraction(interaction, client);
-        }
-        const ticketsModule = require('./cogs/tickets.js');
-        if (ticketsModule && ticketsModule.handleInteraction) {
-            await ticketsModule.handleInteraction(interaction, client);
-        }
-    } catch (e) {}
-});
-
-// حدث انضمام وخروج الأعضاء
-client.on('guildMemberAdd', async member => {
-    try {
-        if (welcomeModule && welcomeModule.handleMemberJoin) {
-            await welcomeModule.handleMemberJoin(member);
-        }
-    } catch (e) {}
-});
-
-client.on('guildMemberRemove', async member => {
-    try {
-        if (leaveModule && leaveModule.handleMemberRemove) {
-            await leaveModule.handleMemberRemove(member);
-        }
-    } catch (e) {}
-});
-
-process.on('unhandledRejection', error => {
-    console.error('⚠️ خطأ غير معالج:', error);
-});
-
-client.login(process.env.TOKEN);
+};
