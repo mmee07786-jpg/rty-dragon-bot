@@ -25,7 +25,7 @@ function loadRaidData() {
     if (fs.existsSync(DATA_FILE)) {
         try {
             const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-            const gid = Object.keys(data)[0]; // دعم الهيكل المتعدد أو المباشر
+            const gid = Object.keys(data)[0];
             if (gid && data[gid] && typeof data[gid] === 'object' && data[gid].raider_stats) {
                 return data[gid];
             }
