@@ -76,6 +76,7 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async handleLeaveSetup(interaction) {
+        await interaction.deferReply({ ephemeral: true });
         const guildId = interaction.guildId;
         const channel = interaction.options.getChannel('channel');
 
@@ -83,10 +84,11 @@ module.exports = {
         guildData.channel_id = channel.id;
         updateGuildLeaveData(guildId, guildData);
 
-        await interaction.reply({ content: `✅ تم ضبط روم المغادرة بنجاح في هذا السيرفر: ${channel}`, ephemeral: true });
+        await interaction.editReply({ content: `✅ تم ضبط روم المغادرة بنجاح في هذا السيرفر: ${channel}` });
     },
 
     async handleLeaveMessage(interaction) {
+        await interaction.deferReply({ ephemeral: true });
         const guildId = interaction.guildId;
         const messageText = interaction.options.getString('message');
 
@@ -94,10 +96,11 @@ module.exports = {
         guildData.message = messageText;
         updateGuildLeaveData(guildId, guildData);
 
-        await interaction.reply({ content: "✅ تم تحديث رسالة المغادرة في هذا السيرفر بنجاح!", ephemeral: true });
+        await interaction.editReply({ content: "✅ تم تحديث رسالة المغادرة في هذا السيرفر بنجاح!" });
     },
 
     async handleLeaveImage(interaction) {
+        await interaction.deferReply({ ephemeral: true });
         const guildId = interaction.guildId;
         const imageUrl = interaction.options.getString('image_url');
 
@@ -105,10 +108,11 @@ module.exports = {
         guildData.image_url = imageUrl;
         updateGuildLeaveData(guildId, guildData);
 
-        await interaction.reply({ content: "✅ تم تحديث صورة المغادرة في هذا السيرفر بنجاح!", ephemeral: true });
+        await interaction.editReply({ content: "✅ تم تحديث صورة المغادرة في هذا السيرفر بنجاح!" });
     },
 
     async handleTestLeave(interaction) {
+        await interaction.deferReply({ ephemeral: true });
         const guildId = interaction.guildId;
         const guildData = getGuildLeaveData(guildId);
 
@@ -121,7 +125,7 @@ module.exports = {
             embed.setImage(guildData.image_url);
         }
 
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        await interaction.editReply({ embeds: [embed] });
     },
 
     async handleMemberRemove(member) {
