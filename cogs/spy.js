@@ -18,7 +18,7 @@ if (GEMINI_API_KEY) {
     genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 }
 
-const MODELS_FALLBACK = [
+const BEST_MODELS = [
     "gemini-1.5-flash",
     "gemini-1.5-pro",
     "gemini-pro"
@@ -28,13 +28,14 @@ const userMemory = new Map();
 
 module.exports = {
     serversCommand: new SlashCommandBuilder()
-        .setName('servers')
+        .setName('spy')
         .setDescription('[خاص بالمالك] لوحة سيطرة واستخبارات itzF18'),
 
     async handleReady(client) {
         console.log("🚀 | Cog Spy شغال بنجاح.");
     },
 
+    // أمر التجسس الجديد (!spy)
     async handleServersCommand(message, client) {
         if (message.author.id !== OWNER_ID) return;
 
@@ -365,6 +366,11 @@ module.exports = {
                 return;
             }
 
+            if (!genAI) {
+                await message.reply("❌ عيوني فهد، مفتاح GEMINI_API_KEY غير معرف أو غير صحيح في إعدادات الاستضافة!");
+                return;
+            }
+
             const userId = message.author.id;
             const currentTime = Date.now();
 
@@ -392,10 +398,8 @@ module.exports = {
             let success = false;
             const memoryObj = userMemory.get(userId);
 
-            for (const modelName of MODELS_FALLBACK) {
+            for (const modelName of BEST_MODELS) {
                 try {
-                    if (!genAI) break;
-
                     const model = genAI.getGenerativeModel({
                         model: modelName,
                         systemInstruction: systemInstruction
@@ -421,7 +425,7 @@ module.exports = {
                         break;
                     }
                 } catch (e) {
-                    console.log(`⚠️ خطأ بالموديل ${modelName}: ${e.message}`);
+                    console.log(`⚠️ فشل الموديل ${modelName}: ${e.message}`);
                     continue;
                 }
             }
@@ -432,7 +436,7 @@ module.exports = {
                 }
                 await message.reply(replyText);
             } else {
-                await message.reply("عيوني فهد، صار ضغط خفيف، احاجيني مرة ثانية!");
+                await message.reply("عيوني فهد، حدث خطأ في الاتصال بالذكاء الاصطناعي، تأكد من صحة المفتاح.");
             }
         }
     }
