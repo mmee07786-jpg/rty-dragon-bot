@@ -56,7 +56,7 @@ module.exports = {
         .setDescription('تعديل رسالة المغادرة لهذا السيرفر')
         .addStringOption(option =>
             option.setName('message')
-                .setDescription('الرسالة الجديدة')
+                .setDescription('الرسالة الجديدة (استخدم {member} لاسم العضو)')
                 .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
@@ -65,7 +65,7 @@ module.exports = {
         .setDescription('تعديل صورة المغادرة لهذا السيرفر')
         .addStringOption(option =>
             option.setName('image_url')
-                .setDescription('رابط الصورة')
+                .setDescription('رابط الصورة أو الـ GIF')
                 .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
@@ -75,80 +75,56 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async handleLeaveSetup(interaction) {
-        try {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
-            }
-            const guildId = interaction.guildId;
-            const channel = interaction.options.getChannel('channel');
+        await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
+        const guildId = interaction.guildId;
+        const channel = interaction.options.getChannel('channel');
 
-            const guildData = getGuildLeaveData(guildId);
-            guildData.channel_id = channel.id;
-            updateGuildLeaveData(guildId, guildData);
+        const guildData = getGuildLeaveData(guildId);
+        guildData.channel_id = channel.id;
+        updateGuildLeaveData(guildId, guildData);
 
-            await interaction.editReply({ content: `✅ تم ضبط روم المغادرة بنجاح في هذا السيرفر: ${channel}` });
-        } catch (e) {
-            console.error("خطأ في leave_setup:", e);
-        }
+        await interaction.editReply({ content: `✅ تم ضبط روم المغادرة بنجاح في هذا السيرفر: ${channel}` });
     },
 
     async handleLeaveMessage(interaction) {
-        try {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
-            }
-            const guildId = interaction.guildId;
-            const messageText = interaction.options.getString('message');
+        await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
+        const guildId = interaction.guildId;
+        const messageText = interaction.options.getString('message');
 
-            const guildData = getGuildLeaveData(guildId);
-            guildData.message = messageText;
-            updateGuildLeaveData(guildId, guildData);
+        const guildData = getGuildLeaveData(guildId);
+        guildData.message = messageText;
+        updateGuildLeaveData(guildId, guildData);
 
-            await interaction.editReply({ content: "✅ تم تحديث رسالة المغادرة في هذا السيرفر بنجاح!" });
-        } catch (e) {
-            console.error("خطأ في leave_message:", e);
-        }
+        await interaction.editReply({ content: "✅ تم تحديث رسالة المغادرة في هذا السيرفر بنجاح!" });
     },
 
     async handleLeaveImage(interaction) {
-        try {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
-            }
-            const guildId = interaction.guildId;
-            const imageUrl = interaction.options.getString('image_url');
+        await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
+        const guildId = interaction.guildId;
+        const imageUrl = interaction.options.getString('image_url');
 
-            const guildData = getGuildLeaveData(guildId);
-            guildData.image_url = imageUrl;
-            updateGuildLeaveData(guildId, guildData);
+        const guildData = getGuildLeaveData(guildId);
+        guildData.image_url = imageUrl;
+        updateGuildLeaveData(guildId, guildData);
 
-            await interaction.editReply({ content: "✅ تم تحديث صورة المغادرة في هذا السيرفر بنجاح!" });
-        } catch (e) {
-            console.error("خطأ في leave_image:", e);
-        }
+        await interaction.editReply({ content: "✅ تم تحديث صورة المغادرة في هذا السيرفر بنجاح!" });
     },
 
     async handleTestLeave(interaction) {
-        try {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
-            }
-            const guildId = interaction.guildId;
-            const guildData = getGuildLeaveData(guildId);
+        await interaction.reply({ content: "⏳ جاري المعالجة...", ephemeral: true });
+        const guildId = interaction.guildId;
+        const guildData = getGuildLeaveData(guildId);
 
-            const formattedMsg = guildData.message.replace(/\{member\}/g, interaction.user.toString());
-            const embed = new EmbedBuilder()
-                .setDescription(formattedMsg)
-                .setColor(0xFF0000);
+        const formattedMsg = guildData.message.replace(/\{member\}/g, interaction.user.toString());
+        const embed = new EmbedBuilder()
+            .setDescription(formattedMsg)
+            .setColor(0xFF0000);
 
-            if (guildData.image_url) {
-                embed.setImage(guildData.image_url);
-            }
-
-            await interaction.editReply({ content: " تجربة رسالة المغادرة:", embeds: [embed] });
-        } catch (e) {
-            console.error("خطأ في test_leave:", e);
+        if (guildData.image_url) {
+            embed.setImage(guildData.image_url);
         }
+
+        await interaction.editReply({ content: "تجربة رسالة المغادرة:", embeds: [embed] });
     },
 
     async handleMemberRemove(member) {
