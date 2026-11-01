@@ -1,10 +1,9 @@
-const { Client, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
 const CONFIG_FILE = path.join(__dirname, '../activity_config.json');
 
-// دالة قراءة الإعدادات
 function loadConfig() {
     if (fs.existsSync(CONFIG_FILE)) {
         try {
@@ -17,7 +16,6 @@ function loadConfig() {
     return {};
 }
 
-// دالة حفظ الإعدادات
 function saveConfig(data) {
     try {
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 4), 'utf8');
@@ -27,7 +25,6 @@ function saveConfig(data) {
 }
 
 module.exports = {
-    // تعريف أمر تحديد الرتبة
     setActivityRoleCommand: new SlashCommandBuilder()
         .setName('set_activity_role')
         .setDescription('تحديد وحفظ الرتبة التلقائية التي سيتم منحها في فعاليات فحص التفاعل.')
@@ -37,13 +34,11 @@ module.exports = {
                 .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    // تعريف أمر فحص التفاعل
     activityCheckCommand: new SlashCommandBuilder()
         .setName('activity_check')
         .setDescription('فحص التفاعل وتحديد النشطين خلال 5 ثواني مع منحهم الرتبة المحفوظة تلقائياً.')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    // دالة تنفيذ أمر set_activity_role
     async handleSetActivityRole(interaction) {
         const guildId = interaction.guild.id;
         const role = interaction.options.getRole('role');
@@ -58,7 +53,6 @@ module.exports = {
         });
     },
 
-    // دالة تنفيذ أمر activity_check
     async handleActivityCheck(interaction) {
         const guildId = interaction.guild.id;
         const config = loadConfig();
@@ -76,12 +70,11 @@ module.exports = {
         if (!role) {
             await interaction.reply({
                 content: "❌ عذراً، الرتبة المحفوظة سابقاً لم تعد موجودة في السيرفر! يرجى إعادة تحديدها بـ `/set_activity_role`.",
-                ephemeral=true
+                ephemeral: true
             });
             return;
         }
 
-        // التحقق من صلاحيات البوت
         if (!interaction.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
             await interaction.reply({ content: "❌ عذراً، لا أملك صلاحية (Manage Roles) لإعطاء الرتب للأعضاء!", ephemeral: true });
             return;
@@ -148,6 +141,6 @@ module.exports = {
             await message.edit({ content: null, embeds: [completeEmbed] }).catch(() => {});
         });
 
-        await interaction.editReply({ content: "✅ تم بدء فعالية فحص التفاعل بنجاح في الشات!", ephemeral: true });
+        await interaction.editReply({ content: "✅ تم بدء فعالية فحص التفاعل بنجاح في الشات!" });
     }
 };
