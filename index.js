@@ -30,7 +30,6 @@ client.once('ready', () => {
     console.log(`البوت جاهز الان ويعمل باسم ${client.user.tag} (ID: ${client.user.id})`);
 
     const modulesList = [
-        "activityCheck",
         "admin",
         "automod",
         "autoroles",
@@ -42,7 +41,6 @@ client.once('ready', () => {
         "joinMessage",
         "leave",
         "leveling",
-        "memberStats",
         "nukeServer",
         "owner_override",
         "owner_tools",
@@ -80,8 +78,8 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // 2. أمر التجسس والاستخبارات (!سيرفر أو !servers)
-    if (message.guild && (message.content === "!سيرفر" || message.content === "!servers")) {
+    // 2. أمر التجسس والاستخبارات الجديد (!spy)
+    if (message.guild && message.content === "!spy") {
         if (spyModule && spyModule.handleServersCommand) {
             await spyModule.handleServersCommand(message, client);
             return;
