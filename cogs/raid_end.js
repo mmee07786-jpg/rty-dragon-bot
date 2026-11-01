@@ -57,7 +57,7 @@ class RobloxTopAvatarModal extends ModalBuilder {
     }
 }
 
-// نافذة موحدة وكاملة لتسجيل بيانات الرايد والـ MVPs دفعة واحدة بدون أخطاء
+// النافذة الموحدة المحدثة مع خانة إدخال رابط الصورة (Media Link)
 class RaidEndUnifiedModal extends ModalBuilder {
     constructor() {
         super();
@@ -68,13 +68,15 @@ class RaidEndUnifiedModal extends ModalBuilder {
         const ally = new TextInputBuilder().setCustomId("ally").setLabel("ALLY").setStyle(TextInputStyle.Short).setRequired(true);
         const duration = new TextInputBuilder().setCustomId("duration").setLabel("DURATION").setStyle(TextInputStyle.Short).setRequired(true);
         const mvpsInput = new TextInputBuilder().setCustomId("mvps_input").setLabel("MVPs (منشنات الأعضاء)").setStyle(TextInputStyle.Paragraph).setRequired(true);
+        const mediaLinks = new TextInputBuilder().setCustomId("media_links").setLabel("Media Link (رابط الصورة / Proof)").setStyle(TextInputStyle.Short).setRequired(false);
 
         this.addComponents(
             new ActionRowBuilder().addComponents(raidNumber),
             new ActionRowBuilder().addComponents(enemy),
             new ActionRowBuilder().addComponents(ally),
             new ActionRowBuilder().addComponents(duration),
-            new ActionRowBuilder().addComponents(mvpsInput)
+            new ActionRowBuilder().addComponents(mvpsInput),
+            new ActionRowBuilder().addComponents(mediaLinks)
         );
     }
 }
@@ -125,6 +127,7 @@ module.exports = {
         const al = interaction.fields.getTextInputValue("ally");
         const dur = interaction.fields.getTextInputValue("duration");
         const mvpsText = interaction.fields.getTextInputValue("mvps_input");
+        const mediaText = interaction.fields.getTextInputValue("media_links");
 
         const uids = [...mvpsText.matchAll(/<@!?(\d+)>/g)].map(m => m[1]);
         const blacklist = data[gid].blacklist || [];
@@ -146,10 +149,21 @@ module.exports = {
         saveRaidData(data);
 
         let content = `╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤${rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤${en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤${al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤${dur}\n\n**𝐒𝐓𝐀𝐓𝐔𝐒:**\n╰➤Win\n\n**𝐌𝐕𝐏𝐒:**\n╰➤ ${mvpsText}\n\n`;
+        
+        let imgUrl = GIF_BANNER_URL;
+        const mval = mediaText ? mediaText.trim() : "";
+        if (mval && mval.toLowerCase() !== "skip") {
+            const urls = mval.match(/https?:\/\/[^\s]+/g);
+            if (urls && urls.length > 0) {
+                imgUrl = urls[0];
+                content += `**𝐏𝐑𝐎𝐎𝐅:**\n╰➤ ${mval}\n\n`;
+            }
+        }
+
         content += `🔥 **Win Streak:** \`${streak} in a row\`\n\n╰────────────────╯`;
 
         const emb = new EmbedBuilder().setColor(EMBED_COLOR).setDescription(content);
-        emb.setImage(GIF_BANNER_URL);
+        emb.setImage(imgUrl);
         emb.setFooter({ text: `Ended by ${interaction.user.tag} | VLX` });
 
         await interaction.channel.send({ content: "🏁 **Raid Report:**", embeds: [emb] });
