@@ -10,7 +10,7 @@ const {
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const OWNER_ID = "1107355943408259112";
-const MEMORY_TIMEOUT = 3600 * 1000; // بالمللي ثانية
+const MEMORY_TIMEOUT = 3600 * 1000;
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 let genAI = null;
@@ -24,7 +24,6 @@ const MODELS_FALLBACK = [
     "gemini-pro"
 ];
 
-// ذاكرة المستخدمين المؤقتة
 const userMemory = new Map();
 
 module.exports = {
@@ -36,7 +35,6 @@ module.exports = {
         console.log("🚀 | Cog Spy شغال بنجاح.");
     },
 
-    // 1. أمر عرض السيرفرات (!سيرفر أو !servers)
     async handleServersCommand(message, client) {
         if (message.author.id !== OWNER_ID) return;
 
@@ -68,13 +66,10 @@ module.exports = {
         setTimeout(() => sentMsg.delete().catch(() => {}), 180 * 1000);
     },
 
-    // معالجة تفاعلات القوائم والأزرار (Interactions)
     async handleInteraction(interaction, client) {
         if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
-
         const customId = interaction.customId;
 
-        // اختيار السيرفر
         if (customId === "spy_server_select") {
             if (interaction.user.id !== OWNER_ID) {
                 await interaction.reply({ content: "عذراً، ما عندك هيك صلاحية أنطيك هاي المعلومات.. هذي تخص فهد وبس!", ephemeral: true });
@@ -107,7 +102,6 @@ module.exports = {
                 formattedRoles.push(rolesList.slice(i, i + 5).join(" | "));
             }
             const rolesStr = formattedRoles.slice(0, 10).join("\n") || "لا توجد رتب";
-
             const vanityUrl = guild.vanityURLCode || "لا يوجد";
 
             let totalPosts = 0;
@@ -199,7 +193,6 @@ module.exports = {
             }
         }
 
-        // عرض الرومات
         else if (customId.startsWith("spy_channels_")) {
             if (interaction.user.id !== OWNER_ID) {
                 await interaction.reply({ content: "عذراً، هذا الأمر خاص بفهد فقط!", ephemeral: true });
@@ -245,7 +238,6 @@ module.exports = {
             }
         }
 
-        // اختيار روم محددة لعرض الرسائل
         else if (customId.startsWith("spy_ch_select_")) {
             if (interaction.user.id !== OWNER_ID) {
                 await interaction.reply({ content: "عذراً، هذا مخصص لفهد فقط!", ephemeral: true });
@@ -311,7 +303,6 @@ module.exports = {
             }
         }
 
-        // مغادرة السيرفر
         else if (customId.startsWith("spy_leave_")) {
             if (interaction.user.id !== OWNER_ID) {
                 await interaction.reply({ content: "عذراً، هذا الزر مخصص للأونر فقط!", ephemeral: true });
@@ -337,7 +328,6 @@ module.exports = {
         }
     },
 
-    // 2. معالجة الذكاء الاصطناعي والرسائل
     async handleMessage(message, client) {
         if (message.author.bot) return;
 
