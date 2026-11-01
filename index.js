@@ -3,6 +3,7 @@ const botControl = require('./cogs/botControl.js');
 const spyModule = require('./cogs/spy.js');
 const welcomeModule = require('./cogs/welcome.js');
 const leaveModule = require('./cogs/leave.js');
+const activityModule = require('./cogs/activityCheck.js');
 
 const client = new Client({
     intents: [
@@ -31,6 +32,7 @@ client.once('ready', () => {
     console.log(`البوت جاهز الان ويعمل باسم ${client.user.tag} (ID: ${client.user.id})`);
 
     const modulesList = [
+        "activityCheck",
         "admin",
         "automod",
         "autoroles",
@@ -115,7 +117,7 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'test_welcome') {
                 await welcomeModule.handleTestWelcome(interaction);
             }
-            // أوامر المغادرة (التي تم ربطها أخيرًا)
+            // أوامر المغادرة
             else if (interaction.commandName === 'leave_setup') {
                 await leaveModule.handleLeaveSetup(interaction);
             } else if (interaction.commandName === 'leave_message') {
@@ -124,6 +126,12 @@ client.on('interactionCreate', async interaction => {
                 await leaveModule.handleLeaveImage(interaction);
             } else if (interaction.commandName === 'test_leave') {
                 await leaveModule.handleTestLeave(interaction);
+            }
+            // أوامر فحص التفاعل (الجديدة)
+            else if (interaction.commandName === 'set_activity_role') {
+                await activityModule.handleSetActivityRole(interaction);
+            } else if (interaction.commandName === 'activity_check') {
+                await activityModule.handleActivityCheck(interaction);
             }
         } catch (e) {
             console.error("خطأ في تشغيل أمر السلاش:", e);
