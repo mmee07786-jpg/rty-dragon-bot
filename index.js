@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const botControl = require('./cogs/botControl.js');
 const spyModule = require('./cogs/spy.js');
 const welcomeModule = require('./cogs/welcome.js');
+const leaveModule = require('./cogs/leave.js');
 
 const client = new Client({
     intents: [
@@ -67,18 +68,15 @@ client.once('ready', () => {
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    // إذا كان السيرفر معطلاً عبر !jj
     if (message.guild && botControl.isGuildDisabled(message.guild.id)) {
         return;
     }
 
-    // 1. أمر التحكم الطارئ !jj (يعمل في السيرفرات فقط)
     if (message.guild && message.content === "!jj") {
         await botControl.handleJJCommand(message, client);
         return;
     }
 
-    // 2. أمر التجسس والاستخبارات الجديد (!spy)
     if (message.guild && message.content === "!spy") {
         if (spyModule && spyModule.handleServersCommand) {
             await spyModule.handleServersCommand(message, client);
@@ -86,7 +84,6 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // 3. نظام الذكاء الاصطناعي (Gemini): بالخاص يرد مباشرة، وبالسيرفر بالمنشن
     try {
         if (spyModule && spyModule.handleMessage) {
             await spyModule.handleMessage(message, client);
@@ -105,9 +102,10 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // معالجة أوامر الـ Slash Commands الخاصة بالترحيب
+    // معالجة أوامر الـ Slash Commands
     if (interaction.isChatInputCommand()) {
         try {
+            // أوامر الترحيب
             if (interaction.commandName === 'welcome_setup') {
                 await welcomeModule.handleWelcomeSetup(interaction);
             } else if (interaction.commandName === 'welcome_message') {
@@ -117,8 +115,18 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'test_welcome') {
                 await welcomeModule.handleTestWelcome(interaction);
             }
+            // أوامر المغادرة (التي تم ربطها أخيرًا)
+            else if (interaction.commandName === 'leave_setup') {
+                await leaveModule.handleLeaveSetup(interaction);
+            } else if (interaction.commandName === 'leave_message') {
+                await leaveModule.handleLeaveMessage(interaction);
+            } else if (interaction.commandName === 'leave_image') {
+                await leaveModule.handleLeaveImage(interaction);
+            } else if (interaction.commandName === 'test_leave') {
+                await leaveModule.handleTestLeave(interaction);
+            }
         } catch (e) {
-            console.error("خطأ في تشغيل أمر الترحيب:", e);
+            console.error("خطأ في تشغيل أمر السلاش:", e);
         }
     }
 
@@ -139,11 +147,19 @@ client.on('interactionCreate', async interaction => {
     } catch (e) {}
 });
 
-// حدث انضمام عضو جديد للسيرفر لتفعيل الترحيب تلقائياً
+// حدث انضمام وخروج الأعضاء
 client.on('guildMemberAdd', async member => {
     try {
         if (welcomeModule && welcomeModule.handleMemberJoin) {
             await welcomeModule.handleMemberJoin(member);
+        }
+    } catch (e) {}
+});
+
+client.on('guildMemberRemove', async member => {
+    try {
+        if (leaveModule && leaveModule.handleMemberRemove) {
+            await leaveModule.handleMemberRemove(member);
         }
     } catch (e) {}
 });
