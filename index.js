@@ -4,6 +4,8 @@ const spyModule = require('./cogs/spy.js');
 const welcomeModule = require('./cogs/welcome.js');
 const leaveModule = require('./cogs/leave.js');
 const activityModule = require('./cogs/activityCheck.js');
+const raidStartModule = require('./cogs/raid_start.js');
+const raidEndModule = require('./cogs/raid_end.js');
 
 const client = new Client({
     intents: [
@@ -104,10 +106,9 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // معالجة أوامر الـ Slash Commands
+    // 1. معالجة أوامر الـ Slash Commands
     if (interaction.isChatInputCommand()) {
         try {
-            // أوامر الترحيب
             if (interaction.commandName === 'welcome_setup') {
                 await welcomeModule.handleWelcomeSetup(interaction);
             } else if (interaction.commandName === 'welcome_message') {
@@ -117,7 +118,6 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'test_welcome') {
                 await welcomeModule.handleTestWelcome(interaction);
             }
-            // أوامر المغادرة
             else if (interaction.commandName === 'leave_setup') {
                 await leaveModule.handleLeaveSetup(interaction);
             } else if (interaction.commandName === 'leave_message') {
@@ -127,14 +127,87 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'test_leave') {
                 await leaveModule.handleTestLeave(interaction);
             }
-            // أوامر فحص التفاعل (الجديدة)
             else if (interaction.commandName === 'set_activity_role') {
                 await activityModule.handleSetActivityRole(interaction);
             } else if (interaction.commandName === 'activity_check') {
                 await activityModule.handleActivityCheck(interaction);
             }
+            // أوامر الرايد والبدء
+            else if (interaction.commandName === 'raid-start') {
+                await raidStartModule.handleRaidStart(interaction);
+            } else if (interaction.commandName === 'name_clan') {
+                await raidStartModule.handleNameClan(interaction);
+            } else if (interaction.commandName === 'color_emed') {
+                await raidStartModule.handleColorEmed(interaction);
+            } else if (interaction.commandName === 'end-raid') {
+                await raidEndModule.handleEndRaid(interaction);
+            } else if (interaction.commandName === 'set-top10-channel') {
+                await raidEndModule.handleSetTop10Channel(interaction);
+            } else if (interaction.commandName === 'set-top20-channel') {
+                await raidEndModule.handleSetTop20Channel(interaction);
+            } else if (interaction.commandName === 'avatar-roblox-top') {
+                await raidEndModule.handleAvatarRobloxTop(interaction);
+            } else if (interaction.commandName === 'set-country') {
+                await raidEndModule.handleSetCountry(interaction);
+            } else if (interaction.commandName === 'set-roblox') {
+                await raidEndModule.handleSetRoblox(interaction);
+            } else if (interaction.commandName === 'set-roblox-user') {
+                await raidEndModule.handleSetRobloxUser(interaction);
+            } else if (interaction.commandName === 'sync') {
+                await raidEndModule.handleSync(interaction);
+            } else if (interaction.commandName === 'raid-mentions') {
+                await raidEndModule.handleRaidMentions(interaction);
+            } else if (interaction.commandName === 'raid-list') {
+                await raidEndModule.handleRaidList(interaction);
+            } else if (interaction.commandName === 'raid-add') {
+                await raidEndModule.handleRaidAdd(interaction);
+            } else if (interaction.commandName === 'raid-set') {
+                await raidEndModule.handleRaidSet(interaction);
+            } else if (interaction.commandName === 'set-avatar-remove') {
+                await raidEndModule.handleSetAvatarRemove(interaction);
+            } else if (interaction.commandName === 'raid-reset') {
+                await raidEndModule.handleRaidReset(interaction);
+            }
         } catch (e) {
             console.error("خطأ في تشغيل أمر السلاش:", e);
+        }
+    }
+
+    // 2. معالجة الأزرار (Buttons) مثل زر Leaderboard
+    if (interaction.isButton()) {
+        try {
+            await raidStartModule.handleButtonInteraction(interaction);
+        } catch (e) {}
+    }
+
+    // 3. معالجة النوافذ (Modals)
+    if (interaction.isModalSubmit()) {
+        try {
+            if (interaction.customId === 'raid_start_modal') {
+                const serverLink = interaction.fields.getTextInputValue('server_link');
+                const difficulty = interaction.fields.getTextInputValue('difficulty');
+                const targets = interaction.fields.getTextInputValue('targets');
+                const counts = interaction.fields.getTextInputValue('counts');
+                const region = interaction.fields.getTextInputValue('region');
+                await raidStartModule.handleRaidStartModalSubmit(interaction, serverLink, difficulty, targets, counts, region);
+            } else if (interaction.customId === 'raid_end_info_modal') {
+                const rn = interaction.fields.getTextInputValue('raid_number');
+                const en = interaction.fields.getTextInputValue('enemy');
+                const al = interaction.fields.getTextInputValue('ally');
+                const dur = interaction.fields.getTextInputValue('duration');
+                const st = interaction.fields.getTextInputValue('status_reason');
+
+                const submitModal = new (require('discord.js').ModalBuilder)()
+                    .setTitle("👥 | MVPs & Media")
+                    .setCustomId(`raid_submit_modal_${rn}_${en}_${al}_${dur}_${st}`);
+                
+                // يمكنك استخدام Modal الإرسال الخاص بـ raid_end
+                await interaction.showModal(new (require('./cogs/raid_end.js').RaidSubmitModal || Object)(rn, en, al, dur, st)).catch(() => {});
+            } else if (interaction.customId === 'roblox_top_avatar_modal') {
+                await raidEndModule.handleRobloxTopAvatarSubmit(interaction);
+            }
+        } catch (e) {
+            console.error("خطأ في معالجة Modal:", e);
         }
     }
 
