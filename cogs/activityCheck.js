@@ -1,179 +1,153 @@
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
-const botControl = require('./cogs/botControl.js');
-const spyModule = require('./cogs/spy.js');
-const welcomeModule = require('./cogs/welcome.js');
-const leaveModule = require('./cogs/leave.js');
-const activityModule = require('./cogs/activityCheck.js');
+const { Client, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildModeration,
-        GatewayIntentBits.GuildEmojisAndStickers,
-        GatewayIntentBits.GuildIntegrations,
-        GatewayIntentBits.GuildWebhooks,
-        GatewayIntentBits.GuildInvites,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildMessageTyping,
-        GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.DirectMessageReactions,
-        GatewayIntentBits.DirectMessageTyping,
-        GatewayIntentBits.MessageContent
-    ]
-});
+const CONFIG_FILE = path.join(__dirname, '../activity_config.json');
 
-client.commands = new Collection();
-
-client.once('ready', () => {
-    console.log(`البوت جاهز الان ويعمل باسم ${client.user.tag} (ID: ${client.user.id})`);
-
-    const modulesList = [
-        "activityCheck",
-        "admin",
-        "automod",
-        "autoroles",
-        "backup",
-        "boost",
-        "botControl",
-        "clear",
-        "economy",
-        "joinMessage",
-        "leave",
-        "leveling",
-        "nukeServer",
-        "owner_override",
-        "owner_tools",
-        "raid_end",
-        "raid_start",
-        "roblox",
-        "spy",
-        "tickets",
-        "translator",
-        "welcome"
-    ];
-
-    for (const modName of modulesList) {
+// دالة قراءة الإعدادات
+function loadConfig() {
+    if (fs.existsSync(CONFIG_FILE)) {
         try {
-            require(`./cogs/${modName}.js`);
-            console.log(`✅ تم تحميل الملف بنجاح (cogs/${modName}.js)`);
+            const data = fs.readFileSync(CONFIG_FILE, 'utf8');
+            return JSON.parse(data);
         } catch (error) {
-            console.log(`❌ فشل تحميل الملف (cogs/${modName}.js) : ${error.message}`);
+            console.error("خطأ في قراءة ملف الإعدادات:", error);
         }
     }
-});
+    return {};
+}
 
-// معالجة الرسائل والذكاء الاصطناعي وأوامر التجسس
-client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-
-    if (message.guild && botControl.isGuildDisabled(message.guild.id)) {
-        return;
+// دالة حفظ الإعدادات
+function saveConfig(data) {
+    try {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 4), 'utf8');
+    } catch (error) {
+        console.error("خطأ في حفظ ملف الإعدادات:", error);
     }
+}
 
-    if (message.guild && message.content === "!jj") {
-        await botControl.handleJJCommand(message, client);
-        return;
-    }
+module.exports = {
+    // تعريف أمر تحديد الرتبة
+    setActivityRoleCommand: new SlashCommandBuilder()
+        .setName('set_activity_role')
+        .setDescription('تحديد وحفظ الرتبة التلقائية التي سيتم منحها في فعاليات فحص التفاعل.')
+        .addRoleOption(option =>
+            option.setName('role')
+                .setDescription('اختر الرتبة التي تريد حفظها للفعاليات')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    if (message.guild && message.content === "!spy") {
-        if (spyModule && spyModule.handleServersCommand) {
-            await spyModule.handleServersCommand(message, client);
+    // تعريف أمر فحص التفاعل
+    activityCheckCommand: new SlashCommandBuilder()
+        .setName('activity_check')
+        .setDescription('فحص التفاعل وتحديد النشطين خلال 5 ثواني مع منحهم الرتبة المحفوظة تلقائياً.')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    // دالة تنفيذ أمر set_activity_role
+    async handleSetActivityRole(interaction) {
+        const guildId = interaction.guild.id;
+        const role = interaction.options.getRole('role');
+        const config = loadConfig();
+
+        config[guildId] = role.id;
+        saveConfig(config);
+
+        await interaction.reply({
+            content: `✅ **تم حفظ رتبة الفعالية بنجاح!**\nالرتبة المعتمدة حالياً: ${role}`,
+            ephemeral: true
+        });
+    },
+
+    // دالة تنفيذ أمر activity_check
+    async handleActivityCheck(interaction) {
+        const guildId = interaction.guild.id;
+        const config = loadConfig();
+        const roleId = config[guildId];
+
+        if (!roleId) {
+            await interaction.reply({
+                content: "❌ عذراً، لم تقم بتحديد رتبة الفعالية بعد!\nيرجى استخدام الأمر `/set_activity_role` أولاً لاختيار الرتبة.",
+                ephemeral: true
+            });
             return;
         }
-    }
 
-    try {
-        if (spyModule && spyModule.handleMessage) {
-            await spyModule.handleMessage(message, client);
-        }
-    } catch (e) {}
-});
-
-// معالجة التفاعلات وأوامر السلاش (Slash Commands & Interactions)
-client.on('interactionCreate', async interaction => {
-    if (interaction.guild && botControl.isGuildDisabled(interaction.guild.id)) {
-        if (interaction.user.id !== "1107355943408259112") {
-            if (interaction.isRepliable()) {
-                await interaction.reply({ content: "❌ | هذا البوت معطل حالياً في هذا السيرفر بأمر من الإدارة.", ephemeral: true }).catch(() => {});
-            }
+        const role = interaction.guild.roles.cache.get(roleId);
+        if (!role) {
+            await interaction.reply({
+                content: "❌ عذراً، الرتبة المحفوظة سابقاً لم تعد موجودة في السيرفر! يرجى إعادة تحديدها بـ `/set_activity_role`.",
+                ephemeral=true
+            });
             return;
         }
+
+        // التحقق من صلاحيات البوت
+        if (!interaction.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+            await interaction.reply({ content: "❌ عذراً، لا أملك صلاحية (Manage Roles) لإعطاء الرتب للأعضاء!", ephemeral: true });
+            return;
+        }
+
+        if (role.position >= interaction.guild.members.me.roles.highest.position) {
+            await interaction.reply({ content: `❌ عذراً، رتبة (${role.name}) أعلى من رتبتي أو تساويها، لا يمكنني إعطاؤها للأعضاء!`, ephemeral: true });
+            return;
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        const embed = new EmbedBuilder()
+            .setTitle("✅ ACTIVITY CHECK")
+            .setDescription(`اضغط على التفاعل أدناه لتأكيد تفاعلك والحصول على رتبة (${role})!\n*(متاح لمدة 5 ثواني فقط)*`)
+            .setColor(0x00FF00);
+
+        const channel = interaction.channel;
+        const message = await channel.send({ content: "@everyone", embeds: [embed] });
+        const checkEmoji = "✅";
+        await message.react(checkEmoji);
+
+        const activeUsers = new Set();
+        const filter = (reaction, user) => {
+            return reaction.message.id === message.id &&
+                   reaction.emoji.name === checkEmoji &&
+                   !user.bot &&
+                   !activeUsers.has(user.id);
+        };
+
+        const collector = message.createReactionCollector({ filter, time: 5000 });
+
+        collector.on('collect', async (reaction, user) => {
+            activeUsers.add(user.id);
+            try {
+                const member = await interaction.guild.members.fetch(user.id);
+                if (member && !member.roles.cache.has(role.id)) {
+                    await member.roles.add(role, "التفاعل السريع في فعالية Activity Check");
+                }
+            } catch (e) {
+                console.log(`⚠️ لم أستطع إعطاء الرتبة لـ ${user.username}: ${e.message}`);
+            }
+        });
+
+        collector.on('end', async () => {
+            const completeEmbed = new EmbedBuilder()
+                .setTitle("✅ ACTIVITY CHECK COMPLETE!")
+                .setColor(0x0000FF);
+
+            const usersArray = Array.from(activeUsers);
+            if (usersArray.length > 0) {
+                let leaderboardText = `🏆 **تم منح رتبة (${role.name}) لكل من:**\n\n`;
+                const medals = ["🥇", "🥈", "🥉", "🏅", "🏅", "🏅", "🏅", "🏅", "🏅", "🏅"];
+                
+                for (let i = 0; i < Math.min(usersArray.length, 10); i++) {
+                    const medal = medals[i] || "🔹";
+                    leaderboardText += `${medal} ${i + 1}. <@${usersArray[i]}>\n`;
+                }
+                completeEmbed.setDescription(leaderboardText);
+            } else {
+                completeEmbed.setDescription("لم يتفاعل أي عضو خلال الـ 5 ثواني!");
+            }
+
+            await message.edit({ content: null, embeds: [completeEmbed] }).catch(() => {});
+        });
+
+        await interaction.editReply({ content: "✅ تم بدء فعالية فحص التفاعل بنجاح في الشات!", ephemeral: true });
     }
-
-    // معالجة أوامر الـ Slash Commands
-    if (interaction.isChatInputCommand()) {
-        try {
-            // أوامر الترحيب
-            if (interaction.commandName === 'welcome_setup') {
-                await welcomeModule.handleWelcomeSetup(interaction);
-            } else if (interaction.commandName === 'welcome_message') {
-                await welcomeModule.handleWelcomeMessage(interaction);
-            } else if (interaction.commandName === 'welcome_image') {
-                await welcomeModule.handleWelcomeImage(interaction);
-            } else if (interaction.commandName === 'test_welcome') {
-                await welcomeModule.handleTestWelcome(interaction);
-            }
-            // أوامر المغادرة
-            else if (interaction.commandName === 'leave_setup') {
-                await leaveModule.handleLeaveSetup(interaction);
-            } else if (interaction.commandName === 'leave_message') {
-                await leaveModule.handleLeaveMessage(interaction);
-            } else if (interaction.commandName === 'leave_image') {
-                await leaveModule.handleLeaveImage(interaction);
-            } else if (interaction.commandName === 'test_leave') {
-                await leaveModule.handleTestLeave(interaction);
-            }
-            // أوامر فحص التفاعل (الجديدة)
-            else if (interaction.commandName === 'set_activity_role') {
-                await activityModule.handleSetActivityRole(interaction);
-            } else if (interaction.commandName === 'activity_check') {
-                await activityModule.handleActivityCheck(interaction);
-            }
-        } catch (e) {
-            console.error("خطأ في تشغيل أمر السلاش:", e);
-        }
-    }
-
-    // معالجة أزرار وقوائم بوت كنترول والتحكم
-    try {
-        await botControl.handleInteraction(interaction, client);
-    } catch (e) {}
-
-    // معالجة تفاعلات التجسس والتذاكر
-    try {
-        if (spyModule && spyModule.handleInteraction) {
-            await spyModule.handleInteraction(interaction, client);
-        }
-        const ticketsModule = require('./cogs/tickets.js');
-        if (ticketsModule && ticketsModule.handleInteraction) {
-            await ticketsModule.handleInteraction(interaction, client);
-        }
-    } catch (e) {}
-});
-
-// حدث انضمام وخروج الأعضاء
-client.on('guildMemberAdd', async member => {
-    try {
-        if (welcomeModule && welcomeModule.handleMemberJoin) {
-            await welcomeModule.handleMemberJoin(member);
-        }
-    } catch (e) {}
-});
-
-client.on('guildMemberRemove', async member => {
-    try {
-        if (leaveModule && leaveModule.handleMemberRemove) {
-            await leaveModule.handleMemberRemove(member);
-        }
-    } catch (e) {}
-});
-
-process.on('unhandledRejection', error => {
-    console.error('⚠️ خطأ غير معالج:', error);
-});
-
-client.login(process.env.TOKEN);
+};
