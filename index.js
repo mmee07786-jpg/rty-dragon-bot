@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
 const botControl = require('./cogs/botControl.js');
 const spyModule = require('./cogs/spy.js');
 const welcomeModule = require('./cogs/welcome.js');
@@ -68,7 +68,6 @@ client.once('ready', () => {
     }
 });
 
-// معالجة الرسائل والذكاء الاصطناعي وأوامر التجسس
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
@@ -95,7 +94,6 @@ client.on('messageCreate', async message => {
     } catch (e) {}
 });
 
-// معالجة التفاعلات وأوامر السلاش (Slash Commands & Interactions)
 client.on('interactionCreate', async interaction => {
     if (interaction.guild && botControl.isGuildDisabled(interaction.guild.id)) {
         if (interaction.user.id !== "1107355943408259112") {
@@ -106,7 +104,6 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // 1. معالجة أوامر الـ Slash Commands
     if (interaction.isChatInputCommand()) {
         try {
             if (interaction.commandName === 'welcome_setup') {
@@ -132,7 +129,6 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'activity_check') {
                 await activityModule.handleActivityCheck(interaction);
             }
-            // أوامر الرايد والبدء
             else if (interaction.commandName === 'raid-start') {
                 await raidStartModule.handleRaidStart(interaction);
             } else if (interaction.commandName === 'name_clan') {
@@ -173,14 +169,12 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // 2. معالجة الأزرار (Buttons) مثل زر Leaderboard
     if (interaction.isButton()) {
         try {
             await raidStartModule.handleButtonInteraction(interaction);
         } catch (e) {}
     }
 
-    // 3. معالجة النوافذ (Modals)
     if (interaction.isModalSubmit()) {
         try {
             if (interaction.customId === 'raid_start_modal') {
@@ -197,12 +191,37 @@ client.on('interactionCreate', async interaction => {
                 const dur = interaction.fields.getTextInputValue('duration');
                 const st = interaction.fields.getTextInputValue('status_reason');
 
-                const submitModal = new (require('discord.js').ModalBuilder)()
+                // إنشاء نافذة MVPs بشكل صحيح ومرتب
+                const submitModal = new ModalBuilder()
                     .setTitle("👥 | MVPs & Media")
                     .setCustomId(`raid_submit_modal_${rn}_${en}_${al}_${dur}_${st}`);
-                
-                // يمكنك استخدام Modal الإرسال الخاص بـ raid_end
-                await interaction.showModal(new (require('./cogs/raid_end.js').RaidSubmitModal || Object)(rn, en, al, dur, st)).catch(() => {});
+
+                const mvpsInput = new TextInputBuilder()
+                    .setCustomId("mvps_input")
+                    .setLabel("MVPs (منشنات)")
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setRequired(true);
+
+                const mediaLinks = new TextInputBuilder()
+                    .setCustomId("media_links")
+                    .setLabel("Media Link")
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setRequired(false);
+
+                submitModal.addComponents(
+                    new ActionRowBuilder().addComponents(mvpsInput),
+                    new ActionRowBuilder().addComponents(mediaLinks)
+                );
+
+                await interaction.showModal(submitModal);
+            } else if (interaction.customId.startsWith('raid_submit_modal_')) {
+                const parts = interaction.customId.split('_');
+                const rn = parts[3];
+                const en = parts[4];
+                const al = parts[5];
+                const dur = parts[6];
+                const st = parts.slice(7).join('_');
+                await raidEndModule.handleRaidSubmitModal(interaction, rn, en, al, dur, st);
             } else if (interaction.customId === 'roblox_top_avatar_modal') {
                 await raidEndModule.handleRobloxTopAvatarSubmit(interaction);
             }
@@ -211,12 +230,10 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // معالجة أزرار وقوائم بوت كنترول والتحكم
     try {
         await botControl.handleInteraction(interaction, client);
     } catch (e) {}
 
-    // معالجة تفاعلات التجسس والتذاكر
     try {
         if (spyModule && spyModule.handleInteraction) {
             await spyModule.handleInteraction(interaction, client);
@@ -228,7 +245,6 @@ client.on('interactionCreate', async interaction => {
     } catch (e) {}
 });
 
-// حدث انضمام وخروج الأعضاء
 client.on('guildMemberAdd', async member => {
     try {
         if (welcomeModule && welcomeModule.handleMemberJoin) {
