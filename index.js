@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Collection, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const botControl = require('./cogs/botControl.js');
 const spyModule = require('./cogs/spy.js');
 const welcomeModule = require('./cogs/welcome.js');
@@ -184,44 +184,8 @@ client.on('interactionCreate', async interaction => {
                 const counts = interaction.fields.getTextInputValue('counts');
                 const region = interaction.fields.getTextInputValue('region');
                 await raidStartModule.handleRaidStartModalSubmit(interaction, serverLink, difficulty, targets, counts, region);
-            } else if (interaction.customId === 'raid_end_info_modal') {
-                const rn = interaction.fields.getTextInputValue('raid_number');
-                const en = interaction.fields.getTextInputValue('enemy');
-                const al = interaction.fields.getTextInputValue('ally');
-                const dur = interaction.fields.getTextInputValue('duration');
-                const st = interaction.fields.getTextInputValue('status_reason');
-
-                // إنشاء نافذة MVPs بشكل صحيح ومرتب
-                const submitModal = new ModalBuilder()
-                    .setTitle("👥 | MVPs & Media")
-                    .setCustomId(`raid_submit_modal_${rn}_${en}_${al}_${dur}_${st}`);
-
-                const mvpsInput = new TextInputBuilder()
-                    .setCustomId("mvps_input")
-                    .setLabel("MVPs (منشنات)")
-                    .setStyle(TextInputStyle.Paragraph)
-                    .setRequired(true);
-
-                const mediaLinks = new TextInputBuilder()
-                    .setCustomId("media_links")
-                    .setLabel("Media Link")
-                    .setStyle(TextInputStyle.Paragraph)
-                    .setRequired(false);
-
-                submitModal.addComponents(
-                    new ActionRowBuilder().addComponents(mvpsInput),
-                    new ActionRowBuilder().addComponents(mediaLinks)
-                );
-
-                await interaction.showModal(submitModal);
-            } else if (interaction.customId.startsWith('raid_submit_modal_')) {
-                const parts = interaction.customId.split('_');
-                const rn = parts[3];
-                const en = parts[4];
-                const al = parts[5];
-                const dur = parts[6];
-                const st = parts.slice(7).join('_');
-                await raidEndModule.handleRaidSubmitModal(interaction, rn, en, al, dur, st);
+            } else if (interaction.customId === 'raid_end_unified_modal') {
+                await raidEndModule.handleRaidUnifiedSubmit(interaction);
             } else if (interaction.customId === 'roblox_top_avatar_modal') {
                 await raidEndModule.handleRobloxTopAvatarSubmit(interaction);
             }
