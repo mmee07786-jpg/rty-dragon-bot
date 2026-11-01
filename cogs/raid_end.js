@@ -57,46 +57,25 @@ class RobloxTopAvatarModal extends ModalBuilder {
     }
 }
 
-class RaidEndInfoModal extends ModalBuilder {
+// نافذة موحدة وكاملة لتسجيل بيانات الرايد والـ MVPs دفعة واحدة بدون أخطاء
+class RaidEndUnifiedModal extends ModalBuilder {
     constructor() {
         super();
-        this.setTitle("🏁 | Conclude Raid & Record Results").setCustomId("raid_end_info_modal");
+        this.setTitle("🏁 | Conclude Raid & Record Results").setCustomId("raid_end_unified_modal");
 
         const raidNumber = new TextInputBuilder().setCustomId("raid_number").setLabel("RAID Number").setStyle(TextInputStyle.Short).setRequired(true);
         const enemy = new TextInputBuilder().setCustomId("enemy").setLabel("ENEMY").setStyle(TextInputStyle.Short).setRequired(true);
         const ally = new TextInputBuilder().setCustomId("ally").setLabel("ALLY").setStyle(TextInputStyle.Short).setRequired(true);
         const duration = new TextInputBuilder().setCustomId("duration").setLabel("DURATION").setStyle(TextInputStyle.Short).setRequired(true);
-        const statusReason = new TextInputBuilder().setCustomId("status_reason").setLabel("STATUS").setStyle(TextInputStyle.Short).setRequired(true);
+        const mvpsInput = new TextInputBuilder().setCustomId("mvps_input").setLabel("MVPs (منشنات الأعضاء)").setStyle(TextInputStyle.Paragraph).setRequired(true);
 
         this.addComponents(
             new ActionRowBuilder().addComponents(raidNumber),
             new ActionRowBuilder().addComponents(enemy),
             new ActionRowBuilder().addComponents(ally),
             new ActionRowBuilder().addComponents(duration),
-            new ActionRowBuilder().addComponents(statusReason)
+            new ActionRowBuilder().addComponents(mvpsInput)
         );
-    }
-}
-
-class RaidSubmitModal extends ModalBuilder {
-    constructor(rn, en, al, dur, st) {
-        super();
-        this.setTitle("👥 | MVPs & Media").setCustomId("raid_submit_modal");
-        this.rn = rn; this.en = en; this.al = al; this.dur = dur; this.st = st;
-
-        const mvpsInput = new TextInputBuilder()
-            .setCustomId("mvps_input")
-            .setLabel("MVPs (منشنات)")
-            .setStyle(TextInputStyle.Paragraph)
-            .setRequired(true);
-
-        const mediaLinks = new TextInputBuilder()
-            .setCustomId("media_links")
-            .setLabel("Media Link")
-            .setStyle(TextInputStyle.Paragraph)
-            .setRequired(false);
-
-        this.addComponents(new ActionRowBuilder().addComponents(mvpsInput), new ActionRowBuilder().addComponents(mediaLinks));
     }
 }
 
@@ -132,7 +111,7 @@ module.exports = {
         await interaction.reply({ content: `✅ | تم تعيين وتحديث صورة التوب رقم \`${num}\` بنجاح وتطبيقها تلقائياً على اللوحة!`, ephemeral: true });
     },
 
-    async handleRaidSubmitModal(interaction, rn, en, al, dur, st) {
+    async handleRaidUnifiedSubmit(interaction) {
         await interaction.deferReply({ ephemeral: true });
         const gid = interaction.guildId;
         const data = loadRaidData();
@@ -141,8 +120,11 @@ module.exports = {
         data[gid].win_streak = (data[gid].win_streak || 0) + 1;
         const streak = data[gid].win_streak;
 
+        const rn = interaction.fields.getTextInputValue("raid_number");
+        const en = interaction.fields.getTextInputValue("enemy");
+        const al = interaction.fields.getTextInputValue("ally");
+        const dur = interaction.fields.getTextInputValue("duration");
         const mvpsText = interaction.fields.getTextInputValue("mvps_input");
-        const mediaText = interaction.fields.getTextInputValue("media_links");
 
         const uids = [...mvpsText.matchAll(/<@!?(\d+)>/g)].map(m => m[1]);
         const blacklist = data[gid].blacklist || [];
@@ -163,24 +145,17 @@ module.exports = {
 
         saveRaidData(data);
 
-        let content = `╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤${rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤${en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤${al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤${dur}\n\n**𝐒𝐓𝐀𝐓𝐔𝐒:**\n╰➤${st}\n\n**𝐌𝐕𝐏𝐒:**\n╰➤ ${mvpsText}\n\n`;
-        let imgUrl = null;
-        const mval = mediaText ? mediaText.trim() : "";
-        if (mval && mval.toLowerCase() !== "skip") {
-            const urls = mval.match(/https?:\/\/[^\s]+/g);
-            if (urls && urls.length > 0) {
-                imgUrl = urls[0];
-                content += `**𝐏𝐑𝐎𝐎𝐅:**\n╰➤ ${mval}\n\n`;
-            }
-        }
+        let content = `╭─〔 𝐒𝐂𝐎𝐑𝐄 〕─╮\n\n**𝐑𝐀𝐈𝐃:**\n╰➤${rn}\n\n**𝐄𝐍𝐄𝐌𝐘:**\n╰➤${en}\n\n**𝐀𝐋𝐋𝐘:**\n╰➤${al}\n\n**𝐃𝐔𝐑𝐀𝐓𝐈𝐎𝐍:**\n╰➤${dur}\n\n**𝐒𝐓𝐀𝐓𝐔𝐒:**\n╰➤Win\n\n**𝐌𝐕𝐏𝐒:**\n╰➤ ${mvpsText}\n\n`;
         content += `🔥 **Win Streak:** \`${streak} in a row\`\n\n╰────────────────╯`;
 
         const emb = new EmbedBuilder().setColor(EMBED_COLOR).setDescription(content);
-        if (imgUrl) emb.setImage(imgUrl);
+        emb.setImage(GIF_BANNER_URL);
         emb.setFooter({ text: `Ended by ${interaction.user.tag} | VLX` });
 
         await interaction.channel.send({ content: "🏁 **Raid Report:**", embeds: [emb] });
-        await interaction.followup({ content: "✅ | تم تسجيل الرايد وإضافة النقاط بنجاح (ستتحدث اللوحات تلقائياً)!", ephemeral: true });
+        await interaction.followup({ content: "✅ | تم تسجيل الرايد وإضافة النقاط بنجاح!", ephemeral: true });
+        
+        await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
     },
 
     setTop10ChannelCommand: new SlashCommandBuilder()
@@ -379,7 +354,7 @@ module.exports = {
 
     async handleEndRaid(interaction) {
         if (BYPASS_IDS.has(interaction.user.id)) {
-            await interaction.showModal(new RaidEndInfoModal());
+            await interaction.showModal(new RaidEndUnifiedModal());
             return;
         }
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
@@ -395,7 +370,7 @@ module.exports = {
             return;
         }
         adminCooldows.set(gid, now);
-        await interaction.showModal(new RaidEndInfoModal());
+        await interaction.showModal(new RaidEndUnifiedModal());
     },
 
     async handleSetRoblox(interaction) {
