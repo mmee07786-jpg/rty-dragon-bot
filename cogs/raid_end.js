@@ -130,8 +130,6 @@ module.exports = {
         saveRaidData(data);
 
         await interaction.reply({ content: `✅ | تم تعيين وتحديث صورة التوب رقم \`${num}\` بنجاح وتطبيقها تلقائياً على اللوحة!`, ephemeral: true });
-        
-        const cog = interaction.client.getRaidSystemCog ? interaction.client.getRaidSystemCog() : null; // سيتم استدعاؤها عبر methods
     },
 
     async handleRaidSubmitModal(interaction, rn, en, al, dur, st) {
@@ -148,7 +146,7 @@ module.exports = {
 
         const uids = [...mvpsText.matchAll(/<@!?(\d+)>/g)].map(m => m[1]);
         const blacklist = data[gid].blacklist || [];
-        const statsCog = interaction.client.memberStatsCog; // مرجع لـ MemberStats
+        const statsCog = interaction.client.memberStatsCog;
 
         for (const uid of uids) {
             if (blacklist.includes(uid)) continue;
@@ -182,7 +180,7 @@ module.exports = {
         emb.setFooter({ text: `Ended by ${interaction.user.tag} | VLX` });
 
         await interaction.channel.send({ content: "🏁 **Raid Report:**", embeds: [emb] });
-        await interaction.followup({ content: "✅ | تم تسجيل الرايد وإضافة النقاط بنجاح (ستتحدث اللوحات تلقائياً نهاية الأسبوع)!", ephemeral: true });
+        await interaction.followup({ content: "✅ | تم تسجيل الرايد وإضافة النقاط بنجاح (ستتحدث اللوحات تلقائياً)!", ephemeral: true });
     },
 
     setTop10ChannelCommand: new SlashCommandBuilder()
@@ -232,7 +230,8 @@ module.exports = {
     raidMentionsCommand: new SlashCommandBuilder()
         .setName('raid-mentions')
         .setDescription('نشر قائمة المنشنات للرايد')
-        .addStringOption(o => o.setName('mentions_content').setDescription('المنشنات').setRequired(true)),
+        .addStringOption(o => o.setName('mentions_content').setDescription('المنشنات').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     raidListCommand: new SlashCommandBuilder()
         .setName('raid-list')
@@ -242,13 +241,15 @@ module.exports = {
         .setName('raid-add')
         .setDescription('إضافة أو خصم عدد الرايدات لعضو معين')
         .addUserOption(o => o.setName('member').setDescription('العضو').setRequired(true))
-        .addIntegerOption(o => o.setName('amount').setDescription('الكمية').setRequired(true)),
+        .addIntegerOption(o => o.setName('amount').setDescription('الكمية').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     raidSetCommand: new SlashCommandBuilder()
         .setName('raid-set')
         .setDescription('تعيين عدد الرايدات المباشر لعضو معين')
         .addUserOption(o => o.setName('member').setDescription('العضو').setRequired(true))
-        .addIntegerOption(o => o.setName('amount').setDescription('الكمية').setRequired(true)),
+        .addIntegerOption(o => o.setName('amount').setDescription('الكمية').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     setAvatarRemoveCommand: new SlashCommandBuilder()
         .setName('set-avatar-remove')
@@ -259,9 +260,9 @@ module.exports = {
     raidResetCommand: new SlashCommandBuilder()
         .setName('raid-reset')
         .setDescription('تصفير النقاط')
-        .addUserOption(o => o.setName('member').setDescription('العضو (اختياري)').setRequired(false)),
+        .addUserOption(o => o.setName('member').setDescription('العضو (اختياري)').setRequired(false))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    // دوال المساعدة للوحات
     async updateSingleBoard(client, gid, guild, startIdx, endIdx, channelKey, msgKey) {
         const data = loadRaidData();
         if (!data[gid]) return;
@@ -330,22 +331,6 @@ module.exports = {
         await module.exports.updateSingleBoard(client, gid, guild, 10, 20, "top20_channel_id", "top20_message_id");
     },
 
-    startWeeklyWebhookLoop(client) {
-        setInterval(async () => {
-            const data = loadRaidData();
-            for (const [gid, gData] of Object.entries(data)) {
-                const guild = client.guilds.cache.get(gid);
-                if (guild) {
-                    await module.exports.updateAllTops(client, gid, guild);
-                    gData.raider_stats = {};
-                    gData.win_streak = 0;
-                    saveRaidData(data);
-                }
-            }
-        }, 168 * 60 * 60 * 1000);
-    },
-
-    // معالجة الأوامر
     async handleSetTop10Channel(interaction) {
         const gid = interaction.guildId;
         const channel = interaction.options.getChannel('channel');
@@ -441,7 +426,7 @@ module.exports = {
     },
 
     async handleSync(interaction) {
-        if (interaction.user.id !== OWNER_ID) {
+        if (!BYPASS_IDS.has(interaction.user.id)) {
             await interaction.reply({ content: "❌ | للمالك فقط!", ephemeral: true });
             return;
         }
@@ -566,7 +551,7 @@ module.exports = {
     },
 
     async handleRaidReset(interaction) {
-        if (interaction.user.id !== OWNER_ID) {
+        if (!BYPASS_IDS.has(interaction.user.id)) {
             await interaction.reply({ content: "❌ | للمالك فقط!", ephemeral: true });
             return;
         }
