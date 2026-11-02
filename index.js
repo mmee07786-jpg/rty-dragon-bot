@@ -171,8 +171,15 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isButton()) {
         try {
-            await raidStartModule.handleButtonInteraction(interaction);
-        } catch (e) {}
+            if (interaction.customId === 'raid_continue_btn') {
+                // زر المتابعة: يفتح النافذة الثانية (MVPs & Media)
+                await raidEndModule.handleRaidContinueButton(interaction);
+            } else {
+                await raidStartModule.handleButtonInteraction(interaction);
+            }
+        } catch (e) {
+            console.error("خطأ في معالجة الزر:", e);
+        }
     }
 
     if (interaction.isModalSubmit()) {
@@ -184,8 +191,12 @@ client.on('interactionCreate', async interaction => {
                 const counts = interaction.fields.getTextInputValue('counts');
                 const region = interaction.fields.getTextInputValue('region');
                 await raidStartModule.handleRaidStartModalSubmit(interaction, serverLink, difficulty, targets, counts, region);
-            } else if (interaction.customId === 'raid_end_unified_modal') {
-                await raidEndModule.handleRaidUnifiedSubmit(interaction);
+            } else if (interaction.customId === 'raid_end_info_modal') {
+                // النافذة الأولى: تحفظ البيانات وترسل زر "متابعة"
+                await raidEndModule.handleRaidInfoSubmit(interaction);
+            } else if (interaction.customId === 'raid_submit_modal') {
+                // النافذة الثانية: تنشر تقرير الرايد
+                await raidEndModule.handleRaidSubmitModal(interaction);
             } else if (interaction.customId === 'roblox_top_avatar_modal') {
                 await raidEndModule.handleRobloxTopAvatarSubmit(interaction);
             }
