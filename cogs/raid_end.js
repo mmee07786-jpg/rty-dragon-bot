@@ -142,7 +142,7 @@ module.exports = {
         const gid = interaction.guildId;
         const data = loadRaidData();
         if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
-        
+
         data[gid].win_streak = (data[gid].win_streak || 0) + 1;
         const streak = data[gid].win_streak;
 
@@ -186,7 +186,7 @@ module.exports = {
 
         await interaction.channel.send({ content: "🏁 **Raid Report:**", embeds: [emb] });
         await interaction.editReply({ content: "✅ | تم تسجيل الرايد وإضافة النقاط وتحديث اللوحات بنجاح تام!" });
-        
+
         await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
     },
 
@@ -343,7 +343,7 @@ module.exports = {
         const channel = interaction.options.getChannel('channel');
         const data = loadRaidData();
         if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
-        
+
         data[gid].top10_channel_id = channel.id;
         delete data[gid].top10_message_id;
         saveRaidData(data);
@@ -357,7 +357,7 @@ module.exports = {
         const channel = interaction.options.getChannel('channel');
         const data = loadRaidData();
         if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
-        
+
         data[gid].top20_channel_id = channel.id;
         delete data[gid].top20_message_id;
         saveRaidData(data);
@@ -439,7 +439,7 @@ module.exports = {
         }
         await interaction.deferReply({ ephemeral: true });
         const synced = await interaction.client.application.commands.fetch();
-        await interaction.followup({ content: `✅ | تمت المزامنة بنجاح (\`${synced.size}\` أمر)`, ephemeral: true });
+        await interaction.followUp({ content: `✅ | تمت المزامنة بنجاح (\`${synced.size}\` أمر)`, ephemeral: true });
     },
 
     async handleRaidMentions(interaction) {
@@ -557,41 +557,26 @@ module.exports = {
         await interaction.reply({ content: `❌ | لا توجد صورة مخصصة مسجلة للتوب رقم \`${topNumber}\`.`, ephemeral: true });
     },
 
----
-
-ولكي تتصل النافذة الأولى بالنافذة الثانية بدون أي مشاكل، تأكد أن جزء معالجة الـ Modals في ملف **`index.js`** يحتوي على هذا الترتيب الصحيح تماماً:
-
-```javascript
-    if (interaction.isModalSubmit()) {
-        try {
-            if (interaction.customId === 'raid_start_modal') {
-                const serverLink = interaction.fields.getTextInputValue('server_link');
-                const difficulty = interaction.fields.getTextInputValue('difficulty');
-                const targets = interaction.fields.getTextInputValue('targets');
-                const counts = interaction.fields.getTextInputValue('counts');
-                const region = interaction.fields.getTextInputValue('region');
-                await raidStartModule.handleRaidStartModalSubmit(interaction, serverLink, difficulty, targets, counts, region);
-            } else if (interaction.customId === 'raid_end_info_modal') {
-                const rn = interaction.fields.getTextInputValue('raid_number');
-                const en = interaction.fields.getTextInputValue('enemy');
-                const al = interaction.fields.getTextInputValue('ally');
-                const dur = interaction.fields.getTextInputValue('duration');
-                const st = interaction.fields.getTextInputValue('status_reason');
-
-                // فتح النافذة الثانية فوراً بدون تأخير وبدون أخطاء
-                await interaction.showModal(new raidEndModule.RaidSubmitModal(rn, en, al, dur, st));
-            } else if (interaction.customId.startsWith('raid_submit_modal_')) {
-                const parts = interaction.customId.split('_');
-                const rn = parts[3];
-                const en = parts[4];
-                const al = parts[5];
-                const dur = parts[6];
-                const st = parts.slice(7).join('_');
-                await raidEndModule.handleRaidSubmitModal(interaction, rn, en, al, dur, st);
-            } else if (interaction.customId === 'roblox_top_avatar_modal') {
-                await raidEndModule.handleRobloxTopAvatarSubmit(interaction);
-            }
-        } catch (e) {
-            console.error("خطأ في معالجة Modal:", e);
+    async handleRaidReset(interaction) {
+        if (!BYPASS_IDS.has(interaction.user.id) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            await interaction.reply({ content: "❌ | ليس لديك صلاحية!", ephemeral: true });
+            return;
         }
+        const gid = interaction.guildId;
+        const member = interaction.options.getMember('member');
+        const data = loadRaidData();
+        if (!data[gid]) data[gid] = { raider_stats: {}, win_streak: 0, roblox_users: {}, member_countries: {}, custom_avatars: {}, blacklist: [] };
+
+        if (member) {
+            data[gid].raider_stats[member.id] = 0;
+            saveRaidData(data);
+            await interaction.reply({ content: `✅ | تم تصفير رايدات ${member}`, ephemeral: true });
+        } else {
+            data[gid].raider_stats = {};
+            data[gid].win_streak = 0;
+            saveRaidData(data);
+            await interaction.reply({ content: "✅ | تم تصفير نقاط الجميع", ephemeral: true });
+        }
+        await module.exports.updateAllTops(interaction.client, gid, interaction.guild);
     }
+};
