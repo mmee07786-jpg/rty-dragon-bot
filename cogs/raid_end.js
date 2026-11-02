@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -9,6 +9,7 @@ const GIF_BANNER_URL = "https://cdn.discordapp.com/attachments/14792141565604660
 const OWNER_ID = "1107355943408259112";
 const BYPASS_IDS = new Set([OWNER_ID, "1182323811341840447"]);
 const adminCooldows = new Map();
+const pendingRaids = new Map(); // بيانات النافذة الأولى بانتظار النافذة الثانية
 
 function loadRaidData() {
     if (fs.existsSync(DATA_FILE)) {
@@ -81,10 +82,9 @@ class RaidEndInfoModal extends ModalBuilder {
 
 // النافذة الثانية (المنشنات وروابط الإثبات)
 class RaidSubmitModal extends ModalBuilder {
-    constructor(rn, en, al, dur, st) {
+    constructor() {
         super();
-        this.setTitle("👥 | MVPs & Media").setCustomId(`raid_submit_modal_${rn}_${en}_${al}_${dur}_${st}`);
-        this.rn = rn; this.en = en; this.al = al; this.dur = dur; this.st = st;
+        this.setTitle("👥 | MVPs & Media").setCustomId("raid_submit_modal");
 
         const mvpsInput = new TextInputBuilder()
             .setCustomId("mvps_input")
@@ -137,7 +137,53 @@ module.exports = {
         await interaction.reply({ content: `✅ | تم تعيين وتحديث صورة التوب رقم \`${num}\` بنجاح وتطبيقها تلقائياً على اللوحة!`, ephemeral: true });
     },
 
-    async handleRaidSubmitModal(interaction, rn, en, al, dur, st) {
+    // الخطوة 1: استلام النافذة الأولى وإرسال زر "متابعة"
+    async handleRaidInfoSubmit(interaction) {
+        pendingRaids.set(interaction.user.id, {
+            rn: interaction.fields.getTextInputValue("raid_number"),
+            en: interaction.fields.getTextInputValue("enemy"),
+            al: interaction.fields.getTextInputValue("ally"),
+            dur: interaction.fields.getTextInputValue("duration"),
+            st: interaction.fields.getTextInputValue("status_reason"),
+            ts: Date.now()
+        });
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId("raid_continue_btn")
+                .setLabel("متابعة (MVPs & Media)")
+                .setEmoji("➡️")
+                .setStyle(ButtonStyle.Primary)
+        );
+
+        await interaction.reply({
+            content: "✅ | تم حفظ المعلومات الأساسية. اضغط الزر لإكمال MVPs والإثبات (خلال 10 دقائق):",
+            components: [row],
+            ephemeral: true
+        });
+    },
+
+    // الخطوة 2: الضغط على الزر يفتح النافذة الثانية
+    async handleRaidContinueButton(interaction) {
+        const pending = pendingRaids.get(interaction.user.id);
+        if (!pending || Date.now() - pending.ts > 10 * 60 * 1000) {
+            pendingRaids.delete(interaction.user.id);
+            await interaction.reply({ content: "❌ | انتهت المدة، اكتب /end-raid من جديد.", ephemeral: true });
+            return;
+        }
+        await interaction.showModal(new RaidSubmitModal());
+    },
+
+    // الخطوة 3: استلام النافذة الثانية ونشر التقرير
+    async handleRaidSubmitModal(interaction) {
+        const pending = pendingRaids.get(interaction.user.id);
+        if (!pending) {
+            await interaction.reply({ content: "❌ | ما لقيت بيانات الرايد، اكتب /end-raid من جديد.", ephemeral: true });
+            return;
+        }
+        pendingRaids.delete(interaction.user.id);
+        const { rn, en, al, dur, st } = pending;
+
         await interaction.deferReply({ ephemeral: true });
         const gid = interaction.guildId;
         const data = loadRaidData();
