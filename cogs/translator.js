@@ -64,9 +64,23 @@ async function translateViaGoogle(text, targetLang) {
     return data[0].map(item => item[0]).filter(Boolean).join("");
 }
 
+// MyMemory ما يقبل "auto" كلغة مصدر، فنحزر لغة النص بشكل تقريبي حسب نوع الحروف
+function guessSourceLang(text) {
+    if (/[\u0600-\u06FF]/.test(text)) return "ar";       // عربي
+    if (/[\u0400-\u04FF]/.test(text)) return "ru";       // روسي
+    if (/[\u3040-\u30FF]/.test(text)) return "ja";       // ياباني
+    if (/[\uAC00-\uD7AF]/.test(text)) return "ko";       // كوري
+    if (/[\u4E00-\u9FFF]/.test(text)) return "zh-CN";    // صيني
+    if (/[\u0590-\u05FF]/.test(text)) return "he";       // عبري
+    return "en"; // افتراضي لأي حروف لاتينية أو غير معروفة
+}
+
 // محاولة 2 (احتياطية): MyMemory، تُستخدم فقط إذا Google رفض الطلب (429) أو فشل
 async function translateViaMyMemory(text, targetLang) {
-    const langPair = `auto|${targetLang}`;
+    let sourceLang = guessSourceLang(text);
+    if (sourceLang === targetLang) sourceLang = "en"; // تجنب ar|ar أو نفس اللغة للمصدر والهدف
+
+    const langPair = `${sourceLang}|${targetLang}`;
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langPair)}`;
 
     const response = await fetchFn(url, {
@@ -77,6 +91,12 @@ async function translateViaMyMemory(text, targetLang) {
     const data = await response.json();
     const text2 = data && data.responseData && data.responseData.translatedText;
     if (!text2) throw new Error("NO_TRANSLATION");
+
+    // MyMemory أحياناً يرجع رسالة خطأ نصية (مثل "'XX' IS AN INVALID...") بدل الترجمة الفعلية
+    if (/IS AN INVALID (SOURCE|TARGET) LANGUAGE/i.test(text2) || /QUERY LENGTH LIMIT/i.test(text2)) {
+        throw new Error(`MYMEMORY_REJECTED: ${text2}`);
+    }
+
     return text2;
 }
 
