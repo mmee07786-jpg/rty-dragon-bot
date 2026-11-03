@@ -1,199 +1,135 @@
-const { EmbedBuilder } = require('discord.js');
+const { 
+    EmbedBuilder, 
+    ActionRowBuilder, 
+    StringSelectMenuBuilder,
+    ButtonBuilder,
+    ButtonStyle
+} = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-// قائمة شاملة لربط أعلام الدول برموز اللغات
-const flagToLang = {
-    // الدول العربية
-    "🇮🇶": "ar", "🇸🇦": "ar", "🇪🇬": "ar", "🇦🇪": "ar", "🇸🇾": "ar",
-    "🇯🇴": "ar", "🇱🇧": "ar", "🇰🇼": "ar", "🇶🇦": "ar", "🇧🇭": "ar",
-    "🇴🇲": "ar", "🇾🇪": "ar", "🇵🇸": "ar", "🇩🇿": "ar", "🇲🇦": "ar",
-    "🇹🇳": "ar", "🇸🇩": "ar", "🇱🇾": "ar", "🇸🇴": "ar", "🇲🇷": "ar",
+const OWNER_ID = "1107355943408259112";
+const CONTROL_FILE = path.join(__dirname, '../bot_control.json');
 
-    // اللغات الأجنبية الشائعة
-    "🇺🇸": "en", "🇬🇧": "en", "🇨🇦": "en", "🇦🇺": "en",
-    "🇫🇷": "fr",
-    "🇪🇸": "es",
-    "🇩🇪": "de",
-    "🇹🇷": "tr",
-    "🇮🇷": "fa",
-    "🇷🇺": "ru",
-    "🇮🇹": "it",
-    "🇨🇳": "zh-CN",
-    "🇯🇵": "ja",
-    "🇰🇷": "ko",
-    "🇧🇷": "pt", "🇵🇹": "pt",
-    "🇮🇳": "hi",
-    "🇵🇰": "ur"
-};
-
-// Node 18+ عنده fetch جاهز. إذا نسخة أقدم، نحاول node-fetch كبديل.
-let fetchFn = (typeof fetch === 'function') ? fetch : null;
-if (!fetchFn) {
-    try {
-        fetchFn = require('node-fetch');
-        console.log("ℹ️ نظام الترجمة يستخدم node-fetch (Node قديم بدون fetch مدمج).");
-    } catch (e) {
-        fetchFn = null;
-        console.log("❌ نظام الترجمة معطّل: لا توجد دالة fetch ولا مكتبة node-fetch مثبتة. ثبّت Node.js 18+ أو شغّل: npm install node-fetch");
-    }
-}
-
-// محاولة 1: Google (سريعة لكن IP الاستضافات المشتركة يتعرض لحظر 429 أحياناً)
-async function translateViaGoogle(text, targetLang) {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t`;
-    const body = new URLSearchParams({ q: text }).toString();
-
-    const response = await fetchFn(url, {
-        method: "POST",
-        headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body
-    });
-
-    if (response.status === 429) {
-        const err = new Error("RATE_LIMITED");
-        err.code = 429;
-        throw err;
-    }
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data[0].map(item => item[0]).filter(Boolean).join("");
-}
-
-// محاولة 2 (احتياطية): MyMemory، تُستخدم فقط إذا Google رفض الطلب (429) أو فشل
-async function translateViaMyMemory(text, targetLang) {
-    const langPair = `auto|${targetLang}`;
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langPair)}`;
-
-    const response = await fetchFn(url, {
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const data = await response.json();
-    const text2 = data && data.responseData && data.responseData.translatedText;
-    if (!text2) throw new Error("NO_TRANSLATION");
-    return text2;
-}
-
-// يترجم مقطع واحد: يجرب Google، وإذا انحظر (429) أو فشل يتحول لـ MyMemory تلقائياً
-async function translateChunk(text, targetLang) {
-    if (!fetchFn) return null;
-
-    for (let attempt = 1; attempt <= 2; attempt++) {
+function loadControlData() {
+    if (fs.existsSync(CONTROL_FILE)) {
         try {
-            return await translateViaGoogle(text, targetLang);
+            return JSON.parse(fs.readFileSync(CONTROL_FILE, 'utf8'));
         } catch (e) {
-            if (e.code === 429) {
-                console.log(`⚠️ Google رفض الطلب (429 - طلبات كثيرة من IP الاستضافة). جاري المحاولة بخدمة بديلة...`);
-            } else {
-                console.log(`⚠️ خطأ من Google: ${e.message}. جاري المحاولة بخدمة بديلة...`);
-            }
-            break; // ننتقل فوراً للخدمة البديلة بدل الانتظار
+            return { disabled_guilds: [] };
         }
     }
-
-    try {
-        return await translateViaMyMemory(text, targetLang);
-    } catch (e) {
-        console.log(`⚠️ فشلت أيضاً الخدمة البديلة: ${e.message}`);
-        return null;
-    }
+    return { disabled_guilds: [] };
 }
 
-// يقسم النص الطويل جداً إلى مقاطع (حسب أقرب مسافة) حتى لا يتجاوز حد Google للطلب الواحد
-function splitIntoChunks(text, maxLen = 3500) {
-    if (text.length <= maxLen) return [text];
-    const chunks = [];
-    let remaining = text;
-    while (remaining.length > maxLen) {
-        let cut = remaining.lastIndexOf(" ", maxLen);
-        if (cut <= 0) cut = maxLen;
-        chunks.push(remaining.slice(0, cut));
-        remaining = remaining.slice(cut).trimStart();
-    }
-    if (remaining) chunks.push(remaining);
-    return chunks;
-}
-
-async function translateText(text, targetLang) {
-    if (!fetchFn) return null;
-    const chunks = splitIntoChunks(text);
-    const results = [];
-    for (const chunk of chunks) {
-        const translated = await translateChunk(chunk, targetLang);
-        if (translated === null) return null; // فشل مقطع = نوقف، حتى لا نرسل ترجمة ناقصة
-        results.push(translated);
-    }
-    return results.join(" ");
+function saveControlData(data) {
+    fs.writeFileSync(CONTROL_FILE, JSON.stringify(data, null, 4), 'utf8');
 }
 
 module.exports = {
-    async handleRawReactionAdd(payload, client) {
-        // تجاهل تفاعل البوت نفسه
-        if (payload.user_id === client.user.id) return;
+    isGuildDisabled(guildId) {
+        if (!guildId) return false;
+        const data = loadControlData();
+        return data.disabled_guilds.includes(guildId);
+    },
 
-        const emojiStr = payload.emoji.name;
-        const fullEmoji = payload.emoji.id ? `<:${payload.emoji.name}:${payload.emoji.id}>` : payload.emoji.name;
+    async handleJJCommand(message, client) {
+        if (message.author.id !== OWNER_ID) return;
 
-        const targetLang = flagToLang[fullEmoji] || flagToLang[emojiStr];
-        if (!targetLang) return;
-
-        const channel = client.channels.cache.get(payload.channel_id) || await client.channels.fetch(payload.channel_id).catch(() => null);
-        if (!channel || !channel.isTextBased()) return;
-
-        let message;
-        try {
-            message = await channel.messages.fetch(payload.message_id);
-        } catch (e) {
-            console.log(`⚠️ تعذر جلب الرسالة للترجمة: ${e.message}`);
+        if (client.guilds.cache.size === 0) {
+            await message.channel.send("عيوني فهد، أنا لست منضماً إلى أي سيرفر حالياً.");
             return;
         }
 
-        if (!message.content || !message.content.trim()) {
-            // إذا وصل هنا فارغ رغم إن الرسالة فيها نص، فالسبب الأكيد:
-            // Message Content Intent غير مفعّل من Discord Developer Portal
-            console.log("⚠️ محتوى الرسالة فارغ عند البوت. تأكد إن 'MESSAGE CONTENT INTENT' مفعّل من Developer Portal > Bot.");
-            return;
-        }
+        const guilds = Array.from(client.guilds.cache.values()).slice(0, 25);
+        const data = loadControlData();
 
-        try {
-            const textToTranslate = message.content.trim();
-            let translatedText = await translateText(textToTranslate, targetLang);
-            if (!translatedText) return;
+        const options = guilds.map(g => {
+            const isDisabled = data.disabled_guilds.includes(g.id);
+            return {
+                label: g.name.substring(0, 100),
+                value: g.id,
+                description: isDisabled ? "🔴 البوت متوقف حالياً في هذا السيرفر" : "🟢 البوت يعمل بشكل طبيعي",
+                emoji: isDisabled ? "🔴" : "🟢"
+            };
+        });
 
-            // حد ديسكورد لوصف الـ Embed هو 4096 حرف
-            if (translatedText.length > 4096) {
-                translatedText = translatedText.slice(0, 4090) + " …";
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId("bot_control_guild_select")
+            .setPlaceholder("اختر السيرفر للتحكم بحالة عمل البوت فيه...")
+            .addOptions(options);
+
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+
+        const embed = new EmbedBuilder()
+            .setTitle("🛑 | لوحة التحكم الطارئة بإيقاف/تشغيل البوت")
+            .setDescription("اختر السيرفر من القائمة أدناه لتعطيل البوت فيه بالكامل أو إرجاع عمله:")
+            .setColor(0xFF0000);
+
+        const sentMsg = await message.channel.send({ embeds: [embed], components: [row] });
+        setTimeout(() => sentMsg.delete().catch(() => {}), 180 * 1000);
+    },
+
+    async handleInteraction(interaction, client) {
+        if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
+
+        if (interaction.customId === "bot_control_guild_select") {
+            if (interaction.user.id !== OWNER_ID) {
+                await interaction.reply({ content: "عذراً، هذا الأمر خاص بفهد فقط!", ephemeral: true });
+                return;
             }
 
-            let member = payload.member;
-            if (!member) {
-                member = await channel.guild.members.fetch(payload.user_id).catch(() => null);
+            // منع انتهاء مهلة ديسكورد عبر استخدام deferReply فوراً
+            await interaction.deferReply({ ephemeral: true });
+
+            const guildId = interaction.values[0];
+            const guild = client.guilds.cache.get(guildId);
+            if (!guild) {
+                await interaction.followUp({ content: "❌ | السيرفر غير موجود.", ephemeral: true });
+                return;
             }
 
-            const memberMention = member ? member.toString() : `<@${payload.user_id}>`;
-            const footerName = member ? member.displayName : "عضو";
-            const footerAvatar = member ? member.displayAvatarURL() : null;
+            const data = loadControlData();
+            const isDisabled = data.disabled_guilds.includes(guildId);
 
-            const embed = new EmbedBuilder()
-                .setDescription(translatedText)
-                .setColor(0x2ECC71)
-                .setAuthor({ name: "الترجمة الفورية", iconURL: "https://i.imgur.com/3Z4h7uK.png" })
-                .setFooter({ text: `تمت الترجمة بواسطة ${footerName}`, iconURL: footerAvatar });
+            const statusText = isDisabled ? "متوقف حالياً 🔴" : "يعمل حالياً 🟢";
+            const actionText = isDisabled ? "هل تريد إعادة تشغيل البوت في هذا السيرفر؟" : "هل تريد إيقاف البوت تماماً عن العمل في هذا السيرفر؟";
 
-            await message.reply({
-                content: `🌐 | ترجمة الرسالة بناءً على طلب ${memberMention}:`,
-                embeds: [embed],
-                allowedMentions: { parse: [] }
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`bot_toggle_${guildId}`)
+                    .setLabel(isDisabled ? "تفعيل البوت 🟢" : "إيقاف البوت 🔴")
+                    .setStyle(isDisabled ? ButtonStyle.Success : ButtonStyle.Danger)
+            );
+
+            await interaction.followUp({
+                content: `🏰 **السيرفر:** ${guild.name}\n📊 **الحالة الحالية:** ${statusText}\n\n${actionText}`,
+                components: [row],
+                ephemeral: true
             });
+        }
 
-        } catch (e) {
-            console.log(`⚠️ خطأ أثناء تنفيذ الترجمة: ${e.message}`);
+        else if (interaction.customId.startsWith("bot_toggle_")) {
+            if (interaction.user.id !== OWNER_ID) {
+                await interaction.reply({ content: "عذراً، هذا الأمر خاص بفهد فقط!", ephemeral: true });
+                return;
+            }
+
+            await interaction.deferUpdate(); // تحديث فوري للأزرار بدون أخطاء
+
+            const guildId = interaction.customId.split("_")[2];
+            const data = loadControlData();
+            let isDisabled = data.disabled_guilds.includes(guildId);
+
+            if (isDisabled) {
+                data.disabled_guilds = data.disabled_guilds.filter(id => id !== guildId);
+                saveControlData(data);
+                await interaction.editReply({ content: "✅ | تم إعادة تفعيل البوت بنجاح في هذا السيرفر وعاد للعمل!", components: [] });
+            } else {
+                data.disabled_guilds.push(guildId);
+                saveControlData(data);
+                await interaction.editReply({ content: "🛑 | تم إيقاف البوت تماماً في هذا السيرفر ولن يستجيب لأي أمر أو رسالة بعد الآن!", components: [] });
+            }
         }
     }
 };
