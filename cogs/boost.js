@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -64,6 +64,7 @@ module.exports = {
         .addChannelOption(option =>
             option.setName('channel')
                 .setDescription('روم الإعلانات')
+                .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
                 .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
@@ -92,14 +93,24 @@ module.exports = {
 
     async handleBoostSetup(interaction) {
         await interaction.deferReply({ ephemeral: true });
-        const guildId = interaction.guildId;
-        const channel = interaction.options.getChannel('channel');
+        try {
+            const guildId = interaction.guildId;
+            const channel = interaction.options.getChannel('channel');
 
-        const gData = getGuildBoost(guildId);
-        gData.channel_id = channel.id;
-        updateGuildBoost(guildId, gData);
+            if (!channel || !channel.id) {
+                await interaction.editReply({ content: "❌ لم أستطع التعرف على الروم. جرب تختار روم نصي عادي (مو ثريد أو فورم أو قناة صوتية)، وإذا استمرت المشكلة اعمل Restart لتطبيق ديسكورد." });
+                return;
+            }
 
-        await interaction.editReply({ content: `✅ تم ضبط روم إعلانات البوست في هذا السيرفر: ${channel}` });
+            const gData = getGuildBoost(guildId);
+            gData.channel_id = channel.id;
+            updateGuildBoost(guildId, gData);
+
+            await interaction.editReply({ content: `✅ تم ضبط روم إعلانات البوست في هذا السيرفر: ${channel}` });
+        } catch (e) {
+            console.error("خطأ في boost_setup:", e);
+            await interaction.editReply({ content: `❌ صار خطأ: ${e.message}` }).catch(() => {});
+        }
     },
 
     async handleBoostMessage(interaction) {
