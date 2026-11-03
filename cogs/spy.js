@@ -18,10 +18,13 @@ if (GEMINI_API_KEY) {
     genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 }
 
+// موديلات Gemini 1.5 و gemini-pro صارت متوقفة من غوغل وترجع 404 دائماً.
+// هذي أسماء الموديلات الحديثة المتوفرة حالياً، مرتبة من الأخف للأقوى.
 const BEST_MODELS = [
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-    "gemini-pro"
+    "gemini-flash-latest",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.5-pro"
 ];
 
 const userMemory = new Map();
@@ -82,7 +85,7 @@ module.exports = {
             const guild = client.guilds.cache.get(guildId);
 
             if (!guild) {
-                await interaction.followup({ content: "❌ عذراً فهد، لم يتم العثور على السيرفر المطلوب.", ephemeral: true });
+                await interaction.followUp({ content: "❌ عذراً فهد، لم يتم العثور على السيرفر المطلوب.", ephemeral: true });
                 return;
             }
 
@@ -188,9 +191,9 @@ module.exports = {
 
             try {
                 await interaction.user.send({ content: infoText, components: [extraRow] });
-                await interaction.followup.send({ content: "✅ تم إرسال تقرير السيرفر إلى رسائلك الخاصة (DM) بنجاح!", ephemeral: true });
+                await interaction.followUp({ content: "✅ تم إرسال تقرير السيرفر إلى رسائلك الخاصة (DM) بنجاح!", ephemeral: true });
             } catch (e) {
-                await interaction.followup.send({ content: `❌ حدث خطأ، لم أستطع مراسلتك بالخاص: ${e.message}`, ephemeral: true });
+                await interaction.followUp({ content: `❌ حدث خطأ، لم أستطع مراسلتك بالخاص: ${e.message}`, ephemeral: true });
             }
         }
 
@@ -205,13 +208,13 @@ module.exports = {
             const guild = client.guilds.cache.get(guildId);
 
             if (!guild) {
-                await interaction.followup.send({ content: "❌ السيرفر غير موجود.", ephemeral: true });
+                await interaction.followUp({ content: "❌ السيرفر غير موجود.", ephemeral: true });
                 return;
             }
 
             const allChannels = Array.from(guild.channels.cache.filter(c => c.isTextBased()).values());
             if (allChannels.length === 0) {
-                await interaction.followup.send({ content: "❌ لا توجد أي قنوات نصية في هذا السيرفر.", ephemeral: true });
+                await interaction.followUp({ content: "❌ لا توجد أي قنوات نصية في هذا السيرفر.", ephemeral: true });
                 return;
             }
 
@@ -233,9 +236,9 @@ module.exports = {
                     content: `📁 تم العثور على **${allChannels.length}** قناة/روم في السيرفر.\nاختر الروم المطلوبة لترسل لك رسائلها بالخاص:`,
                     components: components
                 });
-                await interaction.followup.send({ content: "✅ تم إرسال قائمة الرومات إلى رسائلك الخاصة (DM)!", ephemeral: true });
+                await interaction.followUp({ content: "✅ تم إرسال قائمة الرومات إلى رسائلك الخاصة (DM)!", ephemeral: true });
             } catch (e) {
-                await interaction.followup.send({ content: `❌ عذراً، لم أستطع إرسال القائمة للخاص: ${e.message}`, ephemeral: true });
+                await interaction.followUp({ content: `❌ عذراً، لم أستطع إرسال القائمة للخاص: ${e.message}`, ephemeral: true });
             }
         }
 
@@ -250,7 +253,7 @@ module.exports = {
             const channel = client.channels.cache.get(channelId);
 
             if (!channel) {
-                await interaction.followup.send({ content: "❌ لم يتم العثور على الروم المطلوب.", ephemeral: true });
+                await interaction.followUp({ content: "❌ لم يتم العثور على الروم المطلوب.", ephemeral: true });
                 return;
             }
 
@@ -273,12 +276,12 @@ module.exports = {
                     }
                 }
             } catch (e) {
-                await interaction.followup.send({ content: `❌ عذراً، لا أملك صلاحية قراءة هذه الروم: ${e.message}`, ephemeral: true });
+                await interaction.followUp({ content: `❌ عذراً، لا أملك صلاحية قراءة هذه الروم: ${e.message}`, ephemeral: true });
                 return;
             }
 
             if (messagesLog.length === 0) {
-                await interaction.followup.send({ content: `❌ لا توجد رسائل مطابقة في روم (#${channel.name}).`, ephemeral: true });
+                await interaction.followUp({ content: `❌ لا توجد رسائل مطابقة في روم (#${channel.name}).`, ephemeral: true });
                 return;
             }
 
@@ -298,9 +301,9 @@ module.exports = {
                 for (const chunk of chunks) {
                     await interaction.user.send({ content: chunk });
                 }
-                await interaction.followup.send({ content: `✅ تم جلب رسائل روم (#${channel.name}) وإرسالها إلى **خاصك (DM)** بنجاح!`, ephemeral: true });
+                await interaction.followUp({ content: `✅ تم جلب رسائل روم (#${channel.name}) وإرسالها إلى **خاصك (DM)** بنجاح!`, ephemeral: true });
             } catch (e) {
-                await interaction.followup.send({ content: `❌ حدث خطأ أثناء إرسال الرسائل للخاص: ${e.message}`, ephemeral: true });
+                await interaction.followUp({ content: `❌ حدث خطأ أثناء إرسال الرسائل للخاص: ${e.message}`, ephemeral: true });
             }
         }
 
@@ -319,12 +322,12 @@ module.exports = {
                 try {
                     await guild.leave();
                     await interaction.user.send({ content: `✅ تم مغادرة السيرفر (**${name}**) بنجاح.` });
-                    await interaction.followup.send({ content: `✅ تم مغادرة السيرفر وإعلامك بالخاص.`, ephemeral: true });
+                    await interaction.followUp({ content: `✅ تم مغادرة السيرفر وإعلامك بالخاص.`, ephemeral: true });
                 } catch (e) {
-                    await interaction.followup.send({ content: `❌ حدث خطأ أثناء المغادرة: ${e.message}`, ephemeral: true });
+                    await interaction.followUp({ content: `❌ حدث خطأ أثناء المغادرة: ${e.message}`, ephemeral: true });
                 }
             } else {
-                await interaction.followup.send({ content: "❌ السيرفر غير موجود.", ephemeral: true });
+                await interaction.followUp({ content: "❌ السيرفر غير موجود.", ephemeral: true });
             }
         }
     },
@@ -396,14 +399,19 @@ module.exports = {
 
             let replyText = null;
             let success = false;
+            let lastErrorMsg = "";
             const memoryObj = userMemory.get(userId);
 
             for (const modelName of BEST_MODELS) {
                 try {
-                    const model = genAI.getGenerativeModel({
-                        model: modelName,
-                        systemInstruction: systemInstruction
-                    });
+                    // apiVersion: "v1beta" لأن أغلب الموديلات الحديثة غير مدعومة تحت v1 العادي
+                    const model = genAI.getGenerativeModel(
+                        {
+                            model: modelName,
+                            systemInstruction: systemInstruction
+                        },
+                        { apiVersion: "v1beta" }
+                    );
 
                     const chat = model.startChat({
                         history: memoryObj.history
@@ -425,6 +433,7 @@ module.exports = {
                         break;
                     }
                 } catch (e) {
+                    lastErrorMsg = e.message;
                     console.log(`⚠️ فشل الموديل ${modelName}: ${e.message}`);
                     continue;
                 }
@@ -436,6 +445,7 @@ module.exports = {
                 }
                 await message.reply(replyText);
             } else {
+                console.log(`❌ فشلت كل الموديلات. آخر خطأ: ${lastErrorMsg}`);
                 await message.reply("عيوني فهد، حدث خطأ في الاتصال بالذكاء الاصطناعي، تأكد من صحة المفتاح.");
             }
         }
