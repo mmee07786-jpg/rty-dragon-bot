@@ -42,6 +42,7 @@ module.exports = {
 
     serializeOverwrites(guild, channel) {
         const overwritesData = {};
+        if (!channel.permissionOverwrites) return overwritesData;
         channel.permissionOverwrites.cache.forEach(overwrite => {
             const targetId = overwrite.id;
             let targetType = null;
@@ -70,7 +71,7 @@ module.exports = {
     },
 
     applyOverwrites(guild, channelData) {
-        const overwrites = {};
+        const overwrites = [];
         const roleMap = new Map();
         guild.roles.cache.forEach(role => roleMap.set(role.name.trim().toLowerCase(), role));
 
@@ -86,16 +87,16 @@ module.exports = {
                     target = guild.members.cache.get(targetIdStr);
                 }
                 if (target) {
-                    overwrites[target.id] = {
+                    overwrites.push({
                         id: target.id,
                         type: targetType === "role" ? 0 : 1,
-                        allow: owData.allow,
-                        deny: owData.deny
-                    };
+                        allow: BigInt(owData.allow),
+                        deny: BigInt(owData.deny)
+                    });
                 }
             } catch (e) {}
         }
-        return Object.values(overwrites);
+        return overwrites;
     },
 
     async handleMyCommand(message) {
@@ -138,7 +139,7 @@ module.exports = {
                 try {
                     await targetGuild.roles.create({ name: role.name, permissions: role.permissions, color: role.color, hoist: role.hoist, mentionable: role.mentionable });
                     existingRoles.add(role.name.trim().toLowerCase());
-                    await new Promise(res => setTimeout(res, 1200));
+                    await new Promise(res => setTimeout(res, 800));
                 } catch (e) {}
             }
 
@@ -156,7 +157,7 @@ module.exports = {
                             await targetGuild.channels.create({ name: channel.name, type: ChannelType.GuildVoice, bitrate: channel.bitrate, userLimit: channel.userLimit });
                         }
                         existingChannels.add(channel.name.trim().toLowerCase());
-                        await new Promise(res => setTimeout(res, 1200));
+                        await new Promise(res => setTimeout(res, 800));
                     } catch (e) {}
                 }
             }
@@ -178,7 +179,7 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async handleBackup(interaction) {
-        // الاستجابة الفورية لمنع خطأ The application did not respond
+        // الاستجابة الفورية المؤجلة لحل مشكلة The application did not respond نهائياً
         await interaction.deferReply({ ephemeral: false });
         const guild = interaction.guild;
 
@@ -223,9 +224,12 @@ module.exports = {
                 categoriesData.push({ name: "بدون قسم", channels: noCategoryChannels });
             }
 
-            guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).forEach(category => {
+            const categoryChannels = guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory);
+            for (const category of categoryChannels.values()) {
                 const catChannels = [];
-                category.children.cache.forEach(channel => {
+                // جلب الرومات التابعة للقسم بطريقة سريعة وآمنة
+                const children = guild.channels.cache.filter(c => c.parentid === category.id || c.parentId === category.id);
+                children.forEach(channel => {
                     if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildVoice) {
                         catChannels.push({
                             name: channel.name,
@@ -240,7 +244,7 @@ module.exports = {
                     }
                 });
                 categoriesData.push({ name: category.name, overwrites: module.exports.serializeOverwrites(guild, category), channels: catChannels });
-            });
+            }
 
             const backupDict = { guild_name: guild.name, roles: rolesData, categories: categoriesData };
             fs.writeFileSync(BACKUP_FILE, JSON.stringify(backupDict, null, 4), 'utf8');
@@ -278,7 +282,7 @@ module.exports = {
                             mentionable: rData.mentionable
                         });
                         existingRoleNames.add(rData.name.trim().toLowerCase());
-                        await new Promise(res => setTimeout(res, 1000));
+                        await new Promise(res => setTimeout(res, 800));
                     } catch (e) {}
                 }
             }
@@ -301,7 +305,7 @@ module.exports = {
                                 permissionOverwrites: module.exports.applyOverwrites(guild, catData)
                             });
                             existingCategories.set(catName.toLowerCase(), categoryObj);
-                            await new Promise(res => setTimeout(res, 1200));
+                            await new Promise(res => setTimeout(res, 1000));
                         } catch (e) { continue; }
                     }
                 }
@@ -321,7 +325,7 @@ module.exports = {
                                 permissionOverwrites: module.exports.applyOverwrites(guild, chData)
                             });
                             existingChannels.add(chData.name.trim().toLowerCase());
-                            await new Promise(res => setTimeout(res, 1000));
+                            await new Promise(res => setTimeout(res, 800));
                         } catch (e) {}
                     }
                 }
