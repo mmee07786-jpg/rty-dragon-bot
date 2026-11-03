@@ -37,17 +37,21 @@ if (!fetchFn) {
     }
 }
 
-async function translateText(text, targetLang) {
+// يترجم مقطع واحد (POST بدل GET حتى ما يتحدد بطول الرابط مع النصوص الطويلة)
+async function translateChunk(text, targetLang) {
     if (!fetchFn) return null;
     try {
-        const encodedText = encodeURIComponent(text);
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodedText}`;
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t`;
+        const body = new URLSearchParams({ q: text }).toString();
 
         const response = await fetchFn(url, {
+            method: "POST",
             headers: {
                 // بعض الاستضافات تحجب الطلبات بدون User-Agent فيرجع Google خطأ 403
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body
         });
 
         if (!response.ok) {
@@ -60,8 +64,35 @@ async function translateText(text, targetLang) {
         return translatedParts.join("");
     } catch (e) {
         console.log(`⚠️ خطأ في اتصال الترجمة: ${e.message}`);
+        return null;
     }
-    return null;
+}
+
+// يقسم النص الطويل جداً إلى مقاطع (حسب أقرب مسافة) حتى لا يتجاوز حد Google للطلب الواحد
+function splitIntoChunks(text, maxLen = 3500) {
+    if (text.length <= maxLen) return [text];
+    const chunks = [];
+    let remaining = text;
+    while (remaining.length > maxLen) {
+        let cut = remaining.lastIndexOf(" ", maxLen);
+        if (cut <= 0) cut = maxLen;
+        chunks.push(remaining.slice(0, cut));
+        remaining = remaining.slice(cut).trimStart();
+    }
+    if (remaining) chunks.push(remaining);
+    return chunks;
+}
+
+async function translateText(text, targetLang) {
+    if (!fetchFn) return null;
+    const chunks = splitIntoChunks(text);
+    const results = [];
+    for (const chunk of chunks) {
+        const translated = await translateChunk(chunk, targetLang);
+        if (translated === null) return null; // فشل مقطع = نوقف، حتى لا نرسل ترجمة ناقصة
+        results.push(translated);
+    }
+    return results.join(" ");
 }
 
 module.exports = {
@@ -95,8 +126,13 @@ module.exports = {
 
         try {
             const textToTranslate = message.content.trim();
-            const translatedText = await translateText(textToTranslate, targetLang);
+            let translatedText = await translateText(textToTranslate, targetLang);
             if (!translatedText) return;
+
+            // حد ديسكورد لوصف الـ Embed هو 4096 حرف
+            if (translatedText.length > 4096) {
+                translatedText = translatedText.slice(0, 4090) + " …";
+            }
 
             let member = payload.member;
             if (!member) {
