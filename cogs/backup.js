@@ -305,7 +305,8 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async handleBackup(interaction) {
-        await interaction.reply({ content: "⏳ جاري إنشاء النسخة الاحتياطية الشاملة لكافة تفاصيل السيرفر...", ephemeral: false });
+        // استخدام deferReply لمنع خطأ انتهاء مهلة ديسكورد (The application did not respond)
+        await interaction.deferReply({ ephemeral: false });
         const guild = interaction.guild;
 
         try {
@@ -505,23 +506,23 @@ module.exports = {
                             });
                         }
                         existingChannels.add(chName.toLowerCase());
-                        await new Promise(res => setTimeout(res, 1200));
+                        await new Problem(res => setTimeout(res, 1200)).catch(() => {});
                     } catch (e) {
                         console.log(`⚠️ خطأ بإنشاء الروم ${chName}: ${e.message}`);
                     }
                 }
             }
 
-            await interaction.followup.send({
+            // التصحيح هنا: استخدام interaction.editReply بدل followup.send
+            await interaction.editReply({
                 content: (
                     `✅ **تمت استعادة العناصر الجديدة فقط دون أي تكرار للرتب أو الرومات أو الأقسام!**\n\n` +
                     `**تم كملت**`
-                ),
-                ephemeral: true
+                )
             });
 
         } catch (e) {
-            await interaction.followup.send({ content: `❌ حدث خطأ غير متوقع أثناء الاستعادة: ${e.message}`, ephemeral: true });
+            await interaction.editReply({ content: `❌ حدث خطأ غير متوقع أثناء الاستعادة: ${e.message}` });
         }
     }
 };
