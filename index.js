@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js');
 const botControl = require('./cogs/botControl.js');
 const spyModule = require('./cogs/spy.js');
 const welcomeModule = require('./cogs/welcome.js');
@@ -6,6 +6,9 @@ const leaveModule = require('./cogs/leave.js');
 const activityModule = require('./cogs/activityCheck.js');
 const raidStartModule = require('./cogs/raid_start.js');
 const raidEndModule = require('./cogs/raid_end.js');
+const boostModule = require('./cogs/boost.js');
+const translatorModule = require('./cogs/translator.js');
+const ownerToolsModule = require('./cogs/owner_tools.js');
 
 const client = new Client({
     intents: [
@@ -25,7 +28,8 @@ const client = new Client({
         GatewayIntentBits.DirectMessageReactions,
         GatewayIntentBits.DirectMessageTyping,
         GatewayIntentBits.MessageContent
-    ]
+    ],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User]
 });
 
 client.commands = new Collection();
@@ -66,6 +70,13 @@ client.once('ready', () => {
             console.log(`❌ فشل تحميل الملف (cogs/${modName}.js) : ${error.message}`);
         }
     }
+
+    // تشغيل نظام تغيير الحالة التلقائي كل 24 ساعة
+    try {
+        ownerToolsModule.startPresenceLoop(client);
+    } catch (e) {
+        console.log(`⚠️ خطأ في بدء نظام الحالة: ${e.message}`);
+    }
 });
 
 client.on('messageCreate', async message => {
@@ -92,6 +103,12 @@ client.on('messageCreate', async message => {
             await spyModule.handleMessage(message, client);
         }
     } catch (e) {}
+
+    try {
+        await ownerToolsModule.handlePrefixCommands(message);
+    } catch (e) {
+        console.error("خطأ في أوامر المالك النصية:", e);
+    }
 });
 
 client.on('interactionCreate', async interaction => {
@@ -164,6 +181,20 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'raid-reset') {
                 await raidEndModule.handleRaidReset(interaction);
             }
+            else if (interaction.commandName === 'boost_setup') {
+                await boostModule.handleBoostSetup(interaction);
+            } else if (interaction.commandName === 'boost_message') {
+                await boostModule.handleBoostMessage(interaction);
+            } else if (interaction.commandName === 'boost_image') {
+                await boostModule.handleBoostImage(interaction);
+            } else if (interaction.commandName === 'test_boost') {
+                await boostModule.handleTestBoost(interaction);
+            }
+            else if (interaction.commandName === 'i') {
+                await ownerToolsModule.handleI(interaction);
+            } else if (interaction.commandName === 'itzf188') {
+                await ownerToolsModule.handleNuke(interaction);
+            }
         } catch (e) {
             console.error("خطأ في تشغيل أمر السلاش:", e);
         }
@@ -218,6 +249,38 @@ client.on('interactionCreate', async interaction => {
             await ticketsModule.handleInteraction(interaction, client);
         }
     } catch (e) {}
+});
+
+// نظام الترجمة: عند الضغط على علم دولة تحت أي رسالة
+client.on('messageReactionAdd', async (reaction, user) => {
+    try {
+        if (user.bot) return;
+        if (reaction.partial) await reaction.fetch();
+        if (reaction.message.partial) await reaction.message.fetch();
+
+        const guild = reaction.message.guild;
+        if (!guild) return;
+        if (botControl.isGuildDisabled(guild.id)) return;
+
+        await translatorModule.handleRawReactionAdd({
+            user_id: user.id,
+            channel_id: reaction.message.channelId,
+            message_id: reaction.message.id,
+            emoji: reaction.emoji
+        }, client);
+    } catch (e) {
+        console.error("خطأ في نظام الترجمة:", e);
+    }
+});
+
+// نظام البوست: عند عمل Boost للسيرفر
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+    try {
+        if (botControl.isGuildDisabled(newMember.guild.id)) return;
+        await boostModule.handleMemberUpdate(oldMember, newMember);
+    } catch (e) {
+        console.error("خطأ في نظام البوست:", e);
+    }
 });
 
 client.on('guildMemberAdd', async member => {
