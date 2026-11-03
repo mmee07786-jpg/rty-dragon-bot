@@ -37,33 +37,70 @@ if (!fetchFn) {
     }
 }
 
-// يترجم مقطع واحد (POST بدل GET حتى ما يتحدد بطول الرابط مع النصوص الطويلة)
+// محاولة 1: Google (سريعة لكن IP الاستضافات المشتركة يتعرض لحظر 429 أحياناً)
+async function translateViaGoogle(text, targetLang) {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t`;
+    const body = new URLSearchParams({ q: text }).toString();
+
+    const response = await fetchFn(url, {
+        method: "POST",
+        headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body
+    });
+
+    if (response.status === 429) {
+        const err = new Error("RATE_LIMITED");
+        err.code = 429;
+        throw err;
+    }
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data[0].map(item => item[0]).filter(Boolean).join("");
+}
+
+// محاولة 2 (احتياطية): MyMemory، تُستخدم فقط إذا Google رفض الطلب (429) أو فشل
+async function translateViaMyMemory(text, targetLang) {
+    const langPair = `auto|${targetLang}`;
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langPair)}`;
+
+    const response = await fetchFn(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const data = await response.json();
+    const text2 = data && data.responseData && data.responseData.translatedText;
+    if (!text2) throw new Error("NO_TRANSLATION");
+    return text2;
+}
+
+// يترجم مقطع واحد: يجرب Google، وإذا انحظر (429) أو فشل يتحول لـ MyMemory تلقائياً
 async function translateChunk(text, targetLang) {
     if (!fetchFn) return null;
-    try {
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t`;
-        const body = new URLSearchParams({ q: text }).toString();
 
-        const response = await fetchFn(url, {
-            method: "POST",
-            headers: {
-                // بعض الاستضافات تحجب الطلبات بدون User-Agent فيرجع Google خطأ 403
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Content-Type": "application/x-www-form-urlencoded"
-            },
-            body
-        });
-
-        if (!response.ok) {
-            console.log(`⚠️ خدمة الترجمة رفضت الطلب (HTTP ${response.status}). جرب لاحقاً أو تأكد إن الاستضافة ما تحجب الاتصال بـ Google.`);
-            return null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            return await translateViaGoogle(text, targetLang);
+        } catch (e) {
+            if (e.code === 429) {
+                console.log(`⚠️ Google رفض الطلب (429 - طلبات كثيرة من IP الاستضافة). جاري المحاولة بخدمة بديلة...`);
+            } else {
+                console.log(`⚠️ خطأ من Google: ${e.message}. جاري المحاولة بخدمة بديلة...`);
+            }
+            break; // ننتقل فوراً للخدمة البديلة بدل الانتظار
         }
+    }
 
-        const data = await response.json();
-        const translatedParts = data[0].map(item => item[0]).filter(Boolean);
-        return translatedParts.join("");
+    try {
+        return await translateViaMyMemory(text, targetLang);
     } catch (e) {
-        console.log(`⚠️ خطأ في اتصال الترجمة: ${e.message}`);
+        console.log(`⚠️ فشلت أيضاً الخدمة البديلة: ${e.message}`);
         return null;
     }
 }
