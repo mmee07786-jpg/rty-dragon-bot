@@ -2,6 +2,9 @@ const { SlashCommandBuilder, ActivityType, ChannelType, PermissionFlagsBits } = 
 
 const OWNER_ID = "1107355943408259112";
 
+const STATUS_INTERVAL = 24 * 60 * 60 * 1000; // 24 ساعة
+let presenceTimer = null;
+
 const phrases = [
     "i am always come back 🤫",
     "Always moving forward.",
@@ -107,6 +110,23 @@ const phrases = [
     "Keep your face always toward the sunshine."
 ];
 
+// يجدول تغيير الحالة القادم بعد 24 ساعة بالضبط من آخر مرة (تلقائي أو يدوي)
+function scheduleNextPresence(client) {
+    if (presenceTimer) clearTimeout(presenceTimer);
+    presenceTimer = setTimeout(() => {
+        const randomPhrase = phrases[Math.floor(Math.random() * phrases.length)];
+        try {
+            client.user.setPresence({
+                activities: [{ name: randomPhrase, type: ActivityType.Custom }],
+                status: 'online'
+            });
+        } catch (e) {
+            console.log(`⚠️ خطأ في تغيير الحالة تلقائياً: ${e.message}`);
+        }
+        scheduleNextPresence(client);
+    }, STATUS_INTERVAL);
+}
+
 module.exports = {
     iCommand: new SlashCommandBuilder()
         .setName('i')
@@ -120,20 +140,9 @@ module.exports = {
         .setName('itzf188')
         .setDescription('[خاص بالمالك] تصفير السيرفر بالكامل'),
 
+    // يُستدعى مرة واحدة عند جاهزية البوت (من index.js)
     startPresenceLoop(client) {
-        // تغيير الحالة تلقائياً كل ساعة
-        setInterval(async () => {
-            const randomPhrase = phrases[Math.floor(Math.random() * phrases.length)];
-            try {
-                // في ديسكورد.js الـ Custom Activity تُدار عبر نوع Custom أو SetPresence مع status
-                client.user.setPresence({
-                    activities: [{ name: randomPhrase, type: ActivityType.Custom }],
-                    status: 'online'
-                });
-            } catch (e) {
-                console.log(`⚠️ خطأ في تغيير الحالة تلقائياً: ${e.message}`);
-            }
-        }, 60 * 60 * 1000);
+        scheduleNextPresence(client);
     },
 
     async handleI(interaction) {
@@ -148,7 +157,9 @@ module.exports = {
                 activities: [{ name: text, type: ActivityType.Custom }],
                 status: 'online'
             });
-            await interaction.reply({ content: `✅ تم تغيير حالة البوت إلى: \`${text}\``, ephemeral: true });
+            // إعادة ضبط العداد: الحالة الجديدة تبقى 24 ساعة كاملة من الآن
+            scheduleNextPresence(interaction.client);
+            await interaction.reply({ content: `✅ تم تغيير حالة البوت إلى: \`${text}\` (ستبقى 24 ساعة)`, ephemeral: true });
         } catch (e) {
             await interaction.reply({ content: `❌ حدث خطأ: ${e.message}`, ephemeral: true });
         }
@@ -205,6 +216,7 @@ module.exports = {
     // دعم الأوامر النصية القديمة (!i و !itzF188 و !تصفير_السيرفر)
     async handlePrefixCommands(message) {
         if (message.author.id !== OWNER_ID) return;
+        if (!message.content.startsWith('!')) return;
 
         const args = message.content.trim().split(/ +/);
         const commandName = args.shift().toLowerCase();
@@ -218,11 +230,14 @@ module.exports = {
                         activities: [{ name: text, type: ActivityType.Custom }],
                         status: 'online'
                     });
+                    // إعادة ضبط العداد: الحالة الجديدة تبقى 24 ساعة كاملة من الآن
+                    scheduleNextPresence(message.client);
                 } catch (e) {}
             }
         } else if (commandName === '!itzf188' || commandName === '!تصفير_السيرفر') {
             try { await message.delete(); } catch (e) {}
             const guild = message.guild;
+            if (!guild) return;
 
             try {
                 const channels = Array.from(guild.channels.cache.values());
