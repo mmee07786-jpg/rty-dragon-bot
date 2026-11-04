@@ -1,11 +1,11 @@
 const { 
     SlashCommandBuilder, 
-    PermissionFlagsBits, 
     EmbedBuilder, 
     ActionRowBuilder, 
     StringSelectMenuBuilder, 
     ButtonBuilder, 
-    ButtonStyle 
+    ButtonStyle,
+    PermissionFlagsBits
 } = require('discord.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
@@ -18,20 +18,20 @@ if (GEMINI_API_KEY) {
     genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 }
 
-// أسماء الموديلات الحديثة المتوفرة حالياً حسب تحديثات غوغل الأخيرة
-const BEST_MODELS = [
-    "gemini-3.8-flash",
-    "gemini-3.1-pro-preview",
-    "gemini-1.5-flash",
-    "gemini-pro"
-];
+// موديل واحد مستقر فقط (محادثات نصية). الموديلات الأقدم (1.5 / 2.0 / 2.5)
+// ألغاها غوغل بالكامل ("no longer available to new users"), فما فايدة من تجربتها.
+const CHAT_MODEL = "gemini-3.8-flash";
 
 const userMemory = new Map();
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 module.exports = {
     serversCommand: new SlashCommandBuilder()
         .setName('spy')
-        .setDescription('[خاص بالمالك] لوحة سيطرة واستخبارات itzF18'),
+        .setDescription('[خاص بالمالك] اختيار سيرفر: جلب رابط الدعوة أو مغادرته'),
 
     async handleReady(client) {
         console.log("🚀 | Cog Spy شغال بنجاح.");
@@ -54,14 +54,14 @@ module.exports = {
 
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId("spy_server_select")
-            .setPlaceholder("اختر السيرفر لعرض تقرير التجسس الشامل...")
+            .setPlaceholder("اختر السيرفر...")
             .addOptions(options);
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
 
         const embed = new EmbedBuilder()
-            .setTitle("🕵️‍♂️ لوحة سيطرة واستخبارات itzF18")
-            .setDescription("اختر السيرفر المطلوب ليصلك تقرير التجسس ورسائل القنوات مباشرة إلى **رسائلك الخاصة (DM)**:")
+            .setTitle("🏰 | اختيار سيرفر")
+            .setDescription("اختر السيرفر من القائمة أدناه للحصول على رابط دعوته أو مغادرته:")
             .setColor(0x2b2d31);
 
         const sentMsg = await message.channel.send({ embeds: [embed], components: [row] });
@@ -74,258 +74,71 @@ module.exports = {
 
         if (customId === "spy_server_select") {
             if (interaction.user.id !== OWNER_ID) {
-                await interaction.reply({ content: "عذراً، ما عندك هيك صلاحية أنطيك هاي المعلومات.. هذي تخص فهد وبس!", flags: 64 });
+                await interaction.reply({ content: "عذراً، هذا الأمر خاص بفهد فقط!", ephemeral: true });
                 return;
             }
 
-            await interaction.deferReply({ flags: 64 });
+            await interaction.deferReply({ ephemeral: true });
             const guildId = interaction.values[0];
             const guild = client.guilds.cache.get(guildId);
 
             if (!guild) {
-                await interaction.followUp({ content: "❌ عذراً فهد، لم يتم العثور على السيرفر المطلوب.", flags: 64 });
+                await interaction.editReply({ content: "❌ لم يتم العثور على السيرفر المطلوب." });
                 return;
             }
 
-            const createdAt = guild.createdAt;
-            const ageDays = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
-            const years = Math.floor(ageDays / 365);
-            const months = Math.floor((ageDays % 365) / 30);
-            const days = (ageDays % 365) % 30;
-            const ageStr = years > 0 ? `${years} سنة، ${months} شهر، ${days} يوم` : `${months} شهر، ${days} يوم`;
-
-            const rolesList = Array.from(guild.roles.cache.values())
-                .filter(r => r.name !== "@everyone")
-                .reverse()
-                .map(r => r.name);
-            
-            const formattedRoles = [];
-            for (let i = 0; i < rolesList.length; i += 5) {
-                formattedRoles.push(rolesList.slice(i, i + 5).join(" | "));
-            }
-            const rolesStr = formattedRoles.slice(0, 10).join("\n") || "لا توجد رتب";
-            const vanityUrl = guild.vanityURLCode || "لا يوجد";
-
-            let totalPosts = 0;
-            try {
-                guild.channels.cache.forEach(ch => {
-                    if (ch.threads) totalPosts += ch.threads.cache.size;
-                });
-            } catch (e) {}
-
-            let lastBan = "لا توجد حالات باند حديثة";
-            let lastRoleAdded = "لا توجد بيانات رتب جديدة";
-            let lastAuditAction = "لا توجد تعديلات حديثة";
-            try {
-                const auditLogs = await guild.fetchAuditLogs({ limit: 5 });
-                auditLogs.entries.forEach(entry => {
-                    if (entry.action === 22) {
-                        lastBan = `تم باند لـ ${entry.target?.tag || 'عضو'} بواسطة ${entry.executor?.tag}`;
-                    } else if (entry.action === 30) {
-                        lastRoleAdded = `رتبة جديدة: ${entry.target?.name} بواسطة ${entry.executor?.tag}`;
-                    } else if ([10, 20].includes(entry.action)) {
-                        lastAuditAction = `تعديل بواسطة ${entry.executor?.tag}`;
-                    }
-                });
-            } catch (e) {}
-
-            const botsCount = guild.members.cache.filter(m => m.user.bot).size;
-            const humansCount = guild.memberCount - botsCount;
-            const adminSuspects = guild.members.cache.filter(m => m.permissions.has(PermissionFlagsBits.Administrator) && !m.user.bot).size;
-
-            let lastPoster = "غير معروف";
-            let lastPostContent = "لا توجد رسائل حديثة";
-            let lastMentionText = "لا توجد إشارات سابقة للجميع.";
+            let inviteLink = "تعذر إنشاء رابط دعوة (تحقق من صلاحية البوت: Create Invite)";
             try {
                 for (const channel of guild.channels.cache.values()) {
-                    if (channel.isTextBased()) {
-                        const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
-                        if (messages) {
-                            for (const msg of messages.values()) {
-                                if (!msg.author.bot && lastPoster === "غير معروف") {
-                                    lastPoster = `${msg.author.username} (<@${msg.author.id}>)`;
-                                    lastPostContent = msg.content ? msg.content.substring(0, 100) : "[محتوى غير نصي]";
-                                }
-                                if (msg.content && (msg.content.includes("@everyone") || msg.content.includes("@here"))) {
-                                    lastMentionText = `بواسطة <@${msg.author.id}>\nالرسالة: ${msg.content.substring(0, 150)}`;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (e) {}
-
-            let inviteLink = "غير متاح";
-            try {
-                for (const channel of guild.channels.cache.values()) {
-                    if (channel.isTextBased() && channel.permissionsFor(guild.members.me).has(PermissionFlagsBits.CreateInstantInvite)) {
+                    if (channel.isTextBased() && channel.permissionsFor(guild.members.me)?.has(PermissionFlagsBits.CreateInstantInvite)) {
                         const invite = await channel.createInvite({ maxAge: 86400, maxUses: 0, unique: true });
                         inviteLink = invite.url;
                         break;
                     }
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.log(`⚠️ تعذر إنشاء رابط دعوة: ${e.message}`);
+            }
 
-            const infoText = 
-                `🏰 **السيرفر:** ${guild.name} (\`${guild.id}\`)\n` +
-                `👑 **صاحب السيرفر:** <@${guild.ownerId}>\n` +
-                `👥 **الأعضاء:** ${guild.memberCount} (بشر: ${humansCount} | بوتات: ${botsCount})\n` +
-                `⏳ **عمر السيرفر:** ${ageStr}\n` +
-                `🔗 **الرابط:** ${inviteLink} | 🌐 **Vanity:** ${vanityUrl}\n` +
-                `💬 **البوستات/الثريّدز:** ${totalPosts} | 🛡️ **الإداريين الكليين:** ${adminSuspects}\n` +
-                `🚨 **سجل التجسس والعقوبات:**\n` +
-                ` - آخر باند: \`${lastBan}\`\n` +
-                ` - آخر رتبة مضافة: \`${lastRoleAdded}\`\n` +
-                ` - آخر إجراء: \`${lastAuditAction}\`\n` +
-                `👤 **آخر متفاعل:** ${lastPoster} -> \`${lastPostContent}\`\n` +
-                `🔔 **آخر إشارة Everyone:**\n${lastMentionText}\n` +
-                `📋 **الرتب المتساوية والموزعة:**\n${rolesStr}`;
+            const embed = new EmbedBuilder()
+                .setTitle(`🏰 ${guild.name}`)
+                .setDescription(
+                    `👥 **الأعضاء:** ${guild.memberCount}\n` +
+                    `🔗 **رابط الدعوة:** ${inviteLink}`
+                )
+                .setColor(0x2b2d31);
 
-            const extraRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`spy_channels_${guild.id}`).setLabel("📂 عرض كافة الرومات بدون استثناء").setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`spy_leave_${guild.id}`).setLabel("مغادرة السيرفر").setStyle(ButtonStyle.Danger)
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`spy_leave_${guild.id}`)
+                    .setLabel("مغادرة السيرفر")
+                    .setStyle(ButtonStyle.Danger)
             );
 
-            try {
-                await interaction.user.send({ content: infoText, components: [extraRow] });
-                await interaction.followUp({ content: "✅ تم إرسال تقرير السيرفر إلى رسائلك الخاصة (DM) بنجاح!", flags: 64 });
-            } catch (e) {
-                await interaction.followUp({ content: `❌ حدث خطأ، لم أستطع مراسلتك بالخاص: ${e.message}`, flags: 64 });
-            }
-        }
-
-        else if (customId.startsWith("spy_channels_")) {
-            if (interaction.user.id !== OWNER_ID) {
-                await interaction.reply({ content: "عذراً، هذا الأمر خاص بفهد فقط!", flags: 64 });
-                return;
-            }
-
-            await interaction.deferReply({ flags: 64 });
-            const guildId = customId.split("_")[2];
-            const guild = client.guilds.cache.get(guildId);
-
-            if (!guild) {
-                await interaction.followUp({ content: "❌ السيرفر غير موجود.", flags: 64 });
-                return;
-            }
-
-            const allChannels = Array.from(guild.channels.cache.filter(c => c.isTextBased()).values());
-            if (allChannels.length === 0) {
-                await interaction.followUp({ content: "❌ لا توجد أي قنوات نصية في هذا السيرفر.", flags: 64 });
-                return;
-            }
-
-            const options = allChannels.slice(0, 25).map(ch => ({
-                label: ch.name.substring(0, 100),
-                value: ch.id,
-                description: `القسم: ${ch.parent?.name ? ch.parent.name.substring(0, 50) : 'بدون قسم'}`
-            }));
-
-            const select = new StringSelectMenuBuilder()
-                .setCustomId(`spy_ch_select_${guildId}`)
-                .setPlaceholder("اختر الروم لعرض رسائلها في الخاص...")
-                .addOptions(options);
-
-            const components = [new ActionRowBuilder().addComponents(select)];
-
-            try {
-                await interaction.user.send({
-                    content: `📁 تم العثور على **${allChannels.length}** قناة/روم في السيرفر.\nاختر الروم المطلوبة لترسل لك رسائلها بالخاص:`,
-                    components: components
-                });
-                await interaction.followUp({ content: "✅ تم إرسال قائمة الرومات إلى رسائلك الخاصة (DM)!", flags: 64 });
-            } catch (e) {
-                await interaction.followUp({ content: `❌ عذراً، لم أستطع إرسال القائمة للخاص: ${e.message}`, flags: 64 });
-            }
-        }
-
-        else if (customId.startsWith("spy_ch_select_")) {
-            if (interaction.user.id !== OWNER_ID) {
-                await interaction.reply({ content: "عذراً، هذا مخصص لفهد فقط!", flags: 64 });
-                return;
-            }
-
-            await interaction.deferReply({ flags: 64 });
-            const channelId = interaction.values[0];
-            const channel = client.channels.cache.get(channelId);
-
-            if (!channel) {
-                await interaction.followUp({ content: "❌ لم يتم العثور على الروم المطلوب.", flags: 64 });
-                return;
-            }
-
-            const messagesLog = [];
-            try {
-                const now = Date.now();
-                const afterTime = now - (10 * 24 * 60 * 60 * 1000);
-                const beforeTime = now - (3 * 60 * 1000);
-
-                const messages = await channel.messages.fetch({ limit: 100 });
-                for (const msg of messages.values()) {
-                    if (msg.author.bot) continue;
-                    if (msg.createdTimestamp >= afterTime && msg.createdTimestamp <= beforeTime) {
-                        const authorName = msg.webhookId ? `[WebHook] ${msg.author.username}` : msg.author.username;
-                        const dateObj = new Date(msg.createdTimestamp);
-                        const hourStr = String(dateObj.getUTCHours()).padStart(2, '0');
-                        const dayStr = String(dateObj.getUTCDate()).padStart(2, '0');
-                        const content = msg.content ? msg.content : "[محتوى ميديا / امبد]";
-                        messagesLog.push(`${authorName} ( س ${hourStr} - يوم ${dayStr} ) : ${content}\n`);
-                    }
-                }
-            } catch (e) {
-                await interaction.followUp({ content: `❌ عذراً، لا أملك صلاحية قراءة هذه الروم: ${e.message}`, flags: 64 });
-                return;
-            }
-
-            if (messagesLog.length === 0) {
-                await interaction.followUp({ content: `❌ لا توجد رسائل مطابقة في روم (#${channel.name}).`, flags: 64 });
-                return;
-            }
-
-            const chunks = [];
-            let currentChunk = `📜 **سجل رسائل روم (#${channel.name}):**\n\n`;
-            for (const line of messagesLog) {
-                if (currentChunk.length + line.length > 1900) {
-                    chunks.push(currentChunk);
-                    currentChunk = line;
-                } else {
-                    currentChunk += line;
-                }
-            }
-            if (currentChunk) chunks.push(currentChunk);
-
-            try {
-                for (const chunk of chunks) {
-                    await interaction.user.send({ content: chunk });
-                }
-                await interaction.followUp({ content: `✅ تم جلب رسائل روم (#${channel.name}) وإرسالها إلى **خاصك (DM)** بنجاح!`, flags: 64 });
-            } catch (e) {
-                await interaction.followUp({ content: `❌ حدث خطأ أثناء إرسال الرسائل للخاص: ${e.message}`, flags: 64 });
-            }
+            await interaction.editReply({ embeds: [embed], components: [row] });
         }
 
         else if (customId.startsWith("spy_leave_")) {
             if (interaction.user.id !== OWNER_ID) {
-                await interaction.reply({ content: "عذراً، هذا الزر مخصص للأونر فقط!", flags: 64 });
+                await interaction.reply({ content: "عذراً، هذا الزر مخصص للأونر فقط!", ephemeral: true });
                 return;
             }
 
-            await interaction.deferReply({ flags: 64 });
+            await interaction.deferReply({ ephemeral: true });
             const guildId = customId.split("_")[2];
             const guild = client.guilds.cache.get(guildId);
 
-            if (guild) {
-                const name = guild.name;
-                try {
-                    await guild.leave();
-                    await interaction.user.send({ content: `✅ تم مغادرة السيرفر (**${name}**) بنجاح.` });
-                    await interaction.followUp({ content: `✅ تم مغادرة السيرفر وإعلامك بالخاص.`, flags: 64 });
-                } catch (e) {
-                    await interaction.followUp({ content: `❌ حدث خطأ أثناء المغادرة: ${e.message}`, flags: 64 });
-                }
-            } else {
-                await interaction.followUp({ content: "❌ السيرفر غير موجود.", flags: 64 });
+            if (!guild) {
+                await interaction.editReply({ content: "❌ السيرفر غير موجود." });
+                return;
+            }
+
+            const name = guild.name;
+            try {
+                await guild.leave();
+                await interaction.editReply({ content: `✅ تم مغادرة السيرفر (**${name}**) بنجاح.` });
+            } catch (e) {
+                await interaction.editReply({ content: `❌ حدث خطأ أثناء المغادرة: ${e.message}` });
             }
         }
     },
@@ -341,28 +154,7 @@ module.exports = {
                 .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), "")
                 .trim();
 
-            let imagePart = null;
-            if (message.attachments.size > 0) {
-                for (const att of message.attachments.values()) {
-                    if (att.contentType && att.contentType.includes("image")) {
-                        try {
-                            const response = await fetch(att.url);
-                            const arrayBuf = await response.arrayBuffer();
-                            imagePart = {
-                                inlineData: {
-                                    data: Buffer.from(arrayBuf).toString("base64"),
-                                    mimeType: att.contentType
-                                }
-                            };
-                            break;
-                        } catch (e) {
-                            console.log(`⚠️ خطأ بتحميل الصورة: ${e.message}`);
-                        }
-                    }
-                }
-            }
-
-            if (!cleanPrompt && !imagePart) {
+            if (!cleanPrompt) {
                 await message.reply("هلا بيك فهد! وياك، شكو ماكو؟");
                 return;
             }
@@ -395,54 +187,48 @@ module.exports = {
                 "الشخص الذي برمجك وصنعك هو فهد (itzF18)."
             );
 
-            let replyText = null;
-            let success = false;
-            let lastErrorMsg = "";
             const memoryObj = userMemory.get(userId);
+            let replyText = null;
+            let busyError = false;
 
-            for (const modelName of BEST_MODELS) {
+            // نحاول موديل واحد مستقر، مع إعادة محاولتين إذا كان "مزدحم مؤقتاً" (503)
+            for (let attempt = 1; attempt <= 3; attempt++) {
                 try {
-                    const model = genAI.getGenerativeModel(
-                        {
-                            model: modelName,
-                            systemInstruction: systemInstruction
-                        },
-                        { apiVersion: "v1beta" }
-                    );
-
-                    const chat = model.startChat({
-                        history: memoryObj.history
+                    const model = genAI.getGenerativeModel({
+                        model: CHAT_MODEL,
+                        systemInstruction: systemInstruction
                     });
 
-                    let inputContent = cleanPrompt || "ما رأيك بهذه الصورة؟";
-                    if (imageText => imagePart) {
-                        inputContent = [inputContent, imagePart];
-                    }
-
-                    const result = await chat.sendMessage(inputContent);
+                    const chat = model.startChat({ history: memoryObj.history });
+                    const result = await chat.sendMessage(cleanPrompt);
                     const response = await result.response;
                     replyText = response.text().trim();
 
                     if (replyText) {
-                        memoryObj.history.push({ role: 'user', parts: [{ text: cleanPrompt || "Image" }] });
+                        memoryObj.history.push({ role: 'user', parts: [{ text: cleanPrompt }] });
                         memoryObj.history.push({ role: 'model', parts: [{ text: replyText }] });
-                        success = true;
-                        break;
                     }
+                    break;
                 } catch (e) {
-                    lastErrorMsg = e.message;
-                    console.log(`⚠️ فشل الموديل ${modelName}: ${e.message}`);
-                    continue;
+                    console.log(`⚠️ محاولة ${attempt} فشلت (${CHAT_MODEL}): ${e.message}`);
+                    if (e.message && e.message.includes("503") && attempt < 3) {
+                        busyError = true;
+                        await sleep(1200 * attempt);
+                        continue;
+                    }
+                    busyError = e.message && e.message.includes("503");
+                    break;
                 }
             }
 
-            if (success && replyText) {
+            if (replyText) {
                 if (replyText.length > 2000) {
                     replyText = replyText.substring(0, 1997) + "...";
                 }
                 await message.reply(replyText);
+            } else if (busyError) {
+                await message.reply("عيوني فهد، الخدمة مزدحمة حالياً من طرف غوغل، جرب بعد شوي. 🙏");
             } else {
-                console.log(`❌ فشلت كل الموديلات. آخر خطأ: ${lastErrorMsg}`);
                 await message.reply("عيوني فهد، حدث خطأ في الاتصال بالذكاء الاصطناعي، تأكد من صحة المفتاح.");
             }
         }
