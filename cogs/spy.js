@@ -7,25 +7,91 @@ const {
     ButtonStyle,
     PermissionFlagsBits
 } = require('discord.js');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const OWNER_ID = "1107355943408259112";
 const MEMORY_TIMEOUT = 3600 * 1000;
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-let genAI = null;
-if (GEMINI_API_KEY) {
-    genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-}
 
-// موديل واحد مستقر فقط (محادثات نصية). الموديلات الأقدم (1.5 / 2.0 / 2.5)
-// ألغاها غوغل بالكامل ("no longer available to new users"), فما فايدة من تجربتها.
-const CHAT_MODEL = "gemini-3.8-flash";
+// Node 18+ عنده fetch جاهز. إذا نسخة أقدم، نحاول node-fetch كبديل.
+let fetchFn = (typeof fetch === 'function') ? fetch : null;
+if (!fetchFn) {
+    try { fetchFn = require('node-fetch'); } catch (e) { fetchFn = null; }
+}
 
 const userMemory = new Map();
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// بدل ما نخمن أسماء موديلات غوغل (تتغير وتُلغى باستمرار)، نسأل غوغل مباشرة
+// عن قائمة الموديلات الشغالة فعلياً بهذا المفتاح، ونختار 3 منها ونتناوب بينها.
+let modelPoolCache = { models: [], ts: 0 };
+const MODEL_POOL_TTL = 60 * 60 * 1000; // ساعة
+let rrIndex = 0;
+
+async function getModelPool() {
+    const now = Date.now();
+    if (modelPoolCache.models.length > 0 && (now - modelPoolCache.ts) < MODEL_POOL_TTL) {
+        return modelPoolCache.models;
+    }
+    if (!fetchFn || !GEMINI_API_KEY) return modelPoolCache.models; // آخر قائمة معروفة إن وجدت
+
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`;
+        const res = await fetchFn(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        const usable = (data.models || [])
+            .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+            .filter(m => !/embedding|vision|aqa|tts|image-generation/i.test(m.name))
+            .map(m => m.name.replace(/^models\//, ""));
+
+        // نفضّل موديلات flash (أسرع وأرخص) بالأول، وبعدها الباقي
+        const flashFirst = [
+            ...usable.filter(n => /flash/i.test(n)),
+            ...usable.filter(n => !/flash/i.test(n))
+        ];
+
+        const pool = [...new Set(flashFirst)].slice(0, 3);
+        if (pool.length > 0) {
+            modelPoolCache = { models: pool, ts: now };
+            console.log(`ℹ️ موديلات الذكاء الاصطناعي الشغالة حالياً: ${pool.join(", ")}`);
+        }
+        return modelPoolCache.models.length > 0 ? modelPoolCache.models : usable.slice(0, 3);
+    } catch (e) {
+        console.log(`⚠️ تعذر جلب قائمة الموديلات من غوغل: ${e.message}`);
+        return modelPoolCache.models; // آخر قائمة معروفة إن وجدت، وإلا فاضية
+    }
+}
+
+// نداء مباشر لـ REST API (بدل مكتبة @google/generative-ai) لتفادي مشاكل apiVersion
+async function callGemini(modelName, systemInstruction, history, userText) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+    const body = {
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents: [...history, { role: "user", parts: [{ text: userText }] }]
+    };
+
+    const res = await fetchFn(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        const err = new Error(`HTTP ${res.status} :: ${errText.slice(0, 200)}`);
+        err.status = res.status;
+        throw err;
+    }
+
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+    if (!text) throw new Error("NO_CONTENT");
+    return text;
 }
 
 module.exports = {
@@ -159,8 +225,8 @@ module.exports = {
                 return;
             }
 
-            if (!genAI) {
-                await message.reply("❌ عيوني فهد، مفتاح GEMINI_API_KEY غير معرف أو غير صحيح في إعدادات الاستضافة!");
+            if (!GEMINI_API_KEY || !fetchFn) {
+                await message.reply("❌ عيوني فهد، مفتاح GEMINI_API_KEY غير معرف في إعدادات الاستضافة (أو fetch غير متوفر)!");
                 return;
             }
 
@@ -191,18 +257,22 @@ module.exports = {
             let replyText = null;
             let busyError = false;
 
-            // نحاول موديل واحد مستقر، مع إعادة محاولتين إذا كان "مزدحم مؤقتاً" (503)
-            for (let attempt = 1; attempt <= 3; attempt++) {
-                try {
-                    const model = genAI.getGenerativeModel({
-                        model: CHAT_MODEL,
-                        systemInstruction: systemInstruction
-                    });
+            const pool = await getModelPool();
+            if (pool.length === 0) {
+                await message.reply("❌ عيوني فهد، تعذر جلب قائمة الموديلات المتوفرة من غوغل حالياً (تأكد من صحة المفتاح أو الاتصال).");
+                return;
+            }
 
-                    const chat = model.startChat({ history: memoryObj.history });
-                    const result = await chat.sendMessage(cleanPrompt);
-                    const response = await result.response;
-                    replyText = response.text().trim();
+            // نبدأ من موديل مختلف كل رسالة (تناوب/Round-robin) بدل ما نحمّل نفس الموديل دائماً
+            const startIdx = rrIndex % pool.length;
+            rrIndex++;
+            const orderedModels = [...pool.slice(startIdx), ...pool.slice(0, startIdx)];
+
+            for (let i = 0; i < orderedModels.length; i++) {
+                const modelName = orderedModels[i];
+                try {
+                    const text = await callGemini(modelName, systemInstruction, memoryObj.history, cleanPrompt);
+                    replyText = text.trim();
 
                     if (replyText) {
                         memoryObj.history.push({ role: 'user', parts: [{ text: cleanPrompt }] });
@@ -210,14 +280,11 @@ module.exports = {
                     }
                     break;
                 } catch (e) {
-                    console.log(`⚠️ محاولة ${attempt} فشلت (${CHAT_MODEL}): ${e.message}`);
-                    if (e.message && e.message.includes("503") && attempt < 3) {
-                        busyError = true;
-                        await sleep(1200 * attempt);
-                        continue;
-                    }
-                    busyError = e.message && e.message.includes("503");
-                    break;
+                    console.log(`⚠️ فشل الموديل ${modelName}: ${e.message}`);
+                    if (e.status === 503 || e.status === 429) busyError = true;
+                    // تأخير بسيط قبل تجربة الموديل التالي، حتى ما يكون الطلب كله أسرع من اللزوم
+                    if (i < orderedModels.length - 1) await sleep(600);
+                    continue;
                 }
             }
 
