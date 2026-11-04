@@ -31,10 +31,14 @@ let modelPoolCache = { models: [], ts: 0 };
 const MODEL_POOL_TTL = 60 * 60 * 1000; // ساعة
 let rrIndex = 0;
 
+// موديلات ثبت إنها ميتة نهائياً (404 "no longer available") بهذا التشغيل، نتجنبها بالمرات الجاية
+const deadModels = new Set();
+
 async function getModelPool() {
     const now = Date.now();
-    if (modelPoolCache.models.length > 0 && (now - modelPoolCache.ts) < MODEL_POOL_TTL) {
-        return modelPoolCache.models;
+    const cachedAlive = modelPoolCache.models.filter(m => !deadModels.has(m));
+    if (cachedAlive.length > 0 && (now - modelPoolCache.ts) < MODEL_POOL_TTL) {
+        return cachedAlive;
     }
     if (!fetchFn || !GEMINI_API_KEY) return modelPoolCache.models; // آخر قائمة معروفة إن وجدت
 
@@ -55,7 +59,7 @@ async function getModelPool() {
             ...usable.filter(n => !/flash/i.test(n))
         ];
 
-        const pool = [...new Set(flashFirst)].slice(0, 3);
+        const pool = [...new Set(flashFirst)].filter(n => !deadModels.has(n)).slice(0, 3);
         if (pool.length > 0) {
             modelPoolCache = { models: pool, ts: now };
             console.log(`ℹ️ موديلات الذكاء الاصطناعي الشغالة حالياً: ${pool.join(", ")}`);
@@ -283,8 +287,11 @@ module.exports = {
                 } catch (e) {
                     console.log(`⚠️ فشل الموديل ${modelName}: ${e.message}`);
                     if (e.status === 503 || e.status === 429) busyError = true;
+                    if (e.status === 404 && /no longer available/i.test(e.message)) {
+                        deadModels.add(modelName); // نشيله نهائياً لبقية الجلسة
+                    }
                     // تأخير بسيط قبل تجربة الموديل التالي، حتى ما يكون الطلب كله أسرع من اللزوم
-                    if (i < orderedModels.length - 1) await sleep(600);
+                    if (i < orderedModels.length - 1) await sleep(400);
                     continue;
                 }
             }
