@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
-// قاموس لحفظ تحذيرات الأعضاء لكل سيرفر {guild_id: {user_id: count}}
 const serverWarnings = {};
 
 module.exports = {
@@ -116,7 +115,13 @@ module.exports = {
     async handleWarn(interaction) {
         await interaction.deferReply({ flags: 64 });
         const guildId = interaction.guild.id;
-        const member = interaction.options.getMember('member');
+        const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
+        
+        if (!member) {
+            await interaction.editReply({ content: "❌ | لم يتم العثور على العضو داخل السيرفر." });
+            return;
+        }
+
         const reason = interaction.options.getString('reason') || "لا يوجد سبب";
         const userId = member.id;
 
@@ -130,38 +135,48 @@ module.exports = {
             try {
                 await member.kick(`تخطي الحد الأقصى للتحذيرات (5 تحذيرات). آخر سبب: ${reason}`);
                 serverWarnings[guildId][userId] = 0;
-                await interaction.followup({ content: `⚠️ | العضو ${member} وصل إلى **5 تحذيرات** وتم طرده تلقائياً من السيرفر! 👢` });
+                await interaction.editReply({ content: `⚠️ | العضو ${member} وصل إلى **5 تحذيرات** وتم طرده تلقائياً من السيرفر! 👢` });
             } catch (e) {
-                await interaction.followup({ content: `وصل العضو 5 تحذيرات لكن فشل طرده بسبب صلاحيات البوت: \`${e.message}\`` });
+                await interaction.editReply({ content: `وصل العضو 5 تحذيرات لكن فشل طرده بسبب صلاحيات البوت: \`${e.message}\`` });
             }
         } else {
-            await interaction.followup({ content: `⚠️ | تم تحذير العضو ${member} بنجاح.\nعدد تحذيراته الحالية: **${warnCount}/5**\nالسبب: ${reason}` });
+            await interaction.editReply({ content: `⚠️ | تم تحذير العضو ${member} بنجاح.\nعدد تحذيراته الحالية: **${warnCount}/5**\nالسبب: ${reason}` });
         }
     },
 
     async handleClearWarnings(interaction) {
         await interaction.deferReply({ flags: 64 });
         const guildId = interaction.guild.id;
-        const member = interaction.options.getMember('member');
+        const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
+
+        if (!member) {
+            await interaction.editReply({ content: "❌ | العضو غير موجود." });
+            return;
+        }
+
         const userId = member.id;
 
         if (serverWarnings[guildId] && serverWarnings[guildId][userId]) {
             serverWarnings[guildId][userId] = 0;
-            await interaction.followup({ content: `✅ | تم تصفير وإزالة جميع تحذيرات العضو ${member} بنجاح.` });
+            await interaction.editReply({ content: `✅ | تم تصفير وإزالة جميع تحذيرات العضو ${member} بنجاح.` });
         } else {
-            await interaction.followup({ content: `ℹ️ | العضو ${member} ليس لديه تحذيرات مسجلة أصلاً.` });
+            await interaction.editReply({ content: `ℹ️ | العضو ${member} ليس لديه تحذيرات مسجلة أصلاً.` });
         }
     },
 
     async handleBan(interaction) {
         await interaction.deferReply({ flags: 64 });
-        const member = interaction.options.getMember('member');
+        const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
+        if (!member) {
+            await interaction.editReply({ content: "❌ | العضو غير موجود." });
+            return;
+        }
         const reason = interaction.options.getString('reason') || "لا يوجد سبب";
         try {
             await member.ban({ reason });
-            await interaction.followup({ content: `تم حظر العضو ${member} بنجاح 🚷 (السبب: ${reason})` });
+            await interaction.editReply({ content: `تم حظر العضو ${member} بنجاح 🚷 (السبب: ${reason})` });
         } catch (e) {
-            await interaction.followup({ content: `فشل الحظر: تأكد أن رتبة البوت أعلى من العضو المستهدف أو يملك صلاحيات كافية. ❌` });
+            await interaction.editReply({ content: `فشل الحظر: تأكد أن رتبة البوت أعلى من العضو المستهدف. ❌` });
         }
     },
 
@@ -172,27 +187,35 @@ module.exports = {
         try {
             const user = await interaction.client.users.fetch(userId);
             await interaction.guild.members.unban(user, reason);
-            await interaction.followup({ content: `✅ | تم رفع الحظر عن العضو \`${user.tag}\` بنجاح.` });
+            await interaction.editReply({ content: `✅ | تم رفع الحظر عن العضو \`${user.tag}\` بنجاح.` });
         } catch (e) {
-            await interaction.followup({ content: `❌ | فشل رفع الحظر، تأكد من صحة الآيدي (ID) أو صلاحيات البوت: \`${e.message}\`` });
+            await interaction.editReply({ content: `❌ | فشل رفع الحظر، تأكد من صحة الآيدي (ID) أو صلاحيات البوت: \`${e.message}\`` });
         }
     },
 
     async handleKick(interaction) {
         await interaction.deferReply({ flags: 64 });
-        const member = interaction.options.getMember('member');
+        const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
+        if (!member) {
+            await interaction.editReply({ content: "❌ | العضو غير موجود." });
+            return;
+        }
         const reason = interaction.options.getString('reason') || "لا يوجد سبب";
         try {
             await member.kick(reason);
-            await interaction.followup({ content: `تم طرد العضو ${member} بنجاح 👢 (السبب: ${reason})` });
+            await interaction.editReply({ content: `تم طرد العضو ${member} بنجاح 👢 (السبب: ${reason})` });
         } catch (e) {
-            await interaction.followup({ content: `فشل الطرد: تأكد من صلاحيات البوت. ❌` });
+            await interaction.editReply({ content: `فشل الطرد: تأكد من صلاحيات البوت. ❌` });
         }
     },
 
     async handleTimeout(interaction) {
         await interaction.deferReply({ flags: 64 });
-        const member = interaction.options.getMember('member');
+        const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
+        if (!member) {
+            await interaction.editReply({ content: "❌ | العضو غير موجود." });
+            return;
+        }
         let timeInput = interaction.options.getString('time_input').toLowerCase().trim();
         const reason = interaction.options.getString('reason') || "لا يوجد سبب";
         try {
@@ -206,59 +229,71 @@ module.exports = {
             } else if (timeInput.endsWith('d')) {
                 minutes = parseInt(timeInput.slice(0, -1)) * 1440;
             } else {
-                await interaction.followup({ content: "صيغة الوقت غير صحيحة! استعمل m للدقائق أو h للساعات أو d للأيام ❌" });
+                await interaction.editReply({ content: "صيغة الوقت غير صحيحة! استعمل m للدقائق أو h للساعات أو d للأيام ❌" });
                 return;
             }
 
             const duration = minutes * 60 * 1000;
             await member.timeout(duration, reason);
-            await interaction.followup({ content: `تم إعطاء تايم أوت للعضو ${member} لمدة \`${minutes} دقائق\` ✅` });
+            await interaction.editReply({ content: `تم إعطاء تايم أوت للعضو ${member} لمدة \`${minutes} دقائق\` ✅` });
         } catch (e) {
-            await interaction.followup({ content: `حدث خطأ: \`${e.message}\`` });
+            await interaction.editReply({ content: `حدث خطأ: \`${e.message}\`` });
         }
     },
 
     async handleUntimeout(interaction) {
         await interaction.deferReply({ flags: 64 });
-        const member = interaction.options.getMember('member');
+        const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
+        if (!member) {
+            await interaction.editReply({ content: "❌ | العضو غير موجود." });
+            return;
+        }
         const reason = interaction.options.getString('reason') || "لا يوجد سبب";
         try {
             await member.timeout(null, reason);
-            await interaction.followup({ content: `✅ | تم إزالة التايم أوت عن العضو ${member} بنجاح.` });
+            await interaction.editReply({ content: `✅ | تم إزالة التايم أوت عن العضو ${member} بنجاح.` });
         } catch (e) {
-            await interaction.followup.send({ content: `❌ | حدث خطأ أثناء إزالة التايم أوت: \`${e.message}\`` });
+            await interaction.editReply({ content: `❌ | حدث خطأ أثناء إزالة التايم أوت: \`${e.message}\`` });
         }
     },
 
     async handleMute(interaction) {
         await interaction.deferReply({ flags: 64 });
-        const member = interaction.options.getMember('member');
+        const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
+        if (!member) {
+            await interaction.editReply({ content: "❌ | العضو غير موجود." });
+            return;
+        }
         const reason = interaction.options.getString('reason') || "لا يوجد سبب";
         try {
             if (member.voice.channel) {
                 await member.edit({ mute: true, reason });
-                await interaction.followup({ content: `🔇 | تم كتم العضو ${member} صوتياً بنجاح.` });
+                await interaction.editReply({ content: `🔇 | تم كتم العضو ${member} صوتياً بنجاح.` });
             } else {
-                await interaction.followup({ content: `⚠️ | العضو ${member} ليس متصلاً بأي روم صوتي حالياً.` });
+                await interaction.editReply({ content: `⚠️ | العضو ${member} ليس متصلاً بأي روم صوتي حالياً.` });
             }
         } catch (e) {
-            await interaction.followup({ content: `❌ | فشل كتم العضو صوتياً: \`${e.message}\`` });
+            await interaction.editReply({ content: `❌ | فشل كتم العضو صوتياً: \`${e.message}\`` });
         }
     },
 
     async handleUnmute(interaction) {
         await interaction.deferReply({ flags: 64 });
-        const member = interaction.options.getMember('member');
+        const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
+        if (!member) {
+            await interaction.editReply({ content: "❌ | العضو غير موجود." });
+            return;
+        }
         const reason = interaction.options.getString('reason') || "لا يوجد سبب";
         try {
             if (member.voice.channel) {
                 await member.edit({ mute: false, reason });
-                await interaction.followup({ content: `🔊 | تم رفع الكتم الصوتي عن العضو ${member} بنجاح.` });
+                await interaction.editReply({ content: `🔊 | تم رفع الكتم الصوتي عن العضو ${member} بنجاح.` });
             } else {
-                await interaction.followup({ content: `⚠️ | العضو ${member} ليس متصلاً بأي روم صوتي حالياً.` });
+                await interaction.editReply({ content: `⚠️ | العضو ${member} ليس متصلاً بأي روم صوتي حالياً.` });
             }
         } catch (e) {
-            await interaction.followup({ content: `❌ | فشل رفع الكتم الصوتي: \`${e.message}\`` });
+            await interaction.editReply({ content: `❌ | فشل رفع الكتم الصوتي: \`${e.message}\`` });
         }
     }
 };
