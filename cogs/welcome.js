@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -48,7 +48,8 @@ module.exports = {
         .setDescription('تعيين روم الترحيب بالأعضاء الجدد لهذا السيرفر')
         .addChannelOption(option =>
             option.setName('channel')
-                .setDescription('روم الترحيب')
+                .setDescription('روم الترحيب النصية')
+                .addChannelTypes(ChannelType.GuildText) // حصر الاختيار بالقنوات النصية فقط لمنع أي خطأ
                 .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
@@ -80,11 +81,16 @@ module.exports = {
         const guildId = interaction.guildId;
         const channel = interaction.options.getChannel('channel');
 
+        if (!channel) {
+            await interaction.editReply({ content: "❌ | لم يتم العثور على القناة المحددة، يرجى اختيار روم نصية صحيحة." });
+            return;
+        }
+
         const gData = getGuildWelcome(guildId);
         gData.channel_id = channel.id;
         updateGuildWelcome(guildId, gData);
 
-        await interaction.editReply({ content: `✅ تم ضبط روم الترحيب بنجاح في هذا السيرفر: ${channel}` });
+        await interaction.editReply({ content: `✅ تم ضبط روم الترحيب بنجاح في هذا السيرفر لتكون: <#${channel.id}>` });
     },
 
     async handleWelcomeMessage(interaction) {
@@ -143,7 +149,7 @@ module.exports = {
             }
         }
 
-        if (channel) {
+        if (channel && channel.isTextBased()) {
             const formattedMsg = gData.message.replace(/\{member\}/g, member.toString());
             const embed = new EmbedBuilder()
                 .setDescription(formattedMsg)
