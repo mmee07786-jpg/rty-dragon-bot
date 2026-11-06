@@ -113,7 +113,8 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.MuteMembers),
 
     async handleWarn(interaction) {
-        await interaction.deferReply({ flags: 64 });
+        // بدون flags: 64 حتى تكون الرسالة عامة ومرئية للجميع
+        await interaction.deferReply();
         const guildId = interaction.guild.id;
         const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
         
@@ -133,7 +134,7 @@ module.exports = {
 
         if (warnCount >= 5) {
             try {
-                await member.kick(`تخطي الحد الأقصى للتحذيرات (5 تحذيرات). آخر سبب: ${reason}`);
+                await member.kick(`تخطي الحد الأقص للتحذيرات (5 تحذيرات). آخر سبب: ${reason}`);
                 serverWarnings[guildId][userId] = 0;
                 await interaction.editReply({ content: `⚠️ | العضو ${member} وصل إلى **5 تحذيرات** وتم طرده تلقائياً من السيرفر! 👢` });
             } catch (e) {
@@ -145,7 +146,7 @@ module.exports = {
     },
 
     async handleClearWarnings(interaction) {
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply();
         const guildId = interaction.guild.id;
         const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
 
@@ -165,7 +166,7 @@ module.exports = {
     },
 
     async handleBan(interaction) {
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply();
         const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
         if (!member) {
             await interaction.editReply({ content: "❌ | العضو غير موجود." });
@@ -181,7 +182,7 @@ module.exports = {
     },
 
     async handleUnban(interaction) {
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply();
         const userId = interaction.options.getString('user_id');
         const reason = interaction.options.getString('reason') || "لا يوجد سبب";
         try {
@@ -194,7 +195,7 @@ module.exports = {
     },
 
     async handleKick(interaction) {
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply();
         const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
         if (!member) {
             await interaction.editReply({ content: "❌ | العضو غير موجود." });
@@ -210,7 +211,7 @@ module.exports = {
     },
 
     async handleTimeout(interaction) {
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply();
         const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
         if (!member) {
             await interaction.editReply({ content: "❌ | العضو غير موجود." });
@@ -242,7 +243,7 @@ module.exports = {
     },
 
     async handleUntimeout(interaction) {
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply();
         const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
         if (!member) {
             await interaction.editReply({ content: "❌ | العضو غير موجود." });
@@ -258,7 +259,7 @@ module.exports = {
     },
 
     async handleMute(interaction) {
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply();
         const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
         if (!member) {
             await interaction.editReply({ content: "❌ | العضو غير موجود." });
@@ -278,7 +279,7 @@ module.exports = {
     },
 
     async handleUnmute(interaction) {
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply();
         const member = interaction.options.getMember('member') || await interaction.guild.members.fetch(interaction.options.getUser('member').id).catch(() => null);
         if (!member) {
             await interaction.editReply({ content: "❌ | العضو غير موجود." });
