@@ -9,6 +9,7 @@ const raidEndModule = require('./cogs/raid_end.js');
 const boostModule = require('./cogs/boost.js');
 const translatorModule = require('./cogs/translator.js');
 const ownerToolsModule = require('./cogs/owner_tools.js');
+const adminModule = require('./cogs/admin.js'); // ✅ ربط ملف الأوامر الإدارية
 
 const client = new Client({
     intents: [
@@ -181,6 +182,26 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'raid-reset') {
                 await raidEndModule.handleRaidReset(interaction);
             }
+            // ✅ أوامر الإدارة والمقاطعة (Warn, Ban, Kick, Timeout, Mute)
+            else if (interaction.commandName === 'warn') {
+                await adminModule.handleWarn(interaction);
+            } else if (interaction.commandName === 'clear_warnings') {
+                await adminModule.handleClearWarnings(interaction);
+            } else if (interaction.commandName === 'ban') {
+                await adminModule.handleBan(interaction);
+            } else if (interaction.commandName === 'unban') {
+                await adminModule.handleUnban(interaction);
+            } else if (interaction.commandName === 'kick') {
+                await adminModule.handleKick(interaction);
+            } else if (interaction.commandName === 'timeout') {
+                await adminModule.handleTimeout(interaction);
+            } else if (interaction.commandName === 'untimeout') {
+                await adminModule.handleUntimeout(interaction);
+            } else if (interaction.commandName === 'mute') {
+                await adminModule.handleMute(interaction);
+            } else if (interaction.commandName === 'unmute') {
+                await adminModule.handleUnmute(interaction);
+            }
             else if (interaction.commandName === 'boost_setup') {
                 await boostModule.handleBoostSetup(interaction);
             } else if (interaction.commandName === 'boost_message') {
@@ -203,7 +224,6 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isButton()) {
         try {
             if (interaction.customId === 'raid_continue_btn') {
-                // زر المتابعة: يفتح النافذة الثانية (MVPs & Media)
                 await raidEndModule.handleRaidContinueButton(interaction);
             } else {
                 await raidStartModule.handleButtonInteraction(interaction);
@@ -223,10 +243,8 @@ client.on('interactionCreate', async interaction => {
                 const region = interaction.fields.getTextInputValue('region');
                 await raidStartModule.handleRaidStartModalSubmit(interaction, serverLink, difficulty, targets, counts, region);
             } else if (interaction.customId === 'raid_end_info_modal') {
-                // النافذة الأولى: تحفظ البيانات وترسل زر "متابعة"
                 await raidEndModule.handleRaidInfoSubmit(interaction);
             } else if (interaction.customId === 'raid_submit_modal') {
-                // النافذة الثانية: تنشر تقرير الرايد
                 await raidEndModule.handleRaidSubmitModal(interaction);
             } else if (interaction.customId === 'roblox_top_avatar_modal') {
                 await raidEndModule.handleRobloxTopAvatarSubmit(interaction);
@@ -251,7 +269,6 @@ client.on('interactionCreate', async interaction => {
     } catch (e) {}
 });
 
-// نظام الترجمة: عند الضغط على علم دولة تحت أي رسالة
 client.on('messageReactionAdd', async (reaction, user) => {
     try {
         if (user.bot) return;
@@ -273,7 +290,6 @@ client.on('messageReactionAdd', async (reaction, user) => {
     }
 });
 
-// نظام البوست: عند عمل Boost للسيرفر
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
     try {
         if (botControl.isGuildDisabled(newMember.guild.id)) return;
