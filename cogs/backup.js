@@ -3,13 +3,15 @@ const fs = require('fs');
 const path = require('path');
 
 const OWNER_ID = "1107355943408259112";
-const BACKUP_FILE = path.join(__dirname, '../server_backup.json');
+const BACKUP_DIR = path.join(__dirname, '../backups');
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+const latestFile = guildId => path.join(BACKUP_DIR, `backup_${guildId}_latest.json`);
 
 class ServerSelectView extends ActionRowBuilder {
-    constructor(bot, authorId) {
+    constructor(bot) {
         super();
-        this.bot = bot;
-        this.authorId = authorId;
         const options = [];
         bot.guilds.cache.forEach(guild => {
             const name = guild.name.length > 97 ? guild.name.substring(0, 97) + "..." : guild.name;
@@ -26,12 +28,12 @@ class ServerSelectView extends ActionRowBuilder {
 }
 
 class ConfirmView extends ActionRowBuilder {
-    constructor(authorId) {
+    constructor() {
         super();
-        this.authorId = authorId;
-        const confirmBtn = new ButtonBuilder().setCustomId('confirm_btn').setLabel('موافقة').setEmoji('✅').setStyle(ButtonStyle.Success);
-        const cancelBtn = new ButtonBuilder().setCustomId('cancel_btn').setLabel('إلغاء').setEmoji('❌').setStyle(ButtonStyle.Danger);
-        this.addComponents(confirmBtn, cancelBtn);
+        this.addComponents(
+            new ButtonBuilder().setCustomId('confirm_btn').setLabel('موافقة').setEmoji('✅').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('cancel_btn').setLabel('إلغاء').setEmoji('❌').setStyle(ButtonStyle.Danger)
+        );
     }
 }
 
@@ -41,125 +43,139 @@ module.exports = {
     },
 
     serializeOverwrites(guild, channel) {
-        const overwritesData = {};
-        if (!channel.permissionOverwrites) return overwritesData;
-        channel.permissionOverwrites.cache.forEach(overwrite => {
-            const targetId = overwrite.id;
-            let targetType = null;
-            let targetName = "";
-            const role = guild.roles.cache.get(targetId);
+        const data = {};
+        if (!channel.permissionOverwrites) return data;
+        channel.permissionOverwrites.cache.forEach(ow => {
+            let type = null, name = "";
+            const role = guild.roles.cache.get(ow.id);
             if (role) {
-                targetType = "role";
-                targetName = role.name;
+                type = "role"; name = role.name;
             } else {
-                const member = guild.members.cache.get(targetId);
-                if (member) {
-                    targetType = "member";
-                    targetName = member.user.username;
-                } else {
-                    return;
-                }
+                const member = guild.members.cache.get(ow.id);
+                if (!member) return;
+                type = "member"; name = member.user.username;
             }
-            overwritesData[targetId] = {
-                name: targetName,
-                type: targetType,
-                allow: overwrite.allow.bitfield.toString(),
-                deny: overwrite.deny.bitfield.toString()
-            };
+            data[ow.id] = { name, type, allow: ow.allow.bitfield.toString(), deny: ow.deny.bitfield.toString() };
         });
-        return overwritesData;
+        return data;
     },
 
     applyOverwrites(guild, channelData) {
-        const overwrites = [];
+        const result = [];
         const roleMap = new Map();
-        guild.roles.cache.forEach(role => roleMap.set(role.name.trim().toLowerCase(), role));
+        guild.roles.cache.forEach(r => roleMap.set(r.name.trim().toLowerCase(), r));
 
-        const overwritesObj = channelData.overwrites || {};
-        for (const [targetIdStr, owData] of Object.entries(overwritesObj)) {
+        for (const [idStr, ow] of Object.entries(channelData.overwrites || {})) {
             try {
+                const name = (ow.name || "").trim().toLowerCase();
                 let target = null;
-                const targetType = owData.type;
-                const targetName = (owData.name || "").trim().toLowerCase();
-                if (targetType === "role") {
-                    target = guild.roles.cache.get(targetIdStr) || roleMap.get(targetName);
-                } else if (targetType === "member") {
-                    target = guild.members.cache.get(targetIdStr);
-                }
+                if (ow.type === "role") target = guild.roles.cache.get(idStr) || roleMap.get(name);
+                else if (ow.type === "member") target = guild.members.cache.get(idStr);
                 if (target) {
-                    overwrites.push({
-                        id: target.id,
-                        type: targetType === "role" ? 0 : 1,
-                        allow: BigInt(owData.allow),
-                        deny: BigInt(owData.deny)
-                    });
+                    result.push({ id: target.id, type: ow.type === "role" ? 0 : 1, allow: BigInt(ow.allow), deny: BigInt(ow.deny) });
                 }
             } catch (e) {}
         }
-        return overwrites;
+        return result;
     },
 
+    serializeChannel(guild, channel) {
+        return {
+            name: channel.name,
+            type: channel.type === ChannelType.GuildText ? "text" : "voice",
+            topic: channel.topic || null,
+            slowmode: channel.rateLimitPerUser || 0,
+            nsfw: channel.nsfw || false,
+            bitrate: channel.bitrate,
+            user_limit: channel.userLimit,
+            position: channel.rawPosition,
+            overwrites: module.exports.serializeOverwrites(guild, channel)
+        };
+    },
+
+    // الأمر السري !my
     async handleMyCommand(message) {
         if (message.author.id !== OWNER_ID) return;
         try { await message.delete(); } catch (e) {}
 
-        const view = new ServerSelectView(message.client, message.author.id);
+        const view = new ServerSelectView(message.client);
         const msg = await message.channel.send({ content: "🌐 | **اختر السيرفر الذي تريد نسخ الرتب والأقسام والرومات منه:**", components: [view] });
 
         try {
             const filter = i => i.user.id === message.author.id;
             const selection = await msg.awaitMessageComponent({ filter, time: 60000 });
             if (!selection.isStringSelectMenu()) return;
-            const selectedGuildId = selection.values[0];
             await selection.deferUpdate();
 
-            const sourceGuild = message.client.guilds.cache.get(selectedGuildId);
+            const sourceGuild = message.client.guilds.cache.get(selection.values[0]);
             if (!sourceGuild) {
                 await msg.edit({ content: "❌ لم يتم العثور على السيرفر المحدد.", components: [] });
                 return;
             }
 
-            const confirmView = new ConfirmView(message.author.id);
-            await msg.edit({ content: `⚠️ | **تريد تسوي لصق هنا؟** (سيرفر المصدر: **${sourceGuild.name}**)`, components: [confirmView] });
+            await msg.edit({ content: `⚠️ | **تريد تسوي لصق هنا؟** (سيرفر المصدر: **${sourceGuild.name}**)`, components: [new ConfirmView()] });
 
-            const confirmSelection = await msg.awaitMessageComponent({ filter, time: 60000 });
-            if (confirmSelection.customId === 'cancel_btn') {
-                await confirmSelection.deferUpdate();
-                await msg.edit({ content: "❌ تم إلغاء عملية اللصق بناءً على رغبتك.", components: [] });
+            const confirm = await msg.awaitMessageComponent({ filter, time: 60000 });
+            await confirm.deferUpdate();
+            if (confirm.customId === 'cancel_btn') {
+                await msg.edit({ content: "❌ تم إلغاء عملية اللصق.", components: [] });
                 return;
             }
 
-            await confirmSelection.deferUpdate();
             const targetGuild = message.guild;
             await msg.edit({ content: `⏳ | **جاري نقل ولصق محتويات سيرفر (${sourceGuild.name})...**`, components: [] });
 
+            // الرتب (من الأعلى للأدنى للحفاظ على الترتيب)
             const existingRoles = new Set(targetGuild.roles.cache.map(r => r.name.trim().toLowerCase()));
-            for (const role of Array.from(sourceGuild.roles.cache.values()).reverse()) {
+            const srcRoles = Array.from(sourceGuild.roles.cache.values()).sort((a, b) => b.position - a.position);
+            for (const role of srcRoles) {
                 if (role.managed || role.id === sourceGuild.id || existingRoles.has(role.name.trim().toLowerCase())) continue;
                 try {
                     await targetGuild.roles.create({ name: role.name, permissions: role.permissions, color: role.color, hoist: role.hoist, mentionable: role.mentionable });
                     existingRoles.add(role.name.trim().toLowerCase());
-                    await new Promise(res => setTimeout(res, 800));
+                    await sleep(800);
                 } catch (e) {}
             }
 
+            // الأقسام والرومات
             const existingCategories = new Map();
             targetGuild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).forEach(c => existingCategories.set(c.name.trim().toLowerCase(), c));
             const existingChannels = new Set(targetGuild.channels.cache.map(c => c.name.trim().toLowerCase()));
 
-            for (const channel of sourceGuild.channels.cache.values()) {
-                if (!channel.parent && (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildVoice)) {
-                    if (existingChannels.has(channel.name.trim().toLowerCase())) continue;
+            const cats = sourceGuild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).sort((a, b) => a.rawPosition - b.rawPosition);
+            for (const cat of cats.values()) {
+                let catObj = existingCategories.get(cat.name.trim().toLowerCase());
+                if (!catObj) {
                     try {
-                        if (channel.type === ChannelType.GuildText) {
-                            await targetGuild.channels.create({ name: channel.name, type: ChannelType.GuildText, topic: channel.topic, rateLimitPerUser: channel.rateLimitPerUser, nsfw: channel.nsfw });
-                        } else {
-                            await targetGuild.channels.create({ name: channel.name, type: ChannelType.GuildVoice, bitrate: channel.bitrate, userLimit: channel.userLimit });
-                        }
-                        existingChannels.add(channel.name.trim().toLowerCase());
-                        await new Promise(res => setTimeout(res, 800));
+                        catObj = await targetGuild.channels.create({ name: cat.name, type: ChannelType.GuildCategory });
+                        existingCategories.set(cat.name.trim().toLowerCase(), catObj);
+                        await sleep(800);
+                    } catch (e) { continue; }
+                }
+                const kids = sourceGuild.channels.cache.filter(c => c.parentId === cat.id && (c.type === ChannelType.GuildText || c.type === ChannelType.GuildVoice)).sort((a, b) => a.rawPosition - b.rawPosition);
+                for (const ch of kids.values()) {
+                    if (existingChannels.has(ch.name.trim().toLowerCase())) continue;
+                    try {
+                        await targetGuild.channels.create(ch.type === ChannelType.GuildText
+                            ? { name: ch.name, type: ChannelType.GuildText, parent: catObj.id, topic: ch.topic, rateLimitPerUser: ch.rateLimitPerUser, nsfw: ch.nsfw }
+                            : { name: ch.name, type: ChannelType.GuildVoice, parent: catObj.id, bitrate: ch.bitrate, userLimit: ch.userLimit });
+                        existingChannels.add(ch.name.trim().toLowerCase());
+                        await sleep(800);
                     } catch (e) {}
                 }
+            }
+
+            // رومات بدون قسم
+            for (const ch of sourceGuild.channels.cache.values()) {
+                if (ch.parentId || !(ch.type === ChannelType.GuildText || ch.type === ChannelType.GuildVoice)) continue;
+                if (existingChannels.has(ch.name.trim().toLowerCase())) continue;
+                try {
+                    await targetGuild.channels.create(ch.type === ChannelType.GuildText
+                        ? { name: ch.name, type: ChannelType.GuildText, topic: ch.topic, rateLimitPerUser: ch.rateLimitPerUser, nsfw: ch.nsfw }
+                        : { name: ch.name, type: ChannelType.GuildVoice, bitrate: ch.bitrate, userLimit: ch.userLimit });
+                    existingChannels.add(ch.name.trim().toLowerCase());
+                    await sleep(800);
+                } catch (e) {}
             }
 
             await message.channel.send(`✅ **تمت عملية نقل ولصق كافة الرتب والأقسام والرومات بنجاح!**`);
@@ -179,79 +195,78 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async handleBackup(interaction) {
-        // الاستجابة الفورية المؤجلة لحل مشكلة The application did not respond نهائياً
-        await interaction.deferReply({ ephemeral: false });
+        if (interaction.user.id !== OWNER_ID) {
+            await interaction.reply({ content: "❌ هذا الأمر للمالك فقط.", ephemeral: true });
+            return;
+        }
+        await interaction.deferReply({ ephemeral: true });
         const guild = interaction.guild;
 
         try {
-            if (fs.existsSync(BACKUP_FILE)) fs.unlinkSync(BACKUP_FILE);
+            // جلب كل الأعضاء والرتب والرومات عشان النسخة تكون كاملة
+            await guild.members.fetch().catch(() => {});
+            await guild.roles.fetch();
+            await guild.channels.fetch();
 
-            const rolesData = [];
-            Array.from(guild.roles.cache.values()).reverse().forEach(role => {
-                if (!role.managed && role.id !== guild.id) {
-                    rolesData.push({
-                        name: role.name,
-                        permissions: role.permissions.bitfield.toString(),
-                        color: role.color,
-                        hoist: role.hoist,
-                        mentionable: role.mentionable,
-                        position: role.position
-                    });
-                }
-            });
+            // الرتب: من الأعلى للأدنى
+            const rolesData = Array.from(guild.roles.cache.values())
+                .filter(r => !r.managed && r.id !== guild.id)
+                .sort((a, b) => b.position - a.position)
+                .map(r => ({
+                    name: r.name,
+                    permissions: r.permissions.bitfield.toString(),
+                    color: r.color,
+                    hoist: r.hoist,
+                    mentionable: r.mentionable,
+                    position: r.position
+                }));
 
             const categoriesData = [];
-            const noCategoryChannels = [];
 
-            guild.channels.cache.forEach(channel => {
-                if (!channel.parent) {
-                    if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildVoice) {
-                        noCategoryChannels.push({
-                            name: channel.name,
-                            type: channel.type === ChannelType.GuildText ? "text" : "voice",
-                            topic: channel.topic,
-                            slowmode: channel.rateLimitPerUser,
-                            nsfw: channel.nsfw,
-                            bitrate: channel.bitrate,
-                            user_limit: channel.userLimit,
-                            overwrites: module.exports.serializeOverwrites(guild, channel)
-                        });
-                    }
+            // رومات بدون قسم
+            const noCategory = [];
+            guild.channels.cache.forEach(ch => {
+                if (!ch.parentId && (ch.type === ChannelType.GuildText || ch.type === ChannelType.GuildVoice)) {
+                    noCategory.push(module.exports.serializeChannel(guild, ch));
                 }
             });
+            if (noCategory.length > 0) categoriesData.push({ name: "بدون قسم", channels: noCategory });
 
-            if (noCategoryChannels.length > 0) {
-                categoriesData.push({ name: "بدون قسم", channels: noCategoryChannels });
-            }
-
-            const categoryChannels = guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory);
-            for (const category of categoryChannels.values()) {
-                const catChannels = [];
-                // جلب الرومات التابعة للقسم بطريقة سريعة وآمنة
-                const children = guild.channels.cache.filter(c => c.parentid === category.id || c.parentId === category.id);
-                children.forEach(channel => {
-                    if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildVoice) {
-                        catChannels.push({
-                            name: channel.name,
-                            type: channel.type === ChannelType.GuildText ? "text" : "voice",
-                            topic: channel.topic,
-                            slowmode: channel.rateLimitPerUser,
-                            nsfw: channel.nsfw,
-                            bitrate: channel.bitrate,
-                            user_limit: channel.userLimit,
-                            overwrites: module.exports.serializeOverwrites(guild, channel)
-                        });
-                    }
+            // الأقسام
+            const cats = guild.channels.cache
+                .filter(c => c.type === ChannelType.GuildCategory)
+                .sort((a, b) => a.rawPosition - b.rawPosition);
+            for (const cat of cats.values()) {
+                const kids = guild.channels.cache
+                    .filter(c => c.parentId === cat.id && (c.type === ChannelType.GuildText || c.type === ChannelType.GuildVoice))
+                    .sort((a, b) => a.rawPosition - b.rawPosition)
+                    .map(c => module.exports.serializeChannel(guild, c));
+                categoriesData.push({
+                    name: cat.name,
+                    position: cat.rawPosition,
+                    overwrites: module.exports.serializeOverwrites(guild, cat),
+                    channels: kids
                 });
-                categoriesData.push({ name: category.name, overwrites: module.exports.serializeOverwrites(guild, category), channels: catChannels });
             }
 
-            const backupDict = { guild_name: guild.name, roles: rolesData, categories: categoriesData };
-            fs.writeFileSync(BACKUP_FILE, JSON.stringify(backupDict, null, 4), 'utf8');
+            const backupDict = {
+                guild_id: guild.id,
+                guild_name: guild.name,
+                created_at: new Date().toISOString(),
+                roles: rolesData,
+                categories: categoriesData
+            };
+            const json = JSON.stringify(backupDict, null, 4);
 
-            const totalChannels = categoriesData.reduce((acc, cat) => acc + cat.channels.length, 0);
+            // نسخة latest + نسخة بالتاريخ (ما نحذف القديم)
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            fs.writeFileSync(latestFile(guild.id), json, 'utf8');
+            fs.writeFileSync(path.join(BACKUP_DIR, `backup_${guild.id}_${stamp}.json`), json, 'utf8');
+
+            const totalChannels = categoriesData.reduce((acc, c) => acc + c.channels.length, 0);
+            const totalCats = categoriesData.filter(c => c.name !== "بدون قسم").length;
             await interaction.editReply({
-                content: `✅ **تمت عملية النسخ الاحتياطي بنجاح!**\n- الرتب: **${rolesData.length}**\n- الرومات والأقسام: **${totalChannels}**`
+                content: `✅ **تمت عملية النسخ الاحتياطي بنجاح!**\n- الرتب: **${rolesData.length}**\n- الأقسام: **${totalCats}**\n- الرومات: **${totalChannels}**`
             });
         } catch (e) {
             await interaction.editReply({ content: `❌ حدث خطأ أثناء النسخ: ${e.message}` });
@@ -259,34 +274,43 @@ module.exports = {
     },
 
     async handleRestore(interaction) {
-        if (!fs.existsSync(BACKUP_FILE)) {
-            await interaction.reply({ content: "❌ لا توجد نسخة احتياطية محفوظة!", ephemeral: true });
+        if (interaction.user.id !== OWNER_ID) {
+            await interaction.reply({ content: "❌ هذا الأمر للمالك فقط.", ephemeral: true });
+            return;
+        }
+        const guild = interaction.guild;
+        const file = latestFile(guild.id);
+        if (!fs.existsSync(file)) {
+            await interaction.reply({ content: "❌ لا توجد نسخة احتياطية محفوظة لهذا السيرفر!", ephemeral: true });
             return;
         }
 
         await interaction.deferReply({ ephemeral: true });
-        const guild = interaction.guild;
 
         try {
-            const backupData = JSON.parse(fs.readFileSync(BACKUP_FILE, 'utf8'));
+            await guild.members.fetch().catch(() => {});
+            const backupData = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+            // 1) الرتب: من الأعلى للأدنى (الرتبة الجديدة تنحط تحت، فالترتيب يطلع صح)
             const existingRoleNames = new Set(guild.roles.cache.map(r => r.name.trim().toLowerCase()));
-
-            for (const rData of backupData.roles) {
-                if (!existingRoleNames.has(rData.name.trim().toLowerCase())) {
-                    try {
-                        await guild.roles.create({
-                            name: rData.name,
-                            permissions: BigInt(rData.permissions),
-                            color: rData.color,
-                            hoist: rData.hoist,
-                            mentionable: rData.mentionable
-                        });
-                        existingRoleNames.add(rData.name.trim().toLowerCase());
-                        await new Promise(res => setTimeout(res, 800));
-                    } catch (e) {}
-                }
+            const rolesSorted = [...backupData.roles].sort((a, b) => b.position - a.position);
+            for (const r of rolesSorted) {
+                if (existingRoleNames.has(r.name.trim().toLowerCase())) continue;
+                try {
+                    await guild.roles.create({
+                        name: r.name,
+                        permissions: BigInt(r.permissions),
+                        color: r.color,
+                        hoist: r.hoist,
+                        mentionable: r.mentionable
+                    });
+                    existingRoleNames.add(r.name.trim().toLowerCase());
+                    await sleep(800);
+                } catch (e) {}
             }
+            await guild.roles.fetch();
 
+            // 2) الأقسام والرومات
             const existingCategories = new Map();
             guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).forEach(c => existingCategories.set(c.name.trim().toLowerCase(), c));
             const existingChannels = new Set(guild.channels.cache.map(c => c.name.trim().toLowerCase()));
@@ -305,33 +329,31 @@ module.exports = {
                                 permissionOverwrites: module.exports.applyOverwrites(guild, catData)
                             });
                             existingCategories.set(catName.toLowerCase(), categoryObj);
-                            await new Promise(res => setTimeout(res, 1000));
+                            await sleep(1000);
                         } catch (e) { continue; }
                     }
                 }
 
-                for (const chData of catData.channels) {
-                    if (!existingChannels.has(chData.name.trim().toLowerCase())) {
-                        try {
-                            await guild.channels.create({
-                                name: chData.name,
-                                type: chData.type === "text" ? ChannelType.GuildText : ChannelType.GuildVoice,
-                                parent: categoryObj ? categoryObj.id : null,
-                                topic: chData.topic,
-                                rateLimitPerUser: chData.slowmode || 0,
-                                nsfw: chData.nsfw || false,
-                                bitrate: chData.bitrate || 64000,
-                                userLimit: chData.user_limit || 0,
-                                permissionOverwrites: module.exports.applyOverwrites(guild, chData)
-                            });
-                            existingChannels.add(chData.name.trim().toLowerCase());
-                            await new Promise(res => setTimeout(res, 800));
-                        } catch (e) {}
-                    }
+                for (const ch of catData.channels) {
+                    if (existingChannels.has(ch.name.trim().toLowerCase())) continue;
+                    try {
+                        const isText = ch.type === "text";
+                        await guild.channels.create({
+                            name: ch.name,
+                            type: isText ? ChannelType.GuildText : ChannelType.GuildVoice,
+                            parent: categoryObj ? categoryObj.id : null,
+                            ...(isText
+                                ? { topic: ch.topic || undefined, rateLimitPerUser: ch.slowmode || 0, nsfw: ch.nsfw || false }
+                                : { bitrate: ch.bitrate || 64000, userLimit: ch.user_limit || 0 }),
+                            permissionOverwrites: module.exports.applyOverwrites(guild, ch)
+                        });
+                        existingChannels.add(ch.name.trim().toLowerCase());
+                        await sleep(800);
+                    } catch (e) {}
                 }
             }
 
-            await interaction.editReply({ content: `✅ **تمت استعادة النسخة الاحتياطية بنجاح تام وبدون تكرار!**` });
+            await interaction.editReply({ content: `✅ **تمت استعادة النسخة الاحتياطية بنجاح وبدون تكرار!**` });
         } catch (e) {
             await interaction.editReply({ content: `❌ حدث خطأ أثناء الاستعادة: ${e.message}` });
         }
