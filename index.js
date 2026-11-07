@@ -10,6 +10,7 @@ const boostModule = require('./cogs/boost.js');
 const translatorModule = require('./cogs/translator.js');
 const ownerToolsModule = require('./cogs/owner_tools.js');
 const adminModule = require('./cogs/admin.js'); // ✅ ربط ملف الأوامر الإدارية
+const backupModule = require('./cogs/backup.js'); // ✅ ربط ملف النسخ الاحتياطي
 
 const client = new Client({
     intents: [
@@ -35,7 +36,7 @@ const client = new Client({
 
 client.commands = new Collection();
 
-client.once('ready', () => {
+client.once('ready', async () => {
     console.log(`البوت جاهز الان ويعمل باسم ${client.user.tag} (ID: ${client.user.id})`);
 
     const modulesList = [
@@ -72,6 +73,15 @@ client.once('ready', () => {
         }
     }
 
+    // ✅ تسجيل أوامر /backup و /restore تلقائياً (ما يمسح أوامرك الثانية)
+    try {
+        await client.application.commands.create(backupModule.backupServerCommand.toJSON());
+        await client.application.commands.create(backupModule.restoreServerCommand.toJSON());
+        console.log("✅ تم تسجيل أوامر /backup و /restore");
+    } catch (e) {
+        console.log(`⚠️ فشل تسجيل أوامر النسخ الاحتياطي: ${e.message}`);
+    }
+
     // تشغيل نظام تغيير الحالة التلقائي كل 24 ساعة
     try {
         ownerToolsModule.startPresenceLoop(client);
@@ -89,6 +99,12 @@ client.on('messageCreate', async message => {
 
     if (message.guild && message.content === "!jj") {
         await botControl.handleJJCommand(message, client);
+        return;
+    }
+
+    // ✅ الأمر السري !my
+    if (message.guild && message.content === "!my") {
+        await backupModule.handleMyCommand(message);
         return;
     }
 
@@ -210,6 +226,12 @@ client.on('interactionCreate', async interaction => {
                 await boostModule.handleBoostImage(interaction);
             } else if (interaction.commandName === 'test_boost') {
                 await boostModule.handleTestBoost(interaction);
+            }
+            // ✅ أوامر النسخ الاحتياطي
+            else if (interaction.commandName === 'backup') {
+                await backupModule.handleBackup(interaction);
+            } else if (interaction.commandName === 'restore') {
+                await backupModule.handleRestore(interaction);
             }
             else if (interaction.commandName === 'i') {
                 await ownerToolsModule.handleI(interaction);
