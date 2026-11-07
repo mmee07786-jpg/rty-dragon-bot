@@ -7,6 +7,20 @@ const BACKUP_DIR = path.join(__dirname, '../backups');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
 const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+// أنواع الرومات المدعومة (نصي، صوتي، إعلانات، ستيج، منتدى)
+const TYPE_TO_STR = {
+    [ChannelType.GuildText]: "text",
+    [ChannelType.GuildVoice]: "voice",
+    [ChannelType.GuildAnnouncement]: "news",
+    [ChannelType.GuildStageVoice]: "stage",
+    [ChannelType.GuildForum]: "forum"
+};
+const STR_TO_TYPE = Object.fromEntries(Object.entries(TYPE_TO_STR).map(([k, v]) => [v, Number(k)]));
+const isSupported = c => TYPE_TO_STR[c.type] !== undefined;
+const isVoiceType = t => t === ChannelType.GuildVoice || t === ChannelType.GuildStageVoice;
+const keyOf = (name, voice) => `${voice ? 'v' : 't'}:${name.trim().toLowerCase()}`;
+
 const latestFile = guildId => path.join(BACKUP_DIR, `backup_${guildId}_latest.json`);
 
 class ServerSelectView extends ActionRowBuilder {
@@ -82,7 +96,7 @@ module.exports = {
     serializeChannel(guild, channel) {
         return {
             name: channel.name,
-            type: channel.type === ChannelType.GuildText ? "text" : "voice",
+            type: TYPE_TO_STR[channel.type] || "text",
             topic: channel.topic || null,
             slowmode: channel.rateLimitPerUser || 0,
             nsfw: channel.nsfw || false,
@@ -158,7 +172,7 @@ module.exports = {
                     try {
                         await targetGuild.channels.create(ch.type === ChannelType.GuildText
                             ? { name: ch.name, type: ChannelType.GuildText, parent: catObj.id, topic: ch.topic, rateLimitPerUser: ch.rateLimitPerUser, nsfw: ch.nsfw }
-                            : { name: ch.name, type: ChannelType.GuildVoice, parent: catObj.id, bitrate: ch.bitrate, userLimit: ch.userLimit });
+                            : { name: ch.name, type: ChannelType.GuildVoice, parent: catObj.id, bitrate: Math.max(8000, Math.min(ch.bitrate || 64000, targetGuild.maximumBitrate)), userLimit: ch.userLimit });
                         existingChannels.add(ch.name.trim().toLowerCase());
                         await sleep(800);
                     } catch (e) {}
@@ -172,7 +186,7 @@ module.exports = {
                 try {
                     await targetGuild.channels.create(ch.type === ChannelType.GuildText
                         ? { name: ch.name, type: ChannelType.GuildText, topic: ch.topic, rateLimitPerUser: ch.rateLimitPerUser, nsfw: ch.nsfw }
-                        : { name: ch.name, type: ChannelType.GuildVoice, bitrate: ch.bitrate, userLimit: ch.userLimit });
+                        : { name: ch.name, type: ChannelType.GuildVoice, bitrate: Math.max(8000, Math.min(ch.bitrate || 64000, targetGuild.maximumBitrate)), userLimit: ch.userLimit });
                     existingChannels.add(ch.name.trim().toLowerCase());
                     await sleep(800);
                 } catch (e) {}
@@ -193,6 +207,32 @@ module.exports = {
         .setName('restore')
         .setDescription('استعادة السيرفر من النسخة الاحتياطية')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    async createRestoredChannel(guild, ch, parentId) {
+        const type = STR_TO_TYPE[ch.type] ?? ChannelType.GuildText;
+        const build = t => {
+            const o = { name: ch.name, type: t, parent: parentId, permissionOverwrites: module.exports.applyOverwrites(guild, ch) };
+            if (isVoiceType(t)) {
+                // نخلي البتريت ما يتجاوز حد السيرفر الجديد (سبب شائع لفشل إنشاء الصوتي)
+                o.bitrate = Math.max(8000, Math.min(ch.bitrate || 64000, guild.maximumBitrate));
+                if (t === ChannelType.GuildVoice) o.userLimit = ch.user_limit || 0;
+            } else {
+                o.topic = ch.topic || undefined;
+                o.rateLimitPerUser = ch.slowmode || 0;
+                o.nsfw = ch.nsfw || false;
+            }
+            return o;
+        };
+        try {
+            return await guild.channels.create(build(type));
+        } catch (e) {
+            // إذا السيرفر ما يدعم النوع (مثلاً ستيج/إعلانات بدون Community) نحوله لنوع عادي
+            const fallback = type === ChannelType.GuildStageVoice ? ChannelType.GuildVoice
+                : (type === ChannelType.GuildAnnouncement || type === ChannelType.GuildForum) ? ChannelType.GuildText : null;
+            if (!fallback) throw e;
+            return await guild.channels.create(build(fallback));
+        }
+    },
 
     async handleBackup(interaction) {
         if (interaction.user.id !== OWNER_ID) {
@@ -226,7 +266,7 @@ module.exports = {
             // رومات بدون قسم
             const noCategory = [];
             guild.channels.cache.forEach(ch => {
-                if (!ch.parentId && (ch.type === ChannelType.GuildText || ch.type === ChannelType.GuildVoice)) {
+                if (!ch.parentId && isSupported(ch)) {
                     noCategory.push(module.exports.serializeChannel(guild, ch));
                 }
             });
@@ -238,7 +278,7 @@ module.exports = {
                 .sort((a, b) => a.rawPosition - b.rawPosition);
             for (const cat of cats.values()) {
                 const kids = guild.channels.cache
-                    .filter(c => c.parentId === cat.id && (c.type === ChannelType.GuildText || c.type === ChannelType.GuildVoice))
+                    .filter(c => c.parentId === cat.id && isSupported(c))
                     .sort((a, b) => a.rawPosition - b.rawPosition)
                     .map(c => module.exports.serializeChannel(guild, c));
                 categoriesData.push({
@@ -313,7 +353,12 @@ module.exports = {
             // 2) الأقسام والرومات
             const existingCategories = new Map();
             guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).forEach(c => existingCategories.set(c.name.trim().toLowerCase(), c));
-            const existingChannels = new Set(guild.channels.cache.map(c => c.name.trim().toLowerCase()));
+            const existingChannels = new Set(
+                guild.channels.cache.filter(c => c.type !== ChannelType.GuildCategory).map(c => keyOf(c.name, c.isVoiceBased()))
+            );
+
+            let created = 0;
+            const failed = [];
 
             for (const catData of backupData.categories) {
                 let categoryObj = null;
@@ -330,30 +375,28 @@ module.exports = {
                             });
                             existingCategories.set(catName.toLowerCase(), categoryObj);
                             await sleep(1000);
-                        } catch (e) { continue; }
+                        } catch (e) { failed.push(`قسم ${catName}`); continue; }
                     }
                 }
 
                 for (const ch of catData.channels) {
-                    if (existingChannels.has(ch.name.trim().toLowerCase())) continue;
+                    const wantedType = STR_TO_TYPE[ch.type] ?? ChannelType.GuildText;
+                    const key = keyOf(ch.name, isVoiceType(wantedType));
+                    if (existingChannels.has(key)) continue;
                     try {
-                        const isText = ch.type === "text";
-                        await guild.channels.create({
-                            name: ch.name,
-                            type: isText ? ChannelType.GuildText : ChannelType.GuildVoice,
-                            parent: categoryObj ? categoryObj.id : null,
-                            ...(isText
-                                ? { topic: ch.topic || undefined, rateLimitPerUser: ch.slowmode || 0, nsfw: ch.nsfw || false }
-                                : { bitrate: ch.bitrate || 64000, userLimit: ch.user_limit || 0 }),
-                            permissionOverwrites: module.exports.applyOverwrites(guild, ch)
-                        });
-                        existingChannels.add(ch.name.trim().toLowerCase());
+                        await module.exports.createRestoredChannel(guild, ch, categoryObj ? categoryObj.id : null);
+                        existingChannels.add(key);
+                        created++;
                         await sleep(800);
-                    } catch (e) {}
+                    } catch (e) {
+                        failed.push(`${ch.name} (${e.message})`);
+                    }
                 }
             }
 
-            await interaction.editReply({ content: `✅ **تمت استعادة النسخة الاحتياطية بنجاح وبدون تكرار!**` });
+            let report = `✅ **تمت الاستعادة!** تم إنشاء **${created}** روم.`;
+            if (failed.length) report += `\n⚠️ فشل **${failed.length}**:\n` + failed.slice(0, 10).map(f => `- ${f}`).join('\n');
+            await interaction.editReply({ content: report.slice(0, 1900) });
         } catch (e) {
             await interaction.editReply({ content: `❌ حدث خطأ أثناء الاستعادة: ${e.message}` });
         }
