@@ -9,7 +9,6 @@
     "@snazzah/davey": "latest",
     "opusscript": "latest",
     "libsodium-wrappers": "latest",
-    "ffmpeg-static": "latest",
     "youtubei.js": "latest"
   }
 }
