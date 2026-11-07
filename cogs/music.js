@@ -7,6 +7,7 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const vm = require('vm');
 
 const BIN_DIR = path.join(__dirname, '../bin');
 const BIN_PATH = path.join(BIN_DIR, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
@@ -120,14 +121,68 @@ function nameFromLink(link) {
     catch (e) { return 'ملف صوتي'; }
 }
 
+/* ---------- بديل لليوتيوب بدون أي ملف تنفيذي (مكتبة youtubei.js) ---------- */
+
+const YT_ID = /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|music\.youtube\.com\/watch\?(?:.*&)?v=)([\w-]{11})/i;
+
+let ytClientPromise = null;
+function getInnertube() {
+    if (!ytClientPromise) {
+        ytClientPromise = (async () => {
+            const { Innertube, Platform } = await import('youtubei.js');
+            // المكتبة تحتاج تشغّل سكربت فك التشفير من يوتيوب، نشغّله بمعزل (vm) بدل ما نعطيه وصول كامل
+            try {
+                if (Platform && Platform.shim) {
+                    Platform.shim.eval = async (data, env) => {
+                        const props = [];
+                        if (env.n) props.push(`n: exportedVars.nFunction("${env.n}")`);
+                        if (env.sig) props.push(`sig: exportedVars.sigFunction("${env.sig}")`);
+                        const code = `${data.output}\nreturn { ${props.join(', ')} }`;
+                        return vm.runInNewContext(`(function(){${code}})()`, Object.create(null), { timeout: 8000 });
+                    };
+                }
+            } catch (e) {}
+            return Innertube.create({ retrieve_player: true });
+        })().catch(e => { ytClientPromise = null; throw e; });
+    }
+    return ytClientPromise;
+}
+
+async function resolveWithYoutubei(link) {
+    const m = link.match(YT_ID);
+    if (!m) throw new Error('NOT_YOUTUBE');
+    const yt = await getInnertube();
+    let lastErr = null;
+    for (const client of ['IOS', 'ANDROID', 'TV', 'WEB']) {
+        try {
+            const info = await yt.getBasicInfo(m[1], { client });
+            const format = info.chooseFormat({ type: 'audio', quality: 'best' });
+            const url = await format.decipher(yt.session.player);
+            if (url) return { title: (info.basic_info && info.basic_info.title) || 'YouTube', direct: url };
+        } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error('YTJS_FAILED');
+}
+
 async function resolveTrack(link) {
     // رابط ملف مباشر (mp3, mp4...) ما يحتاج yt-dlp
     if (MEDIA_EXT.test(link)) return { title: nameFromLink(link), direct: link };
     try {
         return await runYtdlp(link);
     } catch (e) {
-        if (e.code === 'ENOENT') throw new Error('YTDLP_MISSING');
-        console.error('yt-dlp error:', (e.stderr || e.message).slice(-600));
+        const missing = e.code === 'ENOENT';
+        if (!missing) console.error('yt-dlp error:', (e.stderr || e.message).slice(-600));
+
+        // بديل ليوتيوب فقط إذا yt-dlp ما اشتغل
+        if (YT_ID.test(link)) {
+            try {
+                return await resolveWithYoutubei(link);
+            } catch (e2) {
+                console.error('youtubei.js error:', e2.message);
+            }
+        }
+
+        if (missing) throw new Error('YTDLP_MISSING');
         if (/confirm you.re not a bot|Sign in to confirm/i.test(e.stderr || '')) throw new Error('YT_BLOCKED');
         throw new Error('YTDLP_FAILED');
     }
