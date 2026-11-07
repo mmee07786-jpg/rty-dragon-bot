@@ -4,6 +4,11 @@
   "description": "Discord Bot",
   "main": "index.js",
   "dependencies": {
-    "discord.js": "^14.14.0"
+    "discord.js": "^14.14.0",
+    "@discordjs/voice": "latest",
+    "@snazzah/davey": "latest",
+    "opusscript": "latest",
+    "libsodium-wrappers": "latest",
+    "ffmpeg-static": "latest"
   }
 }
