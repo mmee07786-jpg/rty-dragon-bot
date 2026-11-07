@@ -83,6 +83,9 @@ client.once('ready', async () => {
         console.log(`⚠️ فشل تسجيل أوامر النسخ الاحتياطي: ${e.message}`);
     }
 
+    // ✅ تجهيز yt-dlp بالخلفية للموسيقى
+    musicModule.prepare();
+
     // ✅ تسجيل أمر /play_music تلقائياً + حذف الأمر القديم /play
     try {
         const existing = await client.application.commands.fetch();
