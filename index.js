@@ -11,6 +11,7 @@ const translatorModule = require('./cogs/translator.js');
 const ownerToolsModule = require('./cogs/owner_tools.js');
 const adminModule = require('./cogs/admin.js'); // ✅ ربط ملف الأوامر الإدارية
 const backupModule = require('./cogs/backup.js'); // ✅ ربط ملف النسخ الاحتياطي
+const musicModule = require('./cogs/music.js'); // ✅ ربط ملف الموسيقى
 
 const client = new Client({
     intents: [
@@ -80,6 +81,18 @@ client.once('ready', async () => {
         console.log("✅ تم تسجيل أوامر /backup و /restore");
     } catch (e) {
         console.log(`⚠️ فشل تسجيل أوامر النسخ الاحتياطي: ${e.message}`);
+    }
+
+    // ✅ تسجيل أمر /play_music تلقائياً + حذف الأمر القديم /play
+    try {
+        const existing = await client.application.commands.fetch();
+        const old = existing.find(c => c.name === 'play');
+        if (old) await client.application.commands.delete(old.id);
+
+        await client.application.commands.create(musicModule.playCommand.toJSON());
+        console.log("✅ تم تسجيل أمر /play_music");
+    } catch (e) {
+        console.log(`⚠️ فشل تسجيل أمر /play_music: ${e.message}`);
     }
 
     // تشغيل نظام تغيير الحالة التلقائي كل 24 ساعة
@@ -233,6 +246,10 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'restore') {
                 await backupModule.handleRestore(interaction);
             }
+            // ✅ أمر الموسيقى
+            else if (interaction.commandName === 'play_music') {
+                await musicModule.handlePlay(interaction);
+            }
             else if (interaction.commandName === 'i') {
                 await ownerToolsModule.handleI(interaction);
             } else if (interaction.commandName === 'itzf188') {
@@ -245,7 +262,9 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isButton()) {
         try {
-            if (interaction.customId === 'raid_continue_btn') {
+            if (interaction.customId.startsWith('music_')) {
+                await musicModule.handleButton(interaction);
+            } else if (interaction.customId === 'raid_continue_btn') {
                 await raidEndModule.handleRaidContinueButton(interaction);
             } else {
                 await raidStartModule.handleButtonInteraction(interaction);
