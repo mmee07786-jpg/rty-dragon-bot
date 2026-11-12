@@ -305,6 +305,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.isButton()) {
+        console.log(`🔘 زر: ${interaction.customId} | من: ${interaction.user.tag}`);
         try {
             if (interaction.customId === 'raid_continue_btn') {
                 await raidEndModule.handleRaidContinueButton(interaction);
@@ -315,10 +316,17 @@ client.on('interactionCreate', async interaction => {
             }
         } catch (e) {
             console.error("خطأ في معالجة الزر:", e);
+            // ✅ رد للمستخدم بدل "didn't respond in time"
+            try {
+                const msg = { content: "❌ | صار خطأ داخلي أثناء معالجة الزر.", ephemeral: true };
+                if (interaction.deferred || interaction.replied) await interaction.followUp(msg);
+                else await interaction.reply(msg);
+            } catch (_) {}
         }
     }
 
     if (interaction.isModalSubmit()) {
+        console.log(`📝 نافذة: ${interaction.customId} | من: ${interaction.user.tag}`);
         try {
             if (interaction.customId === 'raid_start_modal') {
                 const serverLink = interaction.fields.getTextInputValue('server_link');
@@ -338,6 +346,11 @@ client.on('interactionCreate', async interaction => {
             }
         } catch (e) {
             console.error("خطأ في معالجة Modal:", e);
+            try {
+                const msg = { content: "❌ | صار خطأ داخلي أثناء معالجة النافذة.", ephemeral: true };
+                if (interaction.deferred || interaction.replied) await interaction.followUp(msg);
+                else await interaction.reply(msg);
+            } catch (_) {}
         }
     }
 
