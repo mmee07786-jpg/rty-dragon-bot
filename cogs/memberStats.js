@@ -1,4 +1,8 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const {
+    SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder,
+    ModalBuilder, TextInputBuilder, TextInputStyle,
+    ActionRowBuilder, ButtonBuilder, ButtonStyle
+} = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -8,6 +12,7 @@ const ROLES_CONFIG_FILE = path.join(__dirname, '../raid_roles.json');
 
 // بعد كم يوم بدون رايد يتصفّر الستريك الحالي
 const INACTIVE_DAYS = 7;
+const EMBED_COLOR = 0x8B0000;
 
 class MemberStats {
     constructor(client) {
@@ -21,7 +26,7 @@ class MemberStats {
             fs.writeFileSync(STATS_FILE, JSON.stringify({}, null, 4), 'utf8');
         }
         if (!fs.existsSync(ROLES_CONFIG_FILE)) {
-            fs.writeFileSync(ROLES_CONFIG_FILE, JSON.stringify({ raid_roles: {}, top_roles: [] }, null, 4), 'utf8');
+            fs.writeFileSync(ROLES_CONFIG_FILE, JSON.stringify({ raid_roles: {}, raid_role_descriptions: {}, top_roles: [] }, null, 4), 'utf8');
         }
     }
 
@@ -48,14 +53,16 @@ class MemberStats {
     }
 
     getConfigData() {
-        if (!fs.existsSync(ROLES_CONFIG_FILE)) return { raid_roles: {}, top_roles: [] };
+        const empty = () => ({ raid_roles: {}, raid_role_descriptions: {}, top_roles: [] });
+        if (!fs.existsSync(ROLES_CONFIG_FILE)) return empty();
         try {
             const data = JSON.parse(fs.readFileSync(ROLES_CONFIG_FILE, 'utf8'));
             if (!data.raid_roles) data.raid_roles = {};
+            if (!data.raid_role_descriptions) data.raid_role_descriptions = {};
             if (!data.top_roles) data.top_roles = [];
             return data;
         } catch (e) {
-            return { raid_roles: {}, top_roles: [] };
+            return empty();
         }
     }
 
@@ -188,10 +195,41 @@ class MemberStats {
         }, 60 * 60 * 1000);
     }
 
-    // /set-raid-role raids:<رقم> role:<رتبة>
+    // ───────────────────────── رتب الرايدات ─────────────────────────
+
+    // قائمة الرتب مرتبة من الأصغر للأكبر
+    getSortedRaidRoles(gid) {
+        const config = this.getConfigData();
+        const roles = config.raid_roles[gid] || {};
+        const descs = config.raid_role_descriptions[gid] || {};
+        return Object.keys(roles)
+            .map(k => parseInt(k))
+            .filter(n => !isNaN(n))
+            .sort((a, b) => a - b)
+            .map(n => ({ raids: n, roleId: roles[n.toString()], description: descs[n.toString()] || "" }));
+    }
+
+    // يمنح الرتبة لكل من وصل العدد المطلوب
+    async giveRoleToQualified(guild, raids, role) {
+        const stats = this.getRaidData()[guild.id]?.raider_stats || {};
+        let given = 0;
+        for (const [uid, count] of Object.entries(stats)) {
+            if (count < raids) continue;
+            const member = await guild.members.fetch(uid).catch(() => null);
+            if (!member || member.roles.cache.has(role.id)) continue;
+            try {
+                await member.roles.add(role, `رتبة رايدات (${raids})`);
+                given++;
+            } catch (e) {}
+        }
+        return given;
+    }
+
+    // /set-raid-role raids:<رقم> role:<رتبة> description:<اختياري>
     async handleSetRaidRole(interaction) {
         const raids = interaction.options.getInteger('raids');
         const role = interaction.options.getRole('role');
+        const description = (interaction.options.getString('description') || "").trim();
 
         if (raids < 1) {
             await interaction.reply({ content: "❌ | عدد الرايدات لازم يكون 1 أو أكثر.", ephemeral: true });
@@ -203,58 +241,212 @@ class MemberStats {
         const config = this.getConfigData();
         const gid = interaction.guildId;
         if (!config.raid_roles[gid]) config.raid_roles[gid] = {};
+        if (!config.raid_role_descriptions[gid]) config.raid_role_descriptions[gid] = {};
+
         config.raid_roles[gid][raids.toString()] = role.id;
+        if (description) config.raid_role_descriptions[gid][raids.toString()] = description;
         this.saveConfigData(config);
 
-        // منح الرتبة فوراً لمن وصل العدد
-        const stats = this.getRaidData()[gid]?.raider_stats || {};
-        let given = 0;
-        for (const [uid, count] of Object.entries(stats)) {
-            if (count < raids) continue;
-            const member = await interaction.guild.members.fetch(uid).catch(() => null);
-            if (!member || member.roles.cache.has(role.id)) continue;
-            try {
-                await member.roles.add(role, `رتبة رايدات (${raids})`);
-                given++;
-            } catch (e) {}
-        }
+        const given = await this.giveRoleToQualified(interaction.guild, raids, role);
 
         await interaction.editReply({
-            content: `✅ | تم ربط الرتبة ${role} بـ \`${raids}\` رايد، وتم منحها لـ \`${given}\` عضو حالياً.`
+            content: `✅ | تم ربط الرتبة ${role} بـ \`${raids}\` رايد${description ? ` (الوصف: ${description})` : ""}، وتم منحها لـ \`${given}\` عضو حالياً.`
         });
     }
 
-    // /remove-raid-role raids:<رقم>
-    async handleRemoveRaidRole(interaction) {
-        const raids = interaction.options.getInteger('raids');
-        const config = this.getConfigData();
-        const gid = interaction.guildId;
-        const serverRoles = config.raid_roles[gid] || {};
+    // ───────── /remove-raid-role : قائمة + أزرار ترقيم + حذف/تعديل ─────────
 
-        if (!serverRoles[raids.toString()]) {
-            await interaction.reply({ content: `❌ | ما فيه رتبة مربوطة بـ \`${raids}\` رايد.`, ephemeral: true });
+    buildRaidRolesListView(guild, notice) {
+        const list = this.getSortedRaidRoles(guild.id).slice(0, 25);
+        const embed = new EmbedBuilder().setColor(EMBED_COLOR).setTitle("🗑️ | إدارة رتب الرايدات | Manage Raid Roles");
+        const head = notice ? `${notice}\n\n` : "";
+
+        if (list.length === 0) {
+            embed.setDescription(`${head}❌ | ما فيه رتب رايدات مسجّلة.\nNo raid roles configured.`);
+            return { embeds: [embed], components: [] };
+        }
+
+        const lines = list.map((r, i) =>
+            `**${i + 1}.** \`${r.raids}\` رايد ➜ <@&${r.roleId}>` + (r.description ? `\n╰ ${r.description}` : "")
+        );
+        embed.setDescription(`${head}${lines.join("\n\n")}\n\nاختر رقم الرتبة من الأزرار تحت\nPick a role number below`);
+
+        const rows = [];
+        for (let i = 0; i < list.length; i += 5) {
+            const row = new ActionRowBuilder();
+            list.slice(i, i + 5).forEach((r, j) => {
+                row.addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`rr_pick:${r.raids}`)
+                        .setLabel(String(i + j + 1))
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            });
+            rows.push(row);
+        }
+        return { embeds: [embed], components: rows };
+    }
+
+    buildRaidRoleDetailView(guild, raids) {
+        const r = this.getSortedRaidRoles(guild.id).find(x => x.raids === raids);
+        if (!r) {
+            return this.buildRaidRolesListView(guild, "❌ | هذي الرتبة ما عادت موجودة.\nThis role no longer exists.");
+        }
+
+        const embed = new EmbedBuilder()
+            .setColor(EMBED_COLOR)
+            .setTitle("🏅 | رتبة رايدات | Raid Role")
+            .setDescription(
+                `🎯 \`${r.raids}\` رايد ➜ <@&${r.roleId}>\n` +
+                `📝 ${r.description || "—"}`
+            );
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`rr_del:${r.raids}`).setLabel("حذف | Delete").setEmoji("🗑️").setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId(`rr_edit:${r.raids}`).setLabel("تعديل | Edit").setEmoji("✏️").setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId("rr_back").setLabel("رجوع | Back").setEmoji("⬅️").setStyle(ButtonStyle.Secondary)
+        );
+        return { embeds: [embed], components: [row] };
+    }
+
+    async handleRemoveRaidRole(interaction) {
+        await interaction.reply({ ...this.buildRaidRolesListView(interaction.guild), ephemeral: true });
+    }
+
+    async handleRaidRoleButton(interaction) {
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+            await interaction.reply({ content: "❌ | ليس لديك صلاحية!", ephemeral: true });
             return;
         }
 
-        const roleId = serverRoles[raids.toString()];
-        delete serverRoles[raids.toString()];
-        config.raid_roles[gid] = serverRoles;
+        const [action, arg] = interaction.customId.split(':');
+        const raids = parseInt(arg);
+        const guild = interaction.guild;
+
+        if (action === 'rr_back') {
+            await interaction.update(this.buildRaidRolesListView(guild));
+            return;
+        }
+
+        if (action === 'rr_pick') {
+            await interaction.update(this.buildRaidRoleDetailView(guild, raids));
+            return;
+        }
+
+        if (action === 'rr_del') {
+            const config = this.getConfigData();
+            const gid = guild.id;
+            const roleId = config.raid_roles[gid]?.[raids.toString()];
+            if (!roleId) {
+                await interaction.update(this.buildRaidRolesListView(guild, "❌ | هذي الرتبة ما عادت موجودة.\nThis role no longer exists."));
+                return;
+            }
+            delete config.raid_roles[gid][raids.toString()];
+            if (config.raid_role_descriptions[gid]) delete config.raid_role_descriptions[gid][raids.toString()];
+            this.saveConfigData(config);
+
+            await interaction.update(this.buildRaidRolesListView(
+                guild,
+                `✅ | تم حذف ربط <@&${roleId}> من \`${raids}\` رايد (الرتبة تبقى عند الأعضاء الحاليين).\nRole link removed.`
+            ));
+            return;
+        }
+
+        if (action === 'rr_edit') {
+            const r = this.getSortedRaidRoles(guild.id).find(x => x.raids === raids);
+            if (!r) {
+                await interaction.update(this.buildRaidRolesListView(guild, "❌ | هذي الرتبة ما عادت موجودة.\nThis role no longer exists."));
+                return;
+            }
+
+            const raidsInput = new TextInputBuilder()
+                .setCustomId("raids")
+                .setLabel("عدد الرايدات | Raids Count")
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setValue(String(r.raids));
+
+            const descInput = new TextInputBuilder()
+                .setCustomId("description")
+                .setLabel("وصف الرتبة | Role Description")
+                .setStyle(TextInputStyle.Short)
+                .setRequired(false)
+                .setMaxLength(100);
+            if (r.description) descInput.setValue(r.description);
+
+            const modal = new ModalBuilder()
+                .setCustomId(`rr_edit_modal:${r.raids}`)
+                .setTitle("✏️ | تعديل الرتبة | Edit Raid Role")
+                .addComponents(
+                    new ActionRowBuilder().addComponents(raidsInput),
+                    new ActionRowBuilder().addComponents(descInput)
+                );
+
+            await interaction.showModal(modal);
+        }
+    }
+
+    async handleRaidRoleModal(interaction) {
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+            await interaction.reply({ content: "❌ | ليس لديك صلاحية!", ephemeral: true });
+            return;
+        }
+
+        const guild = interaction.guild;
+        const gid = guild.id;
+        const oldRaids = parseInt(interaction.customId.split(':')[1]);
+        const newRaidsStr = interaction.fields.getTextInputValue('raids').trim();
+        const description = interaction.fields.getTextInputValue('description').trim();
+
+        if (!/^\d+$/.test(newRaidsStr) || parseInt(newRaidsStr) < 1) {
+            await interaction.reply({ content: "❌ | اكتب عدد رايدات صحيح (1 أو أكثر).\nInvalid raids count.", ephemeral: true });
+            return;
+        }
+        const newRaids = parseInt(newRaidsStr);
+
+        const config = this.getConfigData();
+        const roleId = config.raid_roles[gid]?.[oldRaids.toString()];
+        if (!roleId) {
+            await interaction.reply({ content: "❌ | هذي الرتبة ما عادت موجودة.\nThis role no longer exists.", ephemeral: true });
+            return;
+        }
+        if (newRaids !== oldRaids && config.raid_roles[gid][newRaids.toString()]) {
+            await interaction.reply({ content: `❌ | فيه رتبة ثانية مربوطة بـ \`${newRaids}\` رايد.\nAnother role already uses this count.`, ephemeral: true });
+            return;
+        }
+
+        if (interaction.isFromMessage()) await interaction.deferUpdate();
+        else await interaction.deferReply({ ephemeral: true });
+
+        if (!config.raid_role_descriptions[gid]) config.raid_role_descriptions[gid] = {};
+        delete config.raid_roles[gid][oldRaids.toString()];
+        delete config.raid_role_descriptions[gid][oldRaids.toString()];
+
+        config.raid_roles[gid][newRaids.toString()] = roleId;
+        if (description) config.raid_role_descriptions[gid][newRaids.toString()] = description;
         this.saveConfigData(config);
 
-        await interaction.reply({ content: `✅ | تم حذف ربط الرتبة <@&${roleId}> من \`${raids}\` رايد (الرتبة تبقى عند الأعضاء الحاليين).`, ephemeral: true });
+        // لو تغيّر العدد، نمنح الرتبة لمن صار مؤهلاً
+        if (newRaids !== oldRaids) {
+            const role = guild.roles.cache.get(roleId);
+            if (role) await this.giveRoleToQualified(guild, newRaids, role);
+        }
+
+        await interaction.editReply(this.buildRaidRolesListView(
+            guild,
+            `✅ | تم تعديل الرتبة <@&${roleId}> (\`${newRaids}\` رايد).\nRole updated.`
+        ));
     }
 
     // /raid-roles-list
     async handleRaidRolesList(interaction) {
-        const config = this.getConfigData();
         const gid = interaction.guildId;
-        const raidRoles = config.raid_roles[gid] || {};
-        const topRoles = config.top_roles.filter(r => r.guild_id === gid);
+        const raidList = this.getSortedRaidRoles(gid);
+        const topRoles = this.getConfigData().top_roles.filter(r => r.guild_id === gid);
 
-        const raidLines = Object.keys(raidRoles)
-            .map(k => parseInt(k))
-            .sort((a, b) => a - b)
-            .map(n => `• \`${n}\` رايد ➜ <@&${raidRoles[n.toString()]}>`);
+        const raidLines = raidList.map(r =>
+            `• \`${r.raids}\` رايد ➜ <@&${r.roleId}>` + (r.description ? `\n  ╰ ${r.description}` : "")
+        );
 
         const topLines = topRoles
             .sort((a, b) => a.min_rank - b.min_rank)
@@ -267,7 +459,7 @@ class MemberStats {
 
         const embed = new EmbedBuilder()
             .setTitle("🏅 | رتب الرايدات")
-            .setColor(0x8B0000)
+            .setColor(EMBED_COLOR)
             .addFields(
                 { name: "رتب عدد الرايدات", value: raidLines.join("\n") || "—" },
                 { name: "رتب التوب", value: topLines.join("\n") || "—" }
@@ -279,17 +471,18 @@ class MemberStats {
 
 module.exports = {
     MemberStats,
+
     setRaidRoleCommand: new SlashCommandBuilder()
         .setName('set-raid-role')
         .setDescription('ربط رتبة بعدد رايدات معين (تنمنح تلقائياً)')
         .addIntegerOption(o => o.setName('raids').setDescription('عدد الرايدات المطلوب').setRequired(true))
         .addRoleOption(o => o.setName('role').setDescription('الرتبة').setRequired(true))
+        .addStringOption(o => o.setName('description').setDescription('وصف الرتبة (اختياري - تقدر تتخطاه)').setRequired(false).setMaxLength(100))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     removeRaidRoleCommand: new SlashCommandBuilder()
         .setName('remove-raid-role')
-        .setDescription('حذف ربط رتبة بعدد رايدات معين')
-        .addIntegerOption(o => o.setName('raids').setDescription('عدد الرايدات المربوط بالرتبة').setRequired(true))
+        .setDescription('عرض رتب الرايدات لحذفها أو تعديلها')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     raidRolesListCommand: new SlashCommandBuilder()
