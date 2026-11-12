@@ -224,6 +224,26 @@ class MemberStats {
         });
     }
 
+    // /remove-raid-role raids:<رقم>
+    async handleRemoveRaidRole(interaction) {
+        const raids = interaction.options.getInteger('raids');
+        const config = this.getConfigData();
+        const gid = interaction.guildId;
+        const serverRoles = config.raid_roles[gid] || {};
+
+        if (!serverRoles[raids.toString()]) {
+            await interaction.reply({ content: `❌ | ما فيه رتبة مربوطة بـ \`${raids}\` رايد.`, ephemeral: true });
+            return;
+        }
+
+        const roleId = serverRoles[raids.toString()];
+        delete serverRoles[raids.toString()];
+        config.raid_roles[gid] = serverRoles;
+        this.saveConfigData(config);
+
+        await interaction.reply({ content: `✅ | تم حذف ربط الرتبة <@&${roleId}> من \`${raids}\` رايد (الرتبة تبقى عند الأعضاء الحاليين).`, ephemeral: true });
+    }
+
     // /raid-roles-list
     async handleRaidRolesList(interaction) {
         const config = this.getConfigData();
@@ -264,6 +284,12 @@ module.exports = {
         .setDescription('ربط رتبة بعدد رايدات معين (تنمنح تلقائياً)')
         .addIntegerOption(o => o.setName('raids').setDescription('عدد الرايدات المطلوب').setRequired(true))
         .addRoleOption(o => o.setName('role').setDescription('الرتبة').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    removeRaidRoleCommand: new SlashCommandBuilder()
+        .setName('remove-raid-role')
+        .setDescription('حذف ربط رتبة بعدد رايدات معين')
+        .addIntegerOption(o => o.setName('raids').setDescription('عدد الرايدات المربوط بالرتبة').setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     raidRolesListCommand: new SlashCommandBuilder()
