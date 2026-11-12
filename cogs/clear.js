@@ -1,9 +1,13 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
+const DAY = 24 * 60 * 60 * 1000;
+const BULK_DAYS = 14;   // حد ديسكورد للحذف الجماعي (ثابت ولا يتغير)
+const MAX_DAYS = 30;    // أقصى عمر للرسائل اللي نحذفها
+
 module.exports = {
     clearCommand: new SlashCommandBuilder()
         .setName('clear')
-        .setDescription('[ Admin Only ] حذف عدد محدد من الرسائل الحديثة (من 1 إلى 1000)')
+        .setDescription('[ Admin Only ] حذف عدد محدد من الرسائل (من 1 إلى 1000، حتى 30 يوم)')
         .addIntegerOption(option =>
             option.setName('amount')
                 .setDescription('عدد الرسائل المراد حذفها (بين 1 و 1000)')
@@ -18,34 +22,71 @@ module.exports = {
             return;
         }
 
+        const channel = interaction.channel;
+        if (!channel || typeof channel.bulkDelete !== 'function') {
+            await interaction.reply({ content: "❌ | هذا الأمر يشتغل بالقنوات النصية فقط!", ephemeral: true });
+            return;
+        }
+
         await interaction.deferReply({ ephemeral: true });
-        await new Promise(resolve => setTimeout(resolve, 1000));
 
         try {
-            // حساب تاريخ قبل 14 يوم حسب نظام ديسكورد لتجنب الخطأ 50034
-            const fourteenDaysAgo = Date.now() - (14 * 24 * 60 * 60 * 1000);
+            const now = Date.now();
+            const bulkLimitTs = now - BULK_DAYS * DAY + 60 * 1000; // أحدث من 14 يوم = حذف جماعي
+            const maxTs = now - MAX_DAYS * DAY;                    // أقدم من 30 يوم = نتوقف
 
-            const fetchedMessages = await interaction.channel.messages.fetch({ limit: Math.min(amount + 10, 100) });
-            const messagesToDelete = [];
+            let remaining = amount;
+            let deleted = 0;
+            let lastId = null;
+            let reachedEnd = false;
+            let slowCount = 0; // عدد الرسائل (14-30 يوم) اللي انحذفت واحدة واحدة
 
-            fetchedMessages.forEach(msg => {
-                if (msg.createdTimestamp >= fourteenDaysAgo && messagesToDelete.length < amount) {
-                    messagesToDelete.push(msg);
+            while (remaining > 0 && !reachedEnd) {
+                const options = { limit: Math.min(remaining, 100) };
+                if (lastId) options.before = lastId;
+
+                const fetched = await channel.messages.fetch(options);
+                if (fetched.size === 0) break;
+                lastId = fetched.last().id;
+
+                const eligible = fetched.filter(m => m.createdTimestamp > maxTs);
+                if (eligible.size < fetched.size) reachedEnd = true; // وصلنا لرسائل أقدم من 30 يوم
+
+                const recent = eligible.filter(m => m.createdTimestamp > bulkLimitTs);
+                const older = eligible.filter(m => m.createdTimestamp <= bulkLimitTs);
+
+                // 1) الحذف الجماعي للرسائل الحديثة
+                if (recent.size > 0) {
+                    const res = await channel.bulkDelete(recent, true);
+                    deleted += res.size;
                 }
-            });
 
-            if (messagesToDelete.length === 0) {
-                await interaction.followup({ content: "❌ | عذراً، لا توجد رسائل **حديثة (أقل من 14 يوم)** يمكن حذفها ضمن هذا العدد!", ephemeral: true });
+                // 2) الحذف واحدة واحدة للرسائل من 14 إلى 30 يوم (أبطأ بسبب قيود ديسكورد)
+                for (const msg of older.values()) {
+                    try {
+                        await msg.delete();
+                        deleted++;
+                        slowCount++;
+                        if (slowCount % 20 === 0) {
+                            await interaction.editReply({ content: `⏳ | جاري الحذف... تم حذف \`${deleted}\` رسالة حتى الآن.` }).catch(() => {});
+                        }
+                    } catch (e) {}
+                }
+
+                remaining -= eligible.size;
+            }
+
+            if (deleted === 0) {
+                await interaction.editReply({ content: `❌ | ما لقيت رسائل أحدث من **${MAX_DAYS} يوم** يمكن حذفها!` });
                 return;
             }
 
-            // حذف الرسائل دفعة واحدة (Bulk Delete للرسائل الأقل من 14 يوم)
-            await interaction.channel.bulkDelete(messagesToDelete, true);
-
-            await interaction.followup({ content: `✅ | تم مسح \`${messagesToDelete.length}\` رسالة حديثة بنجاح وتجاوز الرسائل القديمة تلقائياً!`, ephemeral: true });
-
+            await interaction.editReply({
+                content: `✅ | تم مسح \`${deleted}\` رسالة بنجاح` + (reachedEnd ? ` (توقفت عند الرسائل الأقدم من ${MAX_DAYS} يوم).` : ".")
+            });
         } catch (e) {
-            await interaction.followup({ content: `❌ | حدث خطأ أثناء الحذف: \`${e.message}\``, ephemeral: true });
+            console.error("خطأ في أمر clear:", e);
+            await interaction.editReply({ content: `❌ | حدث خطأ أثناء الحذف: \`${e.message}\`` }).catch(() => {});
         }
     }
 };
