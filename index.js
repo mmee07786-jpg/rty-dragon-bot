@@ -247,6 +247,9 @@ client.on('interactionCreate', async interaction => {
                     await interaction.reply({ content: "❌ | دالة handleSetRaidRole غير موجودة في memberStats.js", ephemeral: true });
                 }
             }
+            else if (interaction.commandName === 'remove-raid-role') {
+                await client.memberStatsCog.handleRemoveRaidRole(interaction);
+            }
             else if (interaction.commandName === 'raid-roles-list') {
                 await client.memberStatsCog.handleRaidRolesList(interaction);
             }
