@@ -247,6 +247,9 @@ client.on('interactionCreate', async interaction => {
                     await interaction.reply({ content: "❌ | دالة handleSetRaidRole غير موجودة في memberStats.js", ephemeral: true });
                 }
             }
+            else if (interaction.commandName === 'raid-roles-list') {
+                await client.memberStatsCog.handleRaidRolesList(interaction);
+            }
             // ✅ أوامر الإدارة والمقاطعة (Warn, Ban, Kick, Timeout, Mute)
             else if (interaction.commandName === 'warn') {
                 await adminModule.handleWarn(interaction);
