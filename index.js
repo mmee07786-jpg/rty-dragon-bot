@@ -12,6 +12,7 @@ const ownerToolsModule = require('./cogs/owner_tools.js');
 const adminModule = require('./cogs/admin.js'); // ✅ ربط ملف الأوامر الإدارية
 const backupModule = require('./cogs/backup.js'); // ✅ ربط ملف النسخ الاحتياطي
 const memberStatsModule = require('./cogs/memberStats.js'); // ✅ ربط ملف الإحصائيات والرتب
+const clearModule = require('./cogs/clear.js'); // ✅ ربط أمر مسح الرسائل
 
 // يدعم الحالتين: module.exports = MemberStats  أو  module.exports = { MemberStats, ... }
 const MemberStatsClass = memberStatsModule.MemberStats || memberStatsModule;
@@ -108,6 +109,14 @@ client.once('ready', async () => {
         console.log("✅ تم تسجيل أوامر /backup و /restore");
     } catch (e) {
         console.log(`⚠️ فشل تسجيل أوامر النسخ الاحتياطي: ${e.message}`);
+    }
+
+    // ✅ تسجيل أمر /clear تلقائياً
+    try {
+        await client.application.commands.create(clearModule.clearCommand.toJSON());
+        console.log("✅ تم تسجيل أمر /clear");
+    } catch (e) {
+        console.log(`⚠️ فشل تسجيل أمر /clear: ${e.message}`);
     }
 
     // ✅ حذف أوامر الموسيقى القديمة من ديسكورد (play و play_music)
@@ -287,6 +296,9 @@ client.on('interactionCreate', async interaction => {
                 await backupModule.handleBackup(interaction);
             } else if (interaction.commandName === 'restore') {
                 await backupModule.handleRestore(interaction);
+            }
+            else if (interaction.commandName === 'clear') {
+                await clearModule.handleClear(interaction);
             }
             else if (interaction.commandName === 'i') {
                 await ownerToolsModule.handleI(interaction);
