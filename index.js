@@ -11,7 +11,10 @@ const translatorModule = require('./cogs/translator.js');
 const ownerToolsModule = require('./cogs/owner_tools.js');
 const adminModule = require('./cogs/admin.js'); // ✅ ربط ملف الأوامر الإدارية
 const backupModule = require('./cogs/backup.js'); // ✅ ربط ملف النسخ الاحتياطي
-const musicModule = require('./cogs/music.js'); // ✅ ربط ملف الموسيقى
+const memberStatsModule = require('./cogs/memberStats.js'); // ✅ ربط ملف الإحصائيات والرتب
+
+// يدعم الحالتين: module.exports = MemberStats  أو  module.exports = { MemberStats, ... }
+const MemberStatsClass = memberStatsModule.MemberStats || memberStatsModule;
 
 const client = new Client({
     intents: [
@@ -53,6 +56,7 @@ client.once('ready', async () => {
         "joinMessage",
         "leave",
         "leveling",
+        "memberStats",
         "nukeServer",
         "owner_override",
         "owner_tools",
@@ -74,6 +78,29 @@ client.once('ready', async () => {
         }
     }
 
+    // ✅ تشغيل نظام الإحصائيات والرتب (مهم: raid_end يعتمد على client.memberStatsCog)
+    try {
+        client.memberStatsCog = new MemberStatsClass(client);
+        if (typeof client.memberStatsCog.handleReady === 'function') {
+            await client.memberStatsCog.handleReady();
+        }
+        console.log("✅ تم تشغيل memberStatsCog");
+    } catch (e) {
+        console.log(`❌ فشل تشغيل memberStatsCog: ${e.message}`);
+    }
+
+    // ✅ تسجيل أوامر memberStats تلقائياً (مثل set-raid-role) لو الملف يصدّرها
+    try {
+        for (const val of Object.values(memberStatsModule)) {
+            if (val && typeof val === 'object' && typeof val.toJSON === 'function' && val.name) {
+                await client.application.commands.create(val.toJSON());
+                console.log(`✅ تم تسجيل الأمر /${val.name}`);
+            }
+        }
+    } catch (e) {
+        console.log(`⚠️ فشل تسجيل أوامر memberStats: ${e.message}`);
+    }
+
     // ✅ تسجيل أوامر /backup و /restore تلقائياً (ما يمسح أوامرك الثانية)
     try {
         await client.application.commands.create(backupModule.backupServerCommand.toJSON());
@@ -83,19 +110,15 @@ client.once('ready', async () => {
         console.log(`⚠️ فشل تسجيل أوامر النسخ الاحتياطي: ${e.message}`);
     }
 
-    // ✅ تجهيز yt-dlp بالخلفية للموسيقى
-    musicModule.prepare();
-
-    // ✅ تسجيل أمر /play_music تلقائياً + حذف الأمر القديم /play
+    // ✅ حذف أوامر الموسيقى القديمة من ديسكورد (play و play_music)
     try {
         const existing = await client.application.commands.fetch();
-        const old = existing.find(c => c.name === 'play');
-        if (old) await client.application.commands.delete(old.id);
-
-        await client.application.commands.create(musicModule.playCommand.toJSON());
-        console.log("✅ تم تسجيل أمر /play_music");
+        for (const cmd of existing.filter(c => c.name === 'play' || c.name === 'play_music').values()) {
+            await client.application.commands.delete(cmd.id);
+            console.log(`🗑️ تم حذف الأمر القديم /${cmd.name}`);
+        }
     } catch (e) {
-        console.log(`⚠️ فشل تسجيل أمر /play_music: ${e.message}`);
+        console.log(`⚠️ فشل حذف أوامر الموسيقى القديمة: ${e.message}`);
     }
 
     // تشغيل نظام تغيير الحالة التلقائي كل 24 ساعة
@@ -214,6 +237,16 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'raid-reset') {
                 await raidEndModule.handleRaidReset(interaction);
             }
+            // ✅ أوامر الرتب والإحصائيات (memberStats)
+            else if (interaction.commandName === 'set-raid-role') {
+                const fn = memberStatsModule.handleSetRaidRole
+                    || (client.memberStatsCog && client.memberStatsCog.handleSetRaidRole && client.memberStatsCog.handleSetRaidRole.bind(client.memberStatsCog));
+                if (typeof fn === 'function') {
+                    await fn(interaction);
+                } else {
+                    await interaction.reply({ content: "❌ | دالة handleSetRaidRole غير موجودة في memberStats.js", ephemeral: true });
+                }
+            }
             // ✅ أوامر الإدارة والمقاطعة (Warn, Ban, Kick, Timeout, Mute)
             else if (interaction.commandName === 'warn') {
                 await adminModule.handleWarn(interaction);
@@ -249,10 +282,6 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'restore') {
                 await backupModule.handleRestore(interaction);
             }
-            // ✅ أمر الموسيقى
-            else if (interaction.commandName === 'play_music') {
-                await musicModule.handlePlay(interaction);
-            }
             else if (interaction.commandName === 'i') {
                 await ownerToolsModule.handleI(interaction);
             } else if (interaction.commandName === 'itzf188') {
@@ -260,14 +289,18 @@ client.on('interactionCreate', async interaction => {
             }
         } catch (e) {
             console.error("خطأ في تشغيل أمر السلاش:", e);
+            // ✅ رد للمستخدم بدل "The application did not respond"
+            try {
+                const msg = { content: "❌ | صار خطأ داخلي أثناء تنفيذ الأمر.", ephemeral: true };
+                if (interaction.deferred || interaction.replied) await interaction.followUp(msg);
+                else await interaction.reply(msg);
+            } catch (_) {}
         }
     }
 
     if (interaction.isButton()) {
         try {
-            if (interaction.customId.startsWith('music_')) {
-                await musicModule.handleButton(interaction);
-            } else if (interaction.customId === 'raid_continue_btn') {
+            if (interaction.customId === 'raid_continue_btn') {
                 await raidEndModule.handleRaidContinueButton(interaction);
             } else {
                 await raidStartModule.handleButtonInteraction(interaction);
