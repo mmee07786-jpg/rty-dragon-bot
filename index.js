@@ -308,6 +308,8 @@ client.on('interactionCreate', async interaction => {
         try {
             if (interaction.customId === 'raid_continue_btn') {
                 await raidEndModule.handleRaidContinueButton(interaction);
+            } else if (interaction.customId.startsWith('rr_')) {
+                await client.memberStatsCog.handleRaidRoleButton(interaction);
             } else {
                 await raidStartModule.handleButtonInteraction(interaction);
             }
@@ -331,6 +333,8 @@ client.on('interactionCreate', async interaction => {
                 await raidEndModule.handleRaidSubmitModal(interaction);
             } else if (interaction.customId === 'roblox_top_avatar_modal') {
                 await raidEndModule.handleRobloxTopAvatarSubmit(interaction);
+            } else if (interaction.customId.startsWith('rr_edit_modal')) {
+                await client.memberStatsCog.handleRaidRoleModal(interaction);
             }
         } catch (e) {
             console.error("خطأ في معالجة Modal:", e);
