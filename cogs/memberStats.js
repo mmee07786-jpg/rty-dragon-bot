@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -223,6 +223,38 @@ class MemberStats {
             content: `✅ | تم ربط الرتبة ${role} بـ \`${raids}\` رايد، وتم منحها لـ \`${given}\` عضو حالياً.`
         });
     }
+
+    // /raid-roles-list
+    async handleRaidRolesList(interaction) {
+        const config = this.getConfigData();
+        const gid = interaction.guildId;
+        const raidRoles = config.raid_roles[gid] || {};
+        const topRoles = config.top_roles.filter(r => r.guild_id === gid);
+
+        const raidLines = Object.keys(raidRoles)
+            .map(k => parseInt(k))
+            .sort((a, b) => a - b)
+            .map(n => `• \`${n}\` رايد ➜ <@&${raidRoles[n.toString()]}>`);
+
+        const topLines = topRoles
+            .sort((a, b) => a.min_rank - b.min_rank)
+            .map(r => `• التوب \`${r.min_rank}\` - \`${r.max_rank}\` ➜ <@&${r.role_id}>`);
+
+        if (raidLines.length === 0 && topLines.length === 0) {
+            await interaction.reply({ content: "❌ | ما فيه أي رتب رايدات أو توبات مسجّلة. استخدم `/set-raid-role`.", ephemeral: true });
+            return;
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle("🏅 | رتب الرايدات")
+            .setColor(0x8B0000)
+            .addFields(
+                { name: "رتب عدد الرايدات", value: raidLines.join("\n") || "—" },
+                { name: "رتب التوب", value: topLines.join("\n") || "—" }
+            );
+
+        await interaction.reply({ embeds: [embed] });
+    }
 }
 
 module.exports = {
@@ -232,5 +264,9 @@ module.exports = {
         .setDescription('ربط رتبة بعدد رايدات معين (تنمنح تلقائياً)')
         .addIntegerOption(o => o.setName('raids').setDescription('عدد الرايدات المطلوب').setRequired(true))
         .addRoleOption(o => o.setName('role').setDescription('الرتبة').setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    raidRolesListCommand: new SlashCommandBuilder()
+        .setName('raid-roles-list')
+        .setDescription('عرض رتب الرايدات والتوبات المسجّلة')
 };
