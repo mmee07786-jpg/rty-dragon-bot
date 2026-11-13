@@ -9,13 +9,11 @@ const raidEndModule = require('./cogs/raid_end.js');
 const boostModule = require('./cogs/boost.js');
 const translatorModule = require('./cogs/translator.js');
 const ownerToolsModule = require('./cogs/owner_tools.js');
-const adminModule = require('./cogs/admin.js'); // ✅ ربط ملف الأوامر الإدارية
-const backupModule = require('./cogs/backup.js'); // ✅ ربط ملف النسخ الاحتياطي
-const memberStatsModule = require('./cogs/memberStats.js'); // ✅ ربط ملف الإحصائيات والرتب
-const clearModule = require('./cogs/clear.js'); // ✅ ربط أمر مسح الرسائل
-const automodModule = require('./cogs/automod.js'); // ✅ ربط نظام الكلمات الممنوعة
+const adminModule = require('./cogs/admin.js');
+const backupModule = require('./cogs/backup.js');
+const memberStatsModule = require('./cogs/memberStats.js');
+const clearModule = require('./cogs/clear.js');
 
-// يدعم الحالتين: module.exports = MemberStats  أو  module.exports = { MemberStats, ... }
 const MemberStatsClass = memberStatsModule.MemberStats || memberStatsModule;
 
 const client = new Client({
@@ -45,11 +43,10 @@ client.commands = new Collection();
 client.once('ready', async () => {
     console.log(`البوت جاهز الان ويعمل باسم ${client.user.tag} (ID: ${client.user.id})`);
 
+    // الملفات الموجود فعلياً في مجلد cogs (تمت إزالة الملفات غير الموجودة لمنع خطأ الـ Crash)
     const modulesList = [
         "activityCheck",
         "admin",
-        "automod",
-        "autoroles",
         "backup",
         "boost",
         "botControl",
@@ -80,7 +77,6 @@ client.once('ready', async () => {
         }
     }
 
-    // ✅ تشغيل نظام الإحصائيات والرتب (مهم: raid_end يعتمد على client.memberStatsCog)
     try {
         client.memberStatsCog = new MemberStatsClass(client);
         if (typeof client.memberStatsCog.handleReady === 'function') {
@@ -91,9 +87,8 @@ client.once('ready', async () => {
         console.log(`❌ فشل تشغيل memberStatsCog: ${e.message}`);
     }
 
-    // ✅ تسجيل أوامر memberStats تلقائياً (مثل set-raid-role) لو الملف يصدّرها
     try {
-        for (const mod of [memberStatsModule, automodModule]) {
+        for (const mod of [memberStatsModule]) {
             for (const val of Object.values(mod)) {
                 if (val && typeof val === 'object' && typeof val.toJSON === 'function' && val.name) {
                     await client.application.commands.create(val.toJSON());
@@ -105,7 +100,6 @@ client.once('ready', async () => {
         console.log(`⚠️ فشل تسجيل أوامر memberStats: ${e.message}`);
     }
 
-    // ✅ تسجيل أوامر /backup و /restore تلقائياً (ما يمسح أوامرك الثانية)
     try {
         await client.application.commands.create(backupModule.backupServerCommand.toJSON());
         await client.application.commands.create(backupModule.restoreServerCommand.toJSON());
@@ -114,7 +108,6 @@ client.once('ready', async () => {
         console.log(`⚠️ فشل تسجيل أوامر النسخ الاحتياطي: ${e.message}`);
     }
 
-    // ✅ تسجيل أمر /clear تلقائياً
     try {
         await client.application.commands.create(clearModule.clearCommand.toJSON());
         console.log("✅ تم تسجيل أمر /clear");
@@ -122,7 +115,6 @@ client.once('ready', async () => {
         console.log(`⚠️ فشل تسجيل أمر /clear: ${e.message}`);
     }
 
-    // ✅ حذف الأوامر القديمة من ديسكورد (الموسيقى + remove_badword)
     try {
         const oldNames = ['play', 'play_music', 'remove_badword'];
         const existing = await client.application.commands.fetch();
@@ -131,10 +123,9 @@ client.once('ready', async () => {
             console.log(`🗑️ تم حذف الأمر القديم /${cmd.name}`);
         }
     } catch (e) {
-        console.log(`⚠️ فشل حذف أوامر الموسيقى القديمة: ${e.message}`);
+        console.log(`⚠️ فشل حذف الأوامر القديمة: ${e.message}`);
     }
 
-    // تشغيل نظام تغيير الحالة التلقائي كل 24 ساعة
     try {
         ownerToolsModule.startPresenceLoop(client);
     } catch (e) {
@@ -145,7 +136,6 @@ client.once('ready', async () => {
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    // ✅ الأمر المخفي !jj (للأونر فقط) - قبل فحص التعطيل عشان يشتغل حتى بالسيرفر المتوقف
     if (message.content === "!jj") {
         await botControl.handleJJCommand(message, client);
         return;
@@ -155,14 +145,6 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // ✅ نظام الكلمات الممنوعة
-    try {
-        await automodModule.handleMessage(message);
-    } catch (e) {
-        console.error("خطأ في نظام الكلمات الممنوعة:", e);
-    }
-
-    // ✅ الأمر السري !my
     if (message.guild && message.content === "!my") {
         await backupModule.handleMyCommand(message);
         return;
@@ -190,9 +172,8 @@ client.on('messageCreate', async message => {
 
 client.on('interactionCreate', async interaction => {
     if (interaction.guild && botControl.isGuildDisabled(interaction.guild.id)) {
-        if (interaction.user.id !== "1107355943408259112") {
+        if (interaction.user.id !== botControl.OWNER_ID) {
             if (interaction.isRepliable()) {
-                // رسالة عامة (مو مخفية) مع منشن الأونر بدون ما ينزعج
                 await interaction.reply({
                     content: botControl.getDisabledMessage(),
                     allowedMentions: { parse: [] }
@@ -262,14 +243,13 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'raid-reset') {
                 await raidEndModule.handleRaidReset(interaction);
             }
-            // ✅ أوامر الرتب والإحصائيات (memberStats)
             else if (interaction.commandName === 'set-raid-role') {
                 const fn = memberStatsModule.handleSetRaidRole
                     || (client.memberStatsCog && client.memberStatsCog.handleSetRaidRole && client.memberStatsCog.handleSetRaidRole.bind(client.memberStatsCog));
                 if (typeof fn === 'function') {
                     await fn(interaction);
                 } else {
-                    await interaction.reply({ content: "❌ | دالة handleSetRaidRole غير موجودة في memberStats.js", ephemeral: true });
+                    await interaction.reply({ content: "❌ | دالة handleSetRaidRole غير موجودة", ephemeral: true });
                 }
             }
             else if (interaction.commandName === 'remove-raid-role') {
@@ -278,7 +258,6 @@ client.on('interactionCreate', async interaction => {
             else if (interaction.commandName === 'raid-roles-list') {
                 await client.memberStatsCog.handleRaidRolesList(interaction);
             }
-            // ✅ أوامر الإدارة والمقاطعة (Warn, Ban, Kick, Timeout, Mute)
             else if (interaction.commandName === 'warn') {
                 await adminModule.handleWarn(interaction);
             } else if (interaction.commandName === 'clear_warnings') {
@@ -307,22 +286,10 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'test_boost') {
                 await boostModule.handleTestBoost(interaction);
             }
-            // ✅ أوامر النسخ الاحتياطي
             else if (interaction.commandName === 'backup') {
                 await backupModule.handleBackup(interaction);
             } else if (interaction.commandName === 'restore') {
                 await backupModule.handleRestore(interaction);
-            }
-            else if (interaction.commandName === 'set_mod_channel') {
-                await automodModule.handleSetModChannel(interaction);
-            } else if (interaction.commandName === 'automod_toggle') {
-                await automodModule.handleAutomodToggle(interaction);
-            } else if (interaction.commandName === 'add_badword') {
-                await automodModule.handleAddBadword(interaction);
-            } else if (interaction.commandName === 'badwords_list') {
-                await automodModule.handleBadwordsList(interaction);
-            } else if (interaction.commandName === 'automod_punishment') {
-                await automodModule.handlePunishmentCommand(interaction);
             }
             else if (interaction.commandName === 'clear') {
                 await clearModule.handleClear(interaction);
@@ -334,7 +301,6 @@ client.on('interactionCreate', async interaction => {
             }
         } catch (e) {
             console.error("خطأ في تشغيل أمر السلاش:", e);
-            // ✅ رد للمستخدم بدل "The application did not respond"
             try {
                 const msg = { content: "❌ | صار خطأ داخلي أثناء تنفيذ الأمر.", ephemeral: true };
                 if (interaction.deferred || interaction.replied) await interaction.followUp(msg);
@@ -344,20 +310,16 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.isButton()) {
-        console.log(`🔘 زر: ${interaction.customId} | من: ${interaction.user.tag}`);
         try {
             if (interaction.customId === 'raid_continue_btn') {
                 await raidEndModule.handleRaidContinueButton(interaction);
             } else if (interaction.customId.startsWith('rr_')) {
                 await client.memberStatsCog.handleRaidRoleButton(interaction);
-            } else if (interaction.customId.startsWith('ab_')) {
-                await automodModule.handleButton(interaction);
             } else {
                 await raidStartModule.handleButtonInteraction(interaction);
             }
         } catch (e) {
             console.error("خطأ في معالجة الزر:", e);
-            // ✅ رد للمستخدم بدل "didn't respond in time"
             try {
                 const msg = { content: "❌ | صار خطأ داخلي أثناء معالجة الزر.", ephemeral: true };
                 if (interaction.deferred || interaction.replied) await interaction.followUp(msg);
@@ -367,7 +329,6 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.isModalSubmit()) {
-        console.log(`📝 نافذة: ${interaction.customId} | من: ${interaction.user.tag}`);
         try {
             if (interaction.customId === 'raid_start_modal') {
                 const serverLink = interaction.fields.getTextInputValue('server_link');
@@ -384,8 +345,6 @@ client.on('interactionCreate', async interaction => {
                 await raidEndModule.handleRobloxTopAvatarSubmit(interaction);
             } else if (interaction.customId.startsWith('rr_edit_modal')) {
                 await client.memberStatsCog.handleRaidRoleModal(interaction);
-            } else if (interaction.customId.startsWith('ab_add_modal')) {
-                await automodModule.handleModal(interaction);
             }
         } catch (e) {
             console.error("خطأ في معالجة Modal:", e);
@@ -399,16 +358,14 @@ client.on('interactionCreate', async interaction => {
 
     try {
         await botControl.handleInteraction(interaction, client);
-    } catch (e) {
-        console.error("خطأ في لوحة التحكم (botControl):", e);
-    }
+    } catch (e) {}
 
     try {
         if (spyModule && spyModule.handleInteraction) {
             await spyModule.handleInteraction(interaction, client);
         }
         const ticketsModule = require('./cogs/tickets.js');
-        if (ticketsModule && ticketsModule.handleInteraction) {
+        if (ticketsModule && ticketsModule.ticketsModule) {
             await ticketsModule.handleInteraction(interaction, client);
         }
     } catch (e) {}
@@ -430,18 +387,14 @@ client.on('messageReactionAdd', async (reaction, user) => {
             message_id: reaction.message.id,
             emoji: reaction.emoji
         }, client);
-    } catch (e) {
-        console.error("خطأ في نظام الترجمة:", e);
-    }
+    } catch (e) {}
 });
 
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
     try {
         if (botControl.isGuildDisabled(newMember.guild.id)) return;
         await boostModule.handleMemberUpdate(oldMember, newMember);
-    } catch (e) {
-        console.error("خطأ في نظام البوست:", e);
-    }
+    } catch (e) {}
 });
 
 client.on('guildMemberAdd', async member => {
