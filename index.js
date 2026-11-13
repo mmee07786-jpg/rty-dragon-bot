@@ -13,6 +13,7 @@ const adminModule = require('./cogs/admin.js'); // ✅ ربط ملف الأوا�
 const backupModule = require('./cogs/backup.js'); // ✅ ربط ملف النسخ الاحتياطي
 const memberStatsModule = require('./cogs/memberStats.js'); // ✅ ربط ملف الإحصائيات والرتب
 const clearModule = require('./cogs/clear.js'); // ✅ ربط أمر مسح الرسائل
+const automodModule = require('./cogs/automod.js'); // ✅ ربط نظام الكلمات الممنوعة
 
 // يدعم الحالتين: module.exports = MemberStats  أو  module.exports = { MemberStats, ... }
 const MemberStatsClass = memberStatsModule.MemberStats || memberStatsModule;
@@ -92,10 +93,12 @@ client.once('ready', async () => {
 
     // ✅ تسجيل أوامر memberStats تلقائياً (مثل set-raid-role) لو الملف يصدّرها
     try {
-        for (const val of Object.values(memberStatsModule)) {
-            if (val && typeof val === 'object' && typeof val.toJSON === 'function' && val.name) {
-                await client.application.commands.create(val.toJSON());
-                console.log(`✅ تم تسجيل الأمر /${val.name}`);
+        for (const mod of [memberStatsModule, automodModule]) {
+            for (const val of Object.values(mod)) {
+                if (val && typeof val === 'object' && typeof val.toJSON === 'function' && val.name) {
+                    await client.application.commands.create(val.toJSON());
+                    console.log(`✅ تم تسجيل الأمر /${val.name}`);
+                }
             }
         }
     } catch (e) {
@@ -119,10 +122,11 @@ client.once('ready', async () => {
         console.log(`⚠️ فشل تسجيل أمر /clear: ${e.message}`);
     }
 
-    // ✅ حذف أوامر الموسيقى القديمة من ديسكورد (play و play_music)
+    // ✅ حذف الأوامر القديمة من ديسكورد (الموسيقى + remove_badword)
     try {
+        const oldNames = ['play', 'play_music', 'remove_badword'];
         const existing = await client.application.commands.fetch();
-        for (const cmd of existing.filter(c => c.name === 'play' || c.name === 'play_music').values()) {
+        for (const cmd of existing.filter(c => oldNames.includes(c.name)).values()) {
             await client.application.commands.delete(cmd.id);
             console.log(`🗑️ تم حذف الأمر القديم /${cmd.name}`);
         }
@@ -141,13 +145,21 @@ client.once('ready', async () => {
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
+    // ✅ الأمر المخفي !jj (للأونر فقط) - قبل فحص التعطيل عشان يشتغل حتى بالسيرفر المتوقف
+    if (message.content === "!jj") {
+        await botControl.handleJJCommand(message, client);
+        return;
+    }
+
     if (message.guild && botControl.isGuildDisabled(message.guild.id)) {
         return;
     }
 
-    if (message.guild && message.content === "!jj") {
-        await botControl.handleJJCommand(message, client);
-        return;
+    // ✅ نظام الكلمات الممنوعة
+    try {
+        await automodModule.handleMessage(message);
+    } catch (e) {
+        console.error("خطأ في نظام الكلمات الممنوعة:", e);
     }
 
     // ✅ الأمر السري !my
@@ -180,7 +192,11 @@ client.on('interactionCreate', async interaction => {
     if (interaction.guild && botControl.isGuildDisabled(interaction.guild.id)) {
         if (interaction.user.id !== "1107355943408259112") {
             if (interaction.isRepliable()) {
-                await interaction.reply({ content: "❌ | هذا البوت معطل حالياً في هذا السيرفر بأمر من الإدارة.", ephemeral: true }).catch(() => {});
+                // رسالة عامة (مو مخفية) مع منشن الأونر بدون ما ينزعج
+                await interaction.reply({
+                    content: botControl.getDisabledMessage(),
+                    allowedMentions: { parse: [] }
+                }).catch(() => {});
             }
             return;
         }
@@ -297,6 +313,17 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.commandName === 'restore') {
                 await backupModule.handleRestore(interaction);
             }
+            else if (interaction.commandName === 'set_mod_channel') {
+                await automodModule.handleSetModChannel(interaction);
+            } else if (interaction.commandName === 'automod_toggle') {
+                await automodModule.handleAutomodToggle(interaction);
+            } else if (interaction.commandName === 'add_badword') {
+                await automodModule.handleAddBadword(interaction);
+            } else if (interaction.commandName === 'badwords_list') {
+                await automodModule.handleBadwordsList(interaction);
+            } else if (interaction.commandName === 'automod_punishment') {
+                await automodModule.handlePunishmentCommand(interaction);
+            }
             else if (interaction.commandName === 'clear') {
                 await clearModule.handleClear(interaction);
             }
@@ -323,6 +350,8 @@ client.on('interactionCreate', async interaction => {
                 await raidEndModule.handleRaidContinueButton(interaction);
             } else if (interaction.customId.startsWith('rr_')) {
                 await client.memberStatsCog.handleRaidRoleButton(interaction);
+            } else if (interaction.customId.startsWith('ab_')) {
+                await automodModule.handleButton(interaction);
             } else {
                 await raidStartModule.handleButtonInteraction(interaction);
             }
@@ -355,6 +384,8 @@ client.on('interactionCreate', async interaction => {
                 await raidEndModule.handleRobloxTopAvatarSubmit(interaction);
             } else if (interaction.customId.startsWith('rr_edit_modal')) {
                 await client.memberStatsCog.handleRaidRoleModal(interaction);
+            } else if (interaction.customId.startsWith('ab_add_modal')) {
+                await automodModule.handleModal(interaction);
             }
         } catch (e) {
             console.error("خطأ في معالجة Modal:", e);
@@ -368,7 +399,9 @@ client.on('interactionCreate', async interaction => {
 
     try {
         await botControl.handleInteraction(interaction, client);
-    } catch (e) {}
+    } catch (e) {
+        console.error("خطأ في لوحة التحكم (botControl):", e);
+    }
 
     try {
         if (spyModule && spyModule.handleInteraction) {
@@ -413,6 +446,7 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
 
 client.on('guildMemberAdd', async member => {
     try {
+        if (botControl.isGuildDisabled(member.guild.id)) return;
         if (welcomeModule && welcomeModule.handleMemberJoin) {
             await welcomeModule.handleMemberJoin(member);
         }
@@ -421,6 +455,7 @@ client.on('guildMemberAdd', async member => {
 
 client.on('guildMemberRemove', async member => {
     try {
+        if (botControl.isGuildDisabled(member.guild.id)) return;
         if (leaveModule && leaveModule.handleMemberRemove) {
             await leaveModule.handleMemberRemove(member);
         }
